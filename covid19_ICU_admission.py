@@ -10,6 +10,9 @@ from sklearn.metrics import confusion_matrix
 from sklearn.metrics import plot_confusion_matrix
 from sklearn.metrics import roc_curve
 
+from covid_19_ICU_util import calculate_outcome_measure
+
+
 def load_data(path_data, path_study, path_daily):
 	# Combine all data in single matrix (if possible)
 	# Set correct data types
@@ -24,20 +27,18 @@ def load_data(path_data, path_study, path_daily):
     for step in df_study['Step name'].unique():
         cols[step] = df_study['Variable name'][df_study['Step name'] == step].tolist()
 
+    y = calculate_outcome_measure(df)
+    
     # NOTE: Temporarily select some categories for testing for x
     x = df[cols['CO-MORBIDITIES'] + cols['SIGNS AND SYMPTOMS AT HOSPITAL ADMISSION']]
-    y = df[cols['OUTCOME']]
-
-    # NOTE: TEMP FILLNA FOR TESTING
-    y = y['discharge_live'].fillna(0)
-
     return x, y
+
 
 def explore_and_describe(data):
     # Report:
     #   Frequencies distribution --> Speficially outcome
     #   Missing values
-    missing_values = data.isnan().sum()
+    missing_values = data.isna().sum()
     print('Missing values X:')
     print(missing_values)
 
@@ -96,18 +97,17 @@ def score_and_vizualize_prediction(model, test_x, test_y, y_hat, y_hat_cv):
     disp.ax_.set_title('Predicted on test set')
     plt.show()
 
-# path = r'C:\Users\p70066129\Projects\COVID-19 CDSS\Code\Data\200324_COVID-19_NL/'
-path = "YOUR PATH HERE"
+path = r'C:\Users\p70066129\Projects\COVID-19 CDSS\covid19_CDSS\Data\200324_COVID-19_NL/'
 filename = r'COVID-19_NL_data.csv'
 filename_study = r'study_variablelist.csv'
 filename_daily = r'report_variablelist.csv'
 
 x, y = load_data(path+filename, path+filename_study, path+filename_daily)
-
+explore_and_describe(x)
 x = preprocess(x)
 x = feature_engineering(x)
 model, train_x, train_y, test_x, \
-    test_y, test_y_hat, y_hat_cv = model_and_predict(x, y, test_size=0.33)
+    test_y, test_y_hat, y_hat_cv = model_and_predict(x, y, test_size=0.20)
 score_and_vizualize_prediction(model, test_x, test_y, test_y_hat, y_hat_cv)
 
 print('done')
