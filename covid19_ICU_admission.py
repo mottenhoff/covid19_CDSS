@@ -2,13 +2,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+
+from sklearn.decomposition import PCA
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import cross_val_predict
 from sklearn.model_selection import LeaveOneOut
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import plot_confusion_matrix
-from sklearn.metrics import roc_curve
+from sklearn.metrics import roc_auc_score
 
 from covid_19_ICU_util import calculate_outcome_measure
 from covid_19_ICU_util import get_time_features
@@ -83,6 +86,12 @@ def feature_engineering(df, col_dict):
     x = x.dropna(how='all', axis=0)
     x = x.fillna(0) 
 
+
+    # Dimensionality reduction
+    # pca = PCA(n_components=10)
+    # x = pca.fit_transform(x)
+    # print(pca.explained_variance_ratio_)
+
     return x
 
 
@@ -90,7 +99,7 @@ def model_and_predict(x, y, test_size=0.2, val_size=0.2, hpo=False):
     # hpo = hyper-parameter optimization
 
     # Train/test-split
-    train_x, test_x, train_y, test_y = train_test_split(x, y, test_size=test_size)
+    train_x, test_x, train_y, test_y = train_test_split(x, y, test_size=test_size, random_state=0)
 
     if hpo:
         train_x, val_x, train_y, val_y = train_test_split(x, y, val_size=val_size)
@@ -98,7 +107,7 @@ def model_and_predict(x, y, test_size=0.2, val_size=0.2, hpo=False):
 
     # Model
     # NOTE: set random_state for consistent results
-    clf = LogisticRegression(penalty='l2', class_weight='balanced', random_state=0) # small dataset: solver='lbfgs'. multiclass: solver='lbgfs'
+    clf = LogisticRegression(penalty='l2', class_weight='balanced')#, random_state=0) # small dataset: solver='lbfgs'. multiclass: solver='lbgfs'
     clf.fit(train_x, train_y)
     
     # Predict
@@ -114,9 +123,14 @@ def score_and_vizualize_prediction(model, test_x, test_y, y_hat, y_hat_cv):
 	# Visualize
 
     # Requires fitted model, so not able to use plot_confusion_matrix for CV generated values
+    acc_score = accuracy_score(test_y, y_hat)
+    roc_auc = roc_auc_score(test_y, y_hat)
+    
     disp = plot_confusion_matrix(model, test_x, test_y, cmap=plt.cm.Blues) 
-    disp.ax_.set_title('Predicted on test set // Chance level: {:2.1f}'.format(100*sum(test_y)/len(test_y)))
+    disp.ax_.set_title('Test set // ROC AUC: {:.3f}// Acc vs chance: {:.2f}/{:.2f}'.format(roc_auc, acc_score, sum(test_y)/len(test_y)))
     plt.show()
+
+
 
 path = r'C:\Users\p70066129\Projects\COVID-19 CDSS\covid19_CDSS\Data\200325_COVID-19_NL/'
 filename = r'COVID-19_NL_data.csv'
@@ -124,11 +138,10 @@ filename_study = r'study_variablelist.csv'
 filename_daily = r'report_variablelist.csv'
 
 x, y, col_dict = load_data(path+filename, path+filename_study, path+filename_daily)
-# explore_and_describe(x)
 x = preprocess(x)
 x = feature_engineering(x, col_dict)
 model, train_x, train_y, test_x, \
-    test_y, test_y_hat, y_hat_cv = model_and_predict(x, y, test_size=0.20      )
+    test_y, test_y_hat, y_hat_cv = model_and_predict(x, y, test_size=0.20)
 score_and_vizualize_prediction(model, test_x, test_y, test_y_hat, y_hat_cv)
 
 print('done')
