@@ -11,6 +11,7 @@ from sklearn.metrics import plot_confusion_matrix
 from sklearn.metrics import roc_curve
 
 from covid_19_ICU_util import calculate_outcome_measure
+from covid_19_ICU_util import get_time_features
 
 
 def load_data(path_data, path_study, path_daily):
@@ -31,10 +32,8 @@ def load_data(path_data, path_study, path_daily):
     # _ = explore(df, cols)
 
     y = calculate_outcome_measure(df)
-    
-    # NOTE: Temporarily select some categories for testing for x
-    x = df[cols['CO-MORBIDITIES'] + cols['SIGNS AND SYMPTOMS AT HOSPITAL ADMISSION']]
-    return x, y
+    x = df
+    return x, y, cols
 
 
 def explore_and_describe(data):
@@ -54,18 +53,37 @@ def preprocess(data):
 		# Rescale - e.g. range [0, 1]
 		# Rotate  - All values such that higher value should be better outcome
     
+    # Remove or fix erronous values:
+    data['admission_dt'][data['Record Id'] == 120006] = '19-03-2020'
+
+
+
     # Drop columns without values
-    data = data.dropna(how='all', axis=0)
-    data = data.fillna(data.mean(axis=0))
+    # data = data.dropna(how='all', axis=0)
+    # data = data.fillna(data.mean(axis=0))
 
     return data
 
 
-def feature_engineering(data):
+def feature_engineering(df, col_dict):
 	# DONE WITH CLINICAL/SCIENTIFIC KNOWLEDGE
 	# TODO: Develop features with higher predictive value based on knowledge
+    features = []
+    features += [get_time_features(df)]
 
-    return data
+    # Select columns:
+    # NOTE: Temporarily select some categories for testing for x
+    data = df[col_dict['CO-MORBIDITIES'] + col_dict['SIGNS AND SYMPTOMS AT HOSPITAL ADMISSION']]
+
+
+    # Select data
+    x = pd.concat([data] + features, axis=1)
+
+    # Quickly clean - #NOTE: Temp
+    x = x.dropna(how='all', axis=0)
+    x = x.fillna(0) 
+
+    return x
 
 
 def model_and_predict(x, y, test_size=0.2, val_size=0.2, hpo=False):
@@ -105,10 +123,10 @@ filename = r'COVID-19_NL_data.csv'
 filename_study = r'study_variablelist.csv'
 filename_daily = r'report_variablelist.csv'
 
-x, y = load_data(path+filename, path+filename_study, path+filename_daily)
-explore_and_describe(x)
+x, y, col_dict = load_data(path+filename, path+filename_study, path+filename_daily)
+# explore_and_describe(x)
 x = preprocess(x)
-x = feature_engineering(x)
+x = feature_engineering(x, col_dict)
 model, train_x, train_y, test_x, \
     test_y, test_y_hat, y_hat_cv = model_and_predict(x, y, test_size=0.20      )
 score_and_vizualize_prediction(model, test_x, test_y, test_y_hat, y_hat_cv)
