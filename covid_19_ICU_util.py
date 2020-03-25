@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 
 def calculate_outcome_measure(data):
     data['ICU_admitted'] = 0
@@ -39,6 +40,48 @@ def get_time_features(data):
     days_untreated = days_since_onset - days_in_hosp
     days_untreated[days_untreated < 0] = 0 
 
+    # Inotropes_days TODO: Inotropes_First_dt_1 Inotropes_Last_dt_1
+    
+    
     df_time_feats = pd.concat([age, days_since_onset, days_in_hosp, days_untreated], axis=1)
     df_time_feats.columns = ['age_yrs', 'days_since_onset', 'days_in_hosp', 'days_untreated']
+
+    df_time_feats = df_time_feats.fillna(-1) # TODO: check what best value is 
+
     return df_time_feats
+
+
+def transform_binary_features(data):
+    df = pd.DataFrame(data, copy=True)
+
+    # Fill missing values and invert, 
+    # such that 1 is positive, 0 is negative, -1 is missing
+    # NOTE: Might assume that unknown is likely equal to no (else would be tested?)
+    df_nan_mask = df.isna()
+    # Why does this return only nans??
+    # df = df.fillna(3) \ 
+    #        .subtract(df.values.max()-df.values.min()) \
+    #        .mul(-1) \
+    #        .astype(int)
+   
+    df = df.fillna(3)
+    df = df.subtract(df.values.max()-df.values.min())
+    df = df.mul(-1)
+    df = df.astype(int)
+
+    df[df_nan_mask] = None # NOTE:TODO: handle missing values later on
+
+    return df
+
+
+def plot_model_results(accs, aucs):
+    fig, ax = plt.subplots(2, 1)
+    ax[0].plot(accs)
+    ax[0].set_title('Accuracy // Avg: {:.3f}'.format(sum(accs)/max(len(accs), 1)))
+    ax[0].axhline(sum(accs)/max(len(accs), 1), color='r')
+    ax[0].set_ylim(0, 1)
+    ax[1].plot(aucs)
+    ax[1].set_title('ROC AUC// Avg: {:.3f}'.format(sum(aucs)/max(len(aucs), 1)))
+    ax[1].axhline(sum(aucs)/max(len(aucs), 1), color='r')
+    ax[1].set_ylim(0, 1)
+    return fig, ax
