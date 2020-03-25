@@ -77,6 +77,7 @@ def feature_selection(data, col_dict, field_types):
 
         TODO:  
             !! Check how the selected field here relate to the daily report features
+            !! Check if there are variables only measured in the ICU
             Normalize numeric features (also to 0 to 1?)
             Gradually add other type of fields
             Some form of feature selection? 
@@ -84,12 +85,13 @@ def feature_selection(data, col_dict, field_types):
 
     # Select data
     radio_fields = field_types['Variable name'][field_types['Field type'] == 'radio'].tolist()
-    numeric_fields = field_types['Variable name'][field_types['Field type'] == 'radio'].tolist()
+    numeric_fields = field_types['Variable name'][field_types['Field type'] == 'numeric'].tolist()
     exclude = ['Bleeding_sites', 'OTHER_intervention_1', 'same_id', 'facility_transfer', 
                'Add_Daily_CRF_1', 'ICU_Medium_Care_admission_1', 'Specify_Route_1', 'Corticosteroid_type_1'] + \
                col_dict['BLOOD ASSESSMENT ADMISSION'] + col_dict['BLOOD GAS ADMISSION'] # Exlude last two groups because it needs more calculations
 
     fields_to_include = [field for field in radio_fields + numeric_fields if field not in exclude]
+    # fields_to_include = [field for field in radio_fields if field not in exclude]
     fields_to_include = [field for field in fields_to_include if field in data.columns] #TODO: check why so many cols are missing
     df = data[fields_to_include]
     
