@@ -22,10 +22,13 @@ def load_data(path_data, path_study, path_daily):
     df_study = pd.read_csv(path_study, sep=';', header=0)
     df_daily = pd.read_csv(path_daily, sep=';', header=0)
 
+
     # Split all columns into categories
     cols = {}
     for step in df_study['Step name'].unique():
         cols[step] = df_study['Variable name'][df_study['Step name'] == step].tolist()
+
+    # _ = explore(df, cols)
 
     y = calculate_outcome_measure(df)
     
@@ -94,10 +97,10 @@ def score_and_vizualize_prediction(model, test_x, test_y, y_hat, y_hat_cv):
 
     # Requires fitted model, so not able to use plot_confusion_matrix for CV generated values
     disp = plot_confusion_matrix(model, test_x, test_y, cmap=plt.cm.Blues) 
-    disp.ax_.set_title('Predicted on test set')
+    disp.ax_.set_title('Predicted on test set // Chance level: {:2.1f}'.format(100*sum(test_y)/len(test_y)))
     plt.show()
 
-path = r'C:\Users\p70066129\Projects\COVID-19 CDSS\covid19_CDSS\Data\200324_COVID-19_NL/'
+path = r'C:\Users\p70066129\Projects\COVID-19 CDSS\covid19_CDSS\Data\200325_COVID-19_NL/'
 filename = r'COVID-19_NL_data.csv'
 filename_study = r'study_variablelist.csv'
 filename_daily = r'report_variablelist.csv'
@@ -107,7 +110,7 @@ explore_and_describe(x)
 x = preprocess(x)
 x = feature_engineering(x)
 model, train_x, train_y, test_x, \
-    test_y, test_y_hat, y_hat_cv = model_and_predict(x, y, test_size=0.20)
+    test_y, test_y_hat, y_hat_cv = model_and_predict(x, y, test_size=0.20      )
 score_and_vizualize_prediction(model, test_x, test_y, test_y_hat, y_hat_cv)
 
 print('done')

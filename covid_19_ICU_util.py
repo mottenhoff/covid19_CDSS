@@ -1,14 +1,9 @@
 import pandas as pd
+import numpy as np
 
 def calculate_outcome_measure(data):
-    y = pd.Series(data['Outcome'], copy=True)
-    
-    # Simple binary outcome
-    y[data['Outcome'] == 3] = 1  # ICU admission
-    y[data['Outcome'] != 3] = 0  # Non-ICU admission
-
-    # NOTE: TEMP creating different labels if not enough class representation
-    if y.unique().size <= 2:
-        y = pd.Series(data['Outcome'], copy=True).fillna(0)
-
+    data['ICU_admitted'] = 0
+    data['ICU_admitted'][data['Outcome'] == 3] = 1
+    data['ICU_admitted'][data['Admission_dt_icu_1'].notna()] = 1
+    y = pd.Series(data['ICU_admitted'], copy=True) 
     return y
