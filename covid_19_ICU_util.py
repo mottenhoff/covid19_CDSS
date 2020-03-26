@@ -2,13 +2,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-def avg(lst):
-    return sum(lst) / max(len(lst), 1)
-
-
 def calculate_outcome_measure(data):
-    # TODO: 
-
     data['ICU_admitted'] = 0
     data.loc[data['Outcome']==3, 'ICU_admitted'] = 1
     data.loc[data['Admission_dt_icu_1'].notna(), 'ICU_admitted'] = 1
@@ -75,34 +69,37 @@ def transform_binary_features(data):
     return df
 
 
-def plot_model_results(accs, aucs, acc_chance_level):
-    fig, ax = plt.subplots(2, 1)
-    ax[0].plot(accs)
-    ax[0].plot(acc_chance_level, 'r', linewidth=1)
-    ax[0].set_title('Accuracy // Avg: {:.3f} - Chance({:.3f})// confidence: 0.5'.format(avg(accs), avg(acc_chance_level)))
-    ax[0].axhline(sum(accs)/max(len(accs), 1), color='g', linewidth=1)
-    ax[0].legend(['Accuracy', 'Chance level', 'Average'], bbox_to_anchor=(1, 0.5))
-    ax[0].set_ylim(0, 1)
-    ax[1].plot(aucs)
-    ax[1].set_title('ROC AUC// Avg: {:.3f}'.format(sum(aucs)/max(len(aucs), 1)))
-    ax[1].axhline(sum(aucs)/max(len(aucs), 1), color='g', linewidth=1)
-    ax[1].set_ylim(0, 1)
+def plot_model_results(aucs):
+    fig, ax = plt.subplots(1, 1)
+    ax.plot(aucs)
+    ax.set_title('ROC AUC // Avg: {:.3f}'.format(sum(aucs)/max(len(aucs), 1)))
+    ax.axhline(sum(aucs)/max(len(aucs), 1), color='g', linewidth=1)
+    ax.axhline(.5, color='r', linewidth=1)
+    ax.set_ylim(0, 1)
+    ax.legend(['ROC AUC','Average',  'Chance level'], bbox_to_anchor=(1, 0.5))
+    fig.savefig('Performance_roc_auc.png')
     return fig, ax
 
 
-def plot_model_weights(coefs, intercepts):
+def plot_model_weights(coefs, intercepts, field_names):
     coefs = np.array(coefs).squeeze()
     intercepts = np.array(intercepts).squeeze()
 
-    avg_coefs = coefs.mean(axis=0)
+    avg_coefs = abs(coefs.mean(axis=0))
     var_coefs = coefs.var(axis=0)
 
-    x = np.arange(coefs.shape[1])
-    width = .5
+    idx_n_max_values = avg_coefs.argsort()[-10:]
+    n_bars = np.arange(coefs.shape[1])
+    bar_labels = [''] * n_bars.size
+    for idx in idx_n_max_values:
+        bar_labels[idx] = field_names[idx]
 
+    bar_width = .5 # bar width
     fig, ax = plt.subplots()
-    bars = ax.bar(x-width/2, abs(avg_coefs), width, yerr=var_coefs,label='Weight')
+    bars = ax.bar(n_bars, avg_coefs, bar_width, yerr=var_coefs,label='Weight')
+    ax.set_xticks(n_bars)
+    ax.set_xticklabels(bar_labels, rotation=90, fontdict={'fontsize': 6})
     ax.set_ylabel('Weight')
     ax.set_title('Average weight value')
-
+    fig.savefig('Average_weight_variance.png')
     return fig, ax

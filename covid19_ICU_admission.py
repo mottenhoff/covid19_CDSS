@@ -52,6 +52,9 @@ def preprocess(data, col_dict, field_types):
 		# Rescale - e.g. range [0, 1]
 		# Rotate  - All values such that higher value should be better outcome
     
+    # Remove samples with little information
+
+
     # Remove or fix erronous values:
     data['admission_dt'].replace('19-03-0202', '19-03-2020', inplace=True)
     data['age'].replace('14-9-2939', '14-9-1939', inplace=True)
@@ -129,7 +132,7 @@ def model_and_predict(x, y, test_size=0.2, val_size=0.2, hpo=False):
 
     # Model
     # NOTE: set random_state for consistent results
-    clf = LogisticRegression(penalty='l2', class_weight='balanced')#, random_state=0) # small dataset: solver='lbfgs'. multiclass: solver='lbgfs'
+    clf = LogisticRegression(penalty='l2', class_weight='balanced', random_state=0) # small dataset: solver='lbfgs'. multiclass: solver='lbgfs'
     # clf = LinearDiscriminantAnalysis(solver='eigen', shrinkage='auto')
     # clf = LinearDiscriminantAnalysis(solver='svd')
 
@@ -148,15 +151,15 @@ def score_and_vizualize_prediction(model, test_x, test_y, y_hat, rep):
     y_hat = y_hat[:, 1]
     
     # Metrics
-    acc_score = accuracy_score(test_y, y_hat.round())
     roc_auc = roc_auc_score(test_y, y_hat)
     
     # Confusion ma
-    disp = plot_confusion_matrix(model, test_x, test_y, cmap=plt.cm.Blues) 
-    disp.ax_.set_title('rep={:d} // ROC AUC: {:.3f}// Acc vs chance: {:.2f}/{:.2f}'.format(rep, roc_auc, acc_score, sum(test_y)/len(test_y)))
+    if rep<10:
+        disp = plot_confusion_matrix(model, test_x, test_y, cmap=plt.cm.Blues) 
+        disp.ax_.set_title('rep={:d} // ROC AUC: {:.3f}'.format(rep, roc_auc))
 
 
-    return acc_score, roc_auc
+    return roc_auc
 
 path = r'C:\Users\p70066129\Projects\COVID-19 CDSS\covid19_CDSS\Data\200325_COVID-19_NL/'
 filename = r'COVID-19_NL_data.csv'  # 
@@ -167,24 +170,20 @@ x, y, col_dict, field_types = load_data(path+filename, path+filename_study, path
 x = preprocess(x, col_dict, field_types)
 x = feature_selection(x, col_dict, field_types)
 
-accs = []
 aucs = []
 model_coefs = []
 model_intercepts = []
-acc_chance_level = []
-repetitions = 10
+repetitions = 100
 for i in range(repetitions):
     model, train_x, train_y, test_x, \
         test_y, test_y_hat = model_and_predict(x, y, test_size=0.20)
-    acc, auc, = score_and_vizualize_prediction(model, test_x, test_y, test_y_hat, i)
-    accs.append(acc)
+    auc = score_and_vizualize_prediction(model, test_x, test_y, test_y_hat, i)
     aucs.append(auc)
-    acc_chance_level.append((train_y.size-train_y.sum())/max(train_y.size, 1))
     model_intercepts.append(model.intercept_)
     model_coefs.append(model.coef_)
 
-fig, ax = plot_model_results(accs, aucs, acc_chance_level)
-fig, ax = plot_model_weights(model_coefs, model_intercepts)
+fig, ax = plot_model_results(aucs)
+fig, ax = plot_model_weights(model_coefs, model_intercepts, x.columns)
 plt.show()
 print('done')
 
