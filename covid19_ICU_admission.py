@@ -1,3 +1,9 @@
+'''
+@author: Maarten Ottenhoff
+@email: m.ottenhoff@maastrichuniversity
+
+Please do not use without permission
+'''
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -17,6 +23,7 @@ from covid_19_ICU_util import calculate_outcome_measure
 from covid_19_ICU_util import get_time_features
 from covid_19_ICU_util import transform_binary_features
 from covid_19_ICU_util import plot_model_results
+from covid_19_ICU_util import plot_model_weights
 
 def load_data(path_data, path_study, path_daily):
 	# Combine all data in single matrix (if possible)
@@ -46,7 +53,8 @@ def preprocess(data, col_dict, field_types):
 		# Rotate  - All values such that higher value should be better outcome
     
     # Remove or fix erronous values:
-    data['admission_dt'].replace('19-03-0202', '19-03-2020')
+    data['admission_dt'].replace('19-03-0202', '19-03-2020', inplace=True)
+    data['age'].replace('14-9-2939', '14-9-1939', inplace=True)
 
     # Make radiobutton answers binary       TODO: Remove some fields that are not binary (see feature_selection)
     radio_fields = field_types['Variable name'][field_types['Field type'] == 'radio'].tolist()
@@ -95,8 +103,12 @@ def feature_selection(data, col_dict, field_types):
     fields_to_include = [field for field in fields_to_include if field in data.columns] #TODO: check why so many cols are missing
     df = data[fields_to_include]
     
+
     df = df.dropna(how='all', axis=0)
     df = df.fillna(0) # TODO: -1 or 0??
+
+    cols_to_drop = df.columns[(df.nunique() <= 1).values] # Find colums with a single or no values
+    df = df.drop(labels=cols_to_drop, axis=1)
 
     features = feature_engineering(data, df, col_dict)
 
@@ -109,7 +121,7 @@ def model_and_predict(x, y, test_size=0.2, val_size=0.2, hpo=False):
     # hpo = hyper-parameter optimization
 
     # Train/test-split
-    train_x, test_x, train_y, test_y = train_test_split(x, y, test_size=test_size)
+    train_x, test_x, train_y, test_y = train_test_split(x, y, test_size=test_size, stratify=y) # stratify == simila y distribution in both sets
 
     if hpo:
         train_x, val_x, train_y, val_y = train_test_split(x, y, val_size=val_size)
@@ -119,33 +131,35 @@ def model_and_predict(x, y, test_size=0.2, val_size=0.2, hpo=False):
     # NOTE: set random_state for consistent results
     clf = LogisticRegression(penalty='l2', class_weight='balanced')#, random_state=0) # small dataset: solver='lbfgs'. multiclass: solver='lbgfs'
     # clf = LinearDiscriminantAnalysis(solver='eigen', shrinkage='auto')
+    # clf = LinearDiscriminantAnalysis(solver='svd')
+
     clf.fit(train_x, train_y)
     
     # Predict
-    test_y_hat = clf.predict(test_x)
-    y_hat_cv = cross_val_predict(clf, x, y, cv=LeaveOneOut()) # Default folds = 5, LeaveOnOut
+    test_y_hat = clf.predict_proba(test_x)
 
-    # NOTE: this results two different predictions that can vary: y_hat_cv and test_y_hat
-    return clf, train_x, train_y, test_x, test_y, test_y_hat, y_hat_cv
+    return clf, train_x, train_y, test_x, test_y, test_y_hat
 
-def score_and_vizualize_prediction(model, test_x, test_y, y_hat, y_hat_cv, rep):
+def score_and_vizualize_prediction(model, test_x, test_y, y_hat, rep):
 	# Compare to common sense baseline (e.g. current probability is 25% chance for ICU admission)
     # common_sense_baseline # TODO: Implement
 
+    # select P[y=1]
+    y_hat = y_hat[:, 1]
+    
     # Metrics
-    acc_score = accuracy_score(test_y, y_hat)
+    acc_score = accuracy_score(test_y, y_hat.round())
     roc_auc = roc_auc_score(test_y, y_hat)
     
+    # Confusion ma
     disp = plot_confusion_matrix(model, test_x, test_y, cmap=plt.cm.Blues) 
     disp.ax_.set_title('rep={:d} // ROC AUC: {:.3f}// Acc vs chance: {:.2f}/{:.2f}'.format(rep, roc_auc, acc_score, sum(test_y)/len(test_y)))
 
+
     return acc_score, roc_auc
 
-
-
-
 path = r'C:\Users\p70066129\Projects\COVID-19 CDSS\covid19_CDSS\Data\200325_COVID-19_NL/'
-filename = r'COVID-19_NL_data.csv'
+filename = r'COVID-19_NL_data.csv'  # 
 filename_study = r'study_variablelist.csv'
 filename_daily = r'report_variablelist.csv'
 
@@ -155,15 +169,22 @@ x = feature_selection(x, col_dict, field_types)
 
 accs = []
 aucs = []
+model_coefs = []
+model_intercepts = []
+acc_chance_level = []
 repetitions = 10
 for i in range(repetitions):
     model, train_x, train_y, test_x, \
-        test_y, test_y_hat, y_hat_cv = model_and_predict(x, y, test_size=0.20)
-    acc, auc = score_and_vizualize_prediction(model, test_x, test_y, test_y_hat, y_hat_cv, i)
+        test_y, test_y_hat = model_and_predict(x, y, test_size=0.20)
+    acc, auc, = score_and_vizualize_prediction(model, test_x, test_y, test_y_hat, i)
     accs.append(acc)
     aucs.append(auc)
+    acc_chance_level.append((train_y.size-train_y.sum())/max(train_y.size, 1))
+    model_intercepts.append(model.intercept_)
+    model_coefs.append(model.coef_)
 
-fig, ax = plot_model_results(accs, aucs)
+fig, ax = plot_model_results(accs, aucs, acc_chance_level)
+fig, ax = plot_model_weights(model_coefs, model_intercepts)
 plt.show()
 print('done')
 
