@@ -3,9 +3,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 def calculate_outcome_measure(data):
+    # TODO: 
+
     data['ICU_admitted'] = 0
-    data['ICU_admitted'][data['Outcome'] == 3] = 1
-    data['ICU_admitted'][data['Admission_dt_icu_1'].notna()] = 1
+    data.loc[data['Outcome']==3, 'ICU_admitted'] = 1
+    data.loc[data['Admission_dt_icu_1'].notna(), 'ICU_admitted'] = 1
     y = pd.Series(data['ICU_admitted'], copy=True) 
     return y
 
