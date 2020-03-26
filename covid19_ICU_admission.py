@@ -20,6 +20,7 @@ from sklearn.metrics import plot_confusion_matrix
 from sklearn.metrics import roc_auc_score
 
 from covid_19_ICU_util import calculate_outcome_measure
+from covid_19_ICU_util import fix_single_errors
 from covid_19_ICU_util import get_time_features
 from covid_19_ICU_util import transform_binary_features
 from covid_19_ICU_util import plot_model_results
@@ -55,14 +56,12 @@ def preprocess(data, col_dict, field_types):
 
 
     # Remove or fix erronous values:
-    data['admission_dt'].replace('19-03-0202', '19-03-2020', inplace=True)
-    data['age'].replace('14-9-2939', '14-9-1939', inplace=True)
-
+    data = fix_single_errors(data)
+   
     # Make radiobutton answers binary       TODO: Remove some fields that are not binary (see feature_selection)
     radio_fields = field_types['Variable name'][field_types['Field type'] == 'radio'].tolist()
     radio_fields = [field for field in radio_fields if field in data.columns]
     data[radio_fields] = transform_binary_features(data[radio_fields])
-
     return data
 
 
@@ -143,10 +142,6 @@ def model_and_predict(x, y, test_size=0.2, val_size=0.2, hpo=False):
     return clf, train_x, train_y, test_x, test_y, test_y_hat
 
 def score_and_vizualize_prediction(model, test_x, test_y, y_hat, rep):
-	# Compare to common sense baseline (e.g. current probability is 25% chance for ICU admission)
-    # common_sense_baseline # TODO: Implement
-
-    # select P[y=1]
     y_hat = y_hat[:, 1]
     
     # Metrics
@@ -160,7 +155,7 @@ def score_and_vizualize_prediction(model, test_x, test_y, y_hat, rep):
 
     return roc_auc
 
-path = r'C:\Users\p70066129\Projects\COVID-19 CDSS\covid19_CDSS\Data\200325_COVID-19_NL/'
+path = r'C:\Users\p70066129\Projects\COVID-19 CDSS\covid19_CDSS\Data\200326_COVID-19_NL/'
 filename = r'COVID-19_NL_data.csv'  # 
 filename_study = r'study_variablelist.csv'
 filename_daily = r'report_variablelist.csv'

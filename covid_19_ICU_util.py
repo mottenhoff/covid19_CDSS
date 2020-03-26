@@ -3,20 +3,43 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 def calculate_outcome_measure(data):
+    ''' Generated outcome measure
+    Goal: predict ICU admission at hospital admissions (presentation) 
+    
+    Variables used and their meaning:
+    Admission_dt_icu_1 = ICU admission at hospital presentation (immediate)
+    Admission_dt_icu   = ICU admissions during hospitalization --> NOTE: only in daily reports?
+    Outcome            = ICU admission within 3 weeks of admission
+
+    als dept == 3 --> ICU daily report
+    
+    '''
+    
     data['ICU_admitted'] = 0
+    
     data.loc[data['Outcome']==3, 'ICU_admitted'] = 1
     data.loc[data['Admission_dt_icu_1'].notna(), 'ICU_admitted'] = 1
-    
+
+
     x = data.drop(['Outcome', 'Admission_dt_icu_1'], axis=1)
     y = pd.Series(data['ICU_admitted'], copy=True)
 
     return x, y
 
 
+def fix_single_errors(data):
+    data['admission_dt'].replace('19-03-0202', '19-03-2020', inplace=True)
+    data['age'].replace('14-9-2939', '14-9-1939', inplace=True)
+    data['specify_Acute_Respiratory_Distress_Syndrome_1_1'].replace('Covid-19 associated', None, inplace=True)
+    data['specify_Acute_Respiratory_Distress_Syndrome_1_1'].replace('Hypoxomie wv invasieve beademing', None, inplace=True)
+    data['oxygentherapy_1'].replace(-98, None, inplace=True)
+
+    return data
+
+
 def get_time_features(data):
     '''
     missing data = 11-11-1111
-    TODO: admission_dt == Error  entry: 120006 
     TODO: Check difference hosp_admission and Outcome_dt
     
     date_cols = ['Enrolment_date', 'age', 'onset_dt', 'admission_dt', 'admission_facility_dt', 'Admission_dt_icu_1', 'Admission_dt_mc_1', 'Outcome_dt']
@@ -63,11 +86,11 @@ def transform_binary_features(data):
     df_nan_mask = df.isna()
    
     df = df.fillna(3)
+    df = df.astype(int)
     df = df.subtract(df.values.max()-df.values.min())
     df = df.mul(-1)
-    df = df.astype(int)
 
-    df[df_nan_mask] = None # NOTE:TODO: handle missing values later on
+    df[df_nan_mask] = None # NOTE:TODO: handle missing values later on in a central place
 
     return df
 
@@ -75,7 +98,8 @@ def transform_binary_features(data):
 def plot_model_results(aucs):
     fig, ax = plt.subplots(1, 1)
     ax.plot(aucs)
-    ax.set_title('ROC AUC // Avg: {:.3f}'.format(sum(aucs)/max(len(aucs), 1)))
+    ax.set_title('Logistic regression - ICU admission at hospital presentation\nROC AUC // Avg: {:.3f}' \
+                    .format(sum(aucs)/max(len(aucs), 1)))
     ax.axhline(sum(aucs)/max(len(aucs), 1), color='g', linewidth=1)
     ax.axhline(.5, color='r', linewidth=1)
     ax.set_ylim(0, 1)
@@ -103,6 +127,6 @@ def plot_model_weights(coefs, intercepts, field_names):
     ax.set_xticks(n_bars)
     ax.set_xticklabels(bar_labels, rotation=90, fontdict={'fontsize': 6})
     ax.set_ylabel('Weight')
-    ax.set_title('Average weight value')
+    ax.set_title('Logistic regression - ICU admission at hospital presentation\nAverage weight value')
     fig.savefig('Average_weight_variance.png')
     return fig, ax
