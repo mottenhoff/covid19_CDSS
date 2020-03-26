@@ -42,8 +42,7 @@ def load_data(path_data, path_study, path_daily):
 
     field_types = pd.concat([df_daily[['Field type', 'Variable name']], df_study[['Field type', 'Variable name']]], axis=0)
 
-    y = calculate_outcome_measure(df)
-    x = df
+    x, y = calculate_outcome_measure(df)
     return x, y, cols, field_types
     
 def preprocess(data, col_dict, field_types):

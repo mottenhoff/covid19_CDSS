@@ -6,8 +6,11 @@ def calculate_outcome_measure(data):
     data['ICU_admitted'] = 0
     data.loc[data['Outcome']==3, 'ICU_admitted'] = 1
     data.loc[data['Admission_dt_icu_1'].notna(), 'ICU_admitted'] = 1
-    y = pd.Series(data['ICU_admitted'], copy=True) 
-    return y
+    
+    x = data.drop(['Outcome', 'Admission_dt_icu_1'], axis=1)
+    y = pd.Series(data['ICU_admitted'], copy=True)
+
+    return x, y
 
 
 def get_time_features(data):
