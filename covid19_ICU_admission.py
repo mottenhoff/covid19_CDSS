@@ -14,20 +14,30 @@ from sklearn.model_selection import cross_val_predict
 from sklearn.model_selection import LeaveOneOut
 from sklearn.linear_model import LogisticRegression
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import plot_confusion_matrix
 from sklearn.metrics import roc_auc_score
 
+from covid_19_ICU_util import select_baseline_data
 from covid_19_ICU_util import calculate_outcome_measure
 from covid_19_ICU_util import fix_single_errors
-from covid_19_ICU_util import get_time_features
 from covid_19_ICU_util import transform_binary_features
+from covid_19_ICU_util import transform_categorical_features
+from covid_19_ICU_util import transform_numeric_features
+from covid_19_ICU_util import transform_time_features
+from covid_19_ICU_util import transform_string_features
 from covid_19_ICU_util import plot_model_results
 from covid_19_ICU_util import plot_model_weights
 
 def load_data(path_data, path_study, path_daily):
-	# Combine all data in single matrix (if possible)
+	# TODO: Select dummy variables (are currently excluded):
+    #           e.g.: Ethnic group = ethnic_group#Arab / ethnic_group#Black etc...
+
+    # Combine all data in single matrix (if possible)
 	# Set correct data types
     
     # Load data
@@ -43,7 +53,13 @@ def load_data(path_data, path_study, path_daily):
 
     field_types = pd.concat([df_daily[['Field type', 'Variable name']], df_study[['Field type', 'Variable name']]], axis=0)
 
+
+    # Remove or fix erronous values:
+    df = fix_single_errors(df)
+
     x, y = calculate_outcome_measure(df)
+    x = select_baseline_data(x, cols)
+
     return x, y, cols, field_types
     
 def preprocess(data, col_dict, field_types):
@@ -52,33 +68,42 @@ def preprocess(data, col_dict, field_types):
 		# Rescale - e.g. range [0, 1]
 		# Rotate  - All values such that higher value should be better outcome
     
-    # Remove samples with little information
+    # TODO: Remove samples with little information
+    is_in_columns = lambda df: [field for field in df if field in data.columns]
 
-
-    # Remove or fix erronous values:
-    data = fix_single_errors(data)
-   
-    # Make radiobutton answers binary       TODO: Remove some fields that are not binary (see feature_selection)
-    radio_fields = field_types['Variable name'][field_types['Field type'] == 'radio'].tolist()
-    radio_fields = [field for field in radio_fields if field in data.columns]
+    # Binary features --> Most radio button fields
+    radio_fields = is_in_columns(field_types['Variable name'][field_types['Field type'] == 'radio'].tolist())
     data[radio_fields] = transform_binary_features(data[radio_fields])
+
+    # Categorical --> Some radio button fields, dropdown fields, checkbox fields
+    category_fields = is_in_columns(field_types['Variable name'][field_types['Field type'].isin(['dropdown', 'checkbox'])].tolist())
+    data = transform_categorical_features(data, category_fields, radio_fields) # NOTE: categorical radio fields are selected in util
+    
+    # Numeric --> All fields same unit and between 0 and 1
+    numeric_fields = is_in_columns(field_types['Variable name'][field_types['Field type'] == 'numeric'].tolist())
+    data = transform_numeric_features(data, numeric_fields)
+    
+    data = transform_time_features(data)
+    
+    string_fields = field_types['Variable name'][field_types['Field type'] == 'string'].tolist()
+    data = transform_string_features(data, string_fields)
+    
     return data
 
 
-def feature_engineering(data, df, col_dict):
+def add_engineered_features(data, col_dict):
 	# DONE WITH CLINICAL/SCIENTIFIC KNOWLEDGE
 	# TODO: Develop features with higher predictive value based on knowledge
-    features = []
-    features += [get_time_features(data)]
 
     # Dimensionality reduction TODO: ADD as features
     n_components = 10
     pca = PCA(n_components=n_components)
-    princ_comps = pd.DataFrame(pca.fit_transform(df)) # TODO: Make better missing value computation
+    princ_comps = pd.DataFrame(pca.fit_transform(data)) # TODO: Make better missing value computation
     princ_comps.columns = ['pc_{:d}'.format(i) for i in range(n_components)]
-    features += [princ_comps]
 
-    return pd.concat(features, axis=1)
+    data = pd.concat([data, princ_comps], axis=1)
+
+    return data
 
 def feature_selection(data, col_dict, field_types):
     ''' To start:
@@ -91,31 +116,28 @@ def feature_selection(data, col_dict, field_types):
             Gradually add other type of fields
             Some form of feature selection? 
     ''' 
-
-    # Select data
-    radio_fields = field_types['Variable name'][field_types['Field type'] == 'radio'].tolist()
-    numeric_fields = field_types['Variable name'][field_types['Field type'] == 'numeric'].tolist()
     exclude = ['Bleeding_sites', 'OTHER_intervention_1', 'same_id', 'facility_transfer', 
-               'Add_Daily_CRF_1', 'ICU_Medium_Care_admission_1', 'Specify_Route_1', 'Corticosteroid_type_1'] + \
-               col_dict['BLOOD ASSESSMENT ADMISSION'] + col_dict['BLOOD GAS ADMISSION'] # Exlude last two groups because it needs more calculations
+               'Add_Daily_CRF_1', 'ICU_Medium_Care_admission_1', 'Specify_Route_1', 'Corticosteroid_type_1']
+               
+    data = data.replace(-1, None)
+    data = data.dropna(how='all', axis=0)
+    data = data.fillna(0) # TODO: TODO: TODO: Do this smarter! currently also a lot of -1, which is also missing
 
-    fields_to_include = [field for field in radio_fields + numeric_fields if field not in exclude]
-    # fields_to_include = [field for field in radio_fields if field not in exclude]
-    fields_to_include = [field for field in fields_to_include if field in data.columns] #TODO: check why so many cols are missing
-    df = data[fields_to_include]
+    cols_to_drop  = [col for col in data.columns if col in exclude] + \
+                    data.columns[(data.nunique() <= 1).values].to_list() # Find colums with a single or no values    
+    data = data.drop(cols_to_drop, axis=1)
+
+    print('{} columns left for feature_engineering and modelling'.format(data.columns.size))
+
+    data = add_engineered_features(data, col_dict)
+
+
+    try:
+        data.to_excel('processed_data.xlsx')
+    except Exception:
+        print('Excel file still opened, skipping...')
     
-
-    df = df.dropna(how='all', axis=0)
-    df = df.fillna(0) # TODO: -1 or 0??
-
-    cols_to_drop = df.columns[(df.nunique() <= 1).values] # Find colums with a single or no values
-    df = df.drop(labels=cols_to_drop, axis=1)
-
-    features = feature_engineering(data, df, col_dict)
-
-    x = pd.concat([df, features], axis=1)
-
-    return x
+    return data
 
 
 def model_and_predict(x, y, test_size=0.2, val_size=0.2, hpo=False):
@@ -130,9 +152,13 @@ def model_and_predict(x, y, test_size=0.2, val_size=0.2, hpo=False):
 
     # Model
     # NOTE: set random_state for consistent results
-    clf = LogisticRegression(penalty='l2', class_weight='balanced', random_state=0) # small dataset: solver='lbfgs'. multiclass: solver='lbgfs'
+    clf = LogisticRegression(solver='lbfgs', penalty='l2', class_weight='balanced', 
+                             max_iter=200, random_state=0) # small dataset: solver='lbfgs'. multiclass: solver='lbgfs'
     # clf = LinearDiscriminantAnalysis(solver='eigen', shrinkage='auto')
     # clf = LinearDiscriminantAnalysis(solver='svd')
+    # clf = SVC(probability=True)
+    # clf = RandomForestClassifier()
+    # clf = GradientBoostingClassifier()
 
     clf.fit(train_x, train_y)
     
@@ -151,7 +177,6 @@ def score_and_vizualize_prediction(model, test_x, test_y, y_hat, rep):
     if rep<10:
         disp = plot_confusion_matrix(model, test_x, test_y, cmap=plt.cm.Blues) 
         disp.ax_.set_title('rep={:d} // ROC AUC: {:.3f}'.format(rep, roc_auc))
-
 
     return roc_auc
 
