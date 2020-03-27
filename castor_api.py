@@ -54,23 +54,57 @@ class Castor_api:
     
     def request(self,request):
         request_uri = self.base_url + self.api_request_path + request
-        response = requests.get(request_uri,
-                                 headers={'Authorization': 'Bearer ' + self.token})
-        return response
+        try:
+            response = requests.get(request_uri,
+                                     headers={'Authorization': 'Bearer ' + self.token})
+            response.raise_for_status()
+        except requests.exceptions.HTTPError as errh:
+            print ("Http Error:",errh)
+        except requests.exceptions.ConnectionError as errc:
+            print ("Error Connecting:",errc)
+        except requests.exceptions.Timeout as errt:
+            print ("Timeout Error:",errt)
+        except requests.exceptions.RequestException as err:
+            print ("OOps: Something Else",err)
+        if response:
+            return response
+        else:
+            raise NameError('error with api request ('+request+'): '+response.text)
+    
+    def request_json(self,request):
+        response = self.request(request)
+        response_dict = response.json()
+        # pagination: sometimes multiple entries are found; combine these
+        if 'page' in response_dict and '_embedded' in response_dict:
+            response_dict2 = response_dict
+            while response_dict2['page'] < response_dict2['page_count']:
+                request_uri = response_dict2['_links']['next']['href']
+                response = requests.get(request_uri,
+                                         headers={'Authorization': 'Bearer ' + self.token})
+                response_dict2 = response.json()
+                for key in response_dict2['_embedded'].keys():
+                    response_dict['_embedded'][key] = response_dict['_embedded'][key] + response_dict2['_embedded'][key]
+        return response_dict
 
     def request_study_id(self,study_name_input):
-        response = self.request('/study')
-        response_dict = response.json()
+        response_dict = self.request_json('/study')
         study_id = [s['study_id'] for s in response_dict['_embedded']['study'] if study_name_input in s['name']]
         if len(study_id)==1:
             return study_id
         else:
             print('multiple studies found while searching for \''+study_name_input+'\'')
             return study_id
+        
+    def request_study_records(self,study_id):
+        response_dict = self.request_json('/study/'+study_id+'/record')
+        if '_embedded' in response_dict and 'records' in response_dict['_embedded']:
+            response_dict = response_dict['_embedded']['records']
+            return response_dict
+        else: 
+            return None
     
     def request_study_export_structure(self,study_id):
         response = self.request('/study/'+study_id+'/export/structure')
-        print(response.text)
         data = process_table(response.text)
         return data
     
