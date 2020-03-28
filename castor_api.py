@@ -1,4 +1,4 @@
-import json, requests, os.path, numpy, io, pandas
+import json, requests, os.path, io, pandas
 
 def process_table(txt):
     f_handler = io.StringIO(txt) # created to enable use of read_table
