@@ -7,7 +7,7 @@ Created on Thu Mar 26 21:51:39 2020
 
 @author: wouterpotters
 """
-import time, statistics, imp, os, site, sys
+import time, statistics, os, site, sys
 site.addsitedir('./../') # add directory to path to enable import of castor_api
 from castor_api import Castor_api
 
@@ -46,7 +46,8 @@ first_update = True
 
 while True:
     try:
-        c = Castor_api('/Users/wouterpotters/Desktop/') # e.g. in user dir outside of GIT repo
+        # renew session with api to avoid timeout errors
+        c = Castor_api(location_castor_slack_api_data) # e.g. in user dir outside of GIT repo
         records = c.request_study_records(study_id)
         institutes = [x['_embedded']['institute']['name'] for x in records if x['_embedded']['institute']['name'] != 'Test Institute'  and x['archived'] == False]
         institutesUnique = []
