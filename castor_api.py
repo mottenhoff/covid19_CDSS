@@ -1,4 +1,11 @@
-import json, requests, os.path, io, pandas
+import io
+import json
+import os.path
+
+import pandas
+import requests
+
+# import json, requests, os.path, io, pandas
 
 def process_table(txt):
     f_handler = io.StringIO(txt) # created to enable use of read_table
@@ -32,13 +39,14 @@ class Castor_api:
 
     token = ''
 
-    def __init__(self,folder_with_client_and_secret):
+    def __init__(self, folder_with_client_and_secret):
         # print('getting token from Castor using client and secret....  ')
         if os.path.isdir(folder_with_client_and_secret):
             # load client id & secret for current user from folder
-            with open(folder_with_client_and_secret + 'client', 'r') as file:
+            find_file = lambda name: [file for file in os.listdir(folder_with_client_and_secret) if name in file][0]
+            with open(folder_with_client_and_secret + find_file('client'), 'r') as file:
                 client_id = file.read()
-            with open(folder_with_client_and_secret + 'secret', 'r') as file:
+            with open(folder_with_client_and_secret + find_file('secret'), 'r') as file:
                 client_secret = file.read()
             # using the client and secret, get an access token
             # this castor api token can usually be used for up to 18000 seconds, after which it stops working 
@@ -52,7 +60,7 @@ class Castor_api:
         else:
             raise NameError('castor_api expects 1 input argument; a folder with a \'secret\' and a \'client\' file containing the client and secret as defined in your castor profile on https://data.castoredc.com/')
     
-    def request(self,request):
+    def request(self, request):
         request_uri = self.base_url + self.api_request_path + request
         try:
             response = requests.get(request_uri,
@@ -65,7 +73,7 @@ class Castor_api:
         except requests.exceptions.Timeout as errt:
             print ("Timeout Error:",errt)
         except requests.exceptions.RequestException as err:
-            print ("OOps: Something Else",err)
+            print ("Oops: Something Else",err)
         if response:
             return response
         else:

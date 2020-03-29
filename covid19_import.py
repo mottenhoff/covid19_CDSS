@@ -9,16 +9,15 @@ from castor_api import Castor_api
 # TODO: free text fields are now ignored
 # TODO: filter on TEST institution rather than on patient 000001. (if possible)
 
-def import_data():
+def import_data(path_to_api_creds):
     ### STEP 0: connect to API
     
     # input: private folder where client & secret files (no extension, 1 string only per file) from castor are saved by the user
     # see also: https://helpdesk.castoredc.com/article/124-application-programming-interface-api
-    c = Castor_api('/Users/wouterpotters/Desktop/') # e.g. in user dir outside of GIT repo
+    c = Castor_api(path_to_api_creds) # e.g. in user dir outside of GIT repo
     
     # get study ID for COVID study
     study_id = c.request_study_id('COVID')[0] 
-    
     
     ### STEP 1: collect data from study
     
