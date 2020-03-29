@@ -38,9 +38,9 @@ from covid19_ICU_util import plot_model_weights
 
 
 def load_data_api(path_credentials):
-    df, df_struct, df_report, df_report_struct = import_data(path_credentials)
+    df, df_structure, df_report, df_report_structure = import_data(path_credentials)
 
-    return df, df_structure, df_report, df_report_structure
+    return df, df_report
 
 
 def load_data(path_data, path_study, path_daily, from_file=True):
