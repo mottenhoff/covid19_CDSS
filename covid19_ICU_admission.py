@@ -36,11 +36,9 @@ from covid19_ICU_util import plot_model_results
 from covid19_ICU_util import plot_model_weights
 
 
-PATH_CREDENTIALS = r'./covid19_CDSS/castor_api_creds/'
 
-def load_data_api(from_folder):
-    api = Castor_api(from_folder)
-    df, df_struct, df_report, df_report_struct = import_data(PATH_CREDENTIALS)
+def load_data_api(path_credentials):
+    df, df_struct, df_report, df_report_struct = import_data(path_credentials)
 
     return df, df_structure, df_report, df_report_structure
 
@@ -192,14 +190,13 @@ def score_and_vizualize_prediction(model, test_x, test_y, y_hat, rep):
 
     return roc_auc
 
+path_creds = r'./covid19_CDSS/castor_api_creds/'
 path = r'C:\Users\p70066129\Projects\COVID-19 CDSS\covid19_CDSS\Data\200329_COVID-19_NL/'
 filename = r'COVID-19_NL_data.csv'  # 
 filename_study = r'study_variablelist.csv'
 filename_daily = r'report_variablelist.csv'
 
-
-load_data_api(PATH_CREDENTIALS)
-
+df, df_report = load_data_api(path_creds)
 
 x, y, col_dict, field_types = load_data(path+filename, path+filename_study, path+filename_daily)
 x = preprocess(x, col_dict, field_types)
