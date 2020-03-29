@@ -84,6 +84,7 @@ def fix_single_errors(data):
     data['specify_Acute_Respiratory_Distress_Syndrome_1_1'].replace('Covid-19 associated', None, inplace=True)
     data['specify_Acute_Respiratory_Distress_Syndrome_1_1'].replace('Hypoxomie wv invasieve beademing', None, inplace=True)
     data['oxygentherapy_1'].replace(-98, None, inplace=True)
+    data['Smoking'].replace(-99, None, inplace=True)
     return data
 
 

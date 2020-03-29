@@ -1,13 +1,12 @@
 '''
 @author: Maarten Ottenhoff
-@email: m.ottenhoff@maastrichuniversity
+@email: m.ottenhoff@maastrichtuniversity.nl
 
 Please do not use without permission
 '''
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-
 from sklearn.decomposition import PCA
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import cross_val_predict
@@ -22,18 +21,31 @@ from sklearn.metrics import confusion_matrix
 from sklearn.metrics import plot_confusion_matrix
 from sklearn.metrics import roc_auc_score
 
-from covid_19_ICU_util import select_baseline_data
-from covid_19_ICU_util import calculate_outcome_measure
-from covid_19_ICU_util import fix_single_errors
-from covid_19_ICU_util import transform_binary_features
-from covid_19_ICU_util import transform_categorical_features
-from covid_19_ICU_util import transform_numeric_features
-from covid_19_ICU_util import transform_time_features
-from covid_19_ICU_util import transform_string_features
-from covid_19_ICU_util import plot_model_results
-from covid_19_ICU_util import plot_model_weights
+from castor_api import Castor_api
+from covid19_import import import_data
 
-def load_data(path_data, path_study, path_daily):
+from covid19_ICU_util import select_baseline_data
+from covid19_ICU_util import calculate_outcome_measure
+from covid19_ICU_util import fix_single_errors
+from covid19_ICU_util import transform_binary_features
+from covid19_ICU_util import transform_categorical_features
+from covid19_ICU_util import transform_numeric_features
+from covid19_ICU_util import transform_time_features
+from covid19_ICU_util import transform_string_features
+from covid19_ICU_util import plot_model_results
+from covid19_ICU_util import plot_model_weights
+
+
+PATH_CREDENTIALS = r'./covid19_CDSS/castor_api_creds/'
+
+def load_data_api(from_folder):
+    api = Castor_api(from_folder)
+    df, df_struct, df_report, df_report_struct = import_data(PATH_CREDENTIALS)
+
+    return df, df_structure, df_report, df_report_structure
+
+
+def load_data(path_data, path_study, path_daily, from_file=True):
 	# TODO: Select dummy variables (are currently excluded):
     #           e.g.: Ethnic group = ethnic_group#Arab / ethnic_group#Black etc...
 
@@ -180,10 +192,14 @@ def score_and_vizualize_prediction(model, test_x, test_y, y_hat, rep):
 
     return roc_auc
 
-path = r'C:\Users\p70066129\Projects\COVID-19 CDSS\covid19_CDSS\Data\200326_COVID-19_NL/'
+path = r'C:\Users\p70066129\Projects\COVID-19 CDSS\covid19_CDSS\Data\200329_COVID-19_NL/'
 filename = r'COVID-19_NL_data.csv'  # 
 filename_study = r'study_variablelist.csv'
 filename_daily = r'report_variablelist.csv'
+
+
+load_data_api(PATH_CREDENTIALS)
+
 
 x, y, col_dict, field_types = load_data(path+filename, path+filename_study, path+filename_daily)
 x = preprocess(x, col_dict, field_types)
