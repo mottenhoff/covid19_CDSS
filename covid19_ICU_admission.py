@@ -23,7 +23,7 @@ from sklearn.metrics import roc_auc_score
 
 from castor_api import Castor_api
 from covid19_import import import_data
-
+from covid19_ICU_util import merge_study_and_report
 from covid19_ICU_util import select_baseline_data
 from covid19_ICU_util import calculate_outcome_measure
 from covid19_ICU_util import fix_single_errors
@@ -38,40 +38,73 @@ from covid19_ICU_util import plot_model_weights
 
 
 def load_data_api(path_credentials):
-    df, df_structure, df_report, df_report_structure = import_data(path_credentials)
+    df_study, df_structure, df_report, df_report_structure = import_data(path_credentials)
 
-    return df, df_report
+    # Select useful columns
+    var_columns = ['Form Collection Name', 'Form Name', 'Field Variable Name', 'Field Label', 'Field Type']
+    df_structure = df_structure.loc[:, var_columns]
+    df_report_structure = df_report_structure.loc[:, var_columns]
+    df_structure.columns = ['Phase name', 'Step name', 'Variable name', 'Field label', 'Field type']
+    df_report_structure.columns = ['Phase name', 'Step name', 'Variable name', 'Field label', 'Field type']
+
+    df_study = df_study.reset_index()
+    df_report = df_report.reset_index(drop=True)
+
+    df_study = df_study.rename({'Record ID': "Record Id"}, axis=1)
+    df_report = df_report.rename({'Record ID': "Record Id"}, axis=1)
+
+    return df_study, df_report, df_structure, df_report_structure
+
+def load_data_csv(path_study, path_report, path_study_vars, path_report_vars):
+    df_study = pd.read_csv(path_study, sep=';', header=0)
+    df_report = pd.read_csv(path_report, sep=';', header=0)
+    df_study_vars = pd.read_csv(path_study_vars, sep=';', header=0)
+    df_report_vars = pd.read_csv(path_report_vars, sep=';', header=0)
+
+    var_columns = ['Phase name', 'Step name', 'Field type', 'Variable name', 'Field label']
+    df_study_vars = df_study_vars.loc[:, var_columns]
+    df_report_vars = df_report_vars.loc[:, var_columns]
+
+    return df_study, df_report, df_study_vars, df_report_vars
 
 
-def load_data(path_data, path_study, path_daily, from_file=True):
-	# TODO: Select dummy variables (are currently excluded):
-    #           e.g.: Ethnic group = ethnic_group#Arab / ethnic_group#Black etc...
+def load_data(path_data, path_report, path_study_vars, path_report_vars, 
+              from_file=True, path_creds=None):
 
     # Combine all data in single matrix (if possible)
 	# Set correct data types
     
     # Load data
-    df = pd.read_csv(path_data, sep=';', header=0)
-    df_study = pd.read_csv(path_study, sep=';', header=0)
-    df_daily = pd.read_csv(path_daily, sep=';', header=0)
-
+    if from_file:
+        df, df_report, df_study_vars, df_report_vars = load_data_csv(path_data,
+                                                                     path_report,
+                                                                     path_study_vars,
+                                                                     path_report_vars)
+    else:
+        df, df_report, df_study_vars, df_report_vars = load_data_api(path_creds)
+        # var_cols = ['Form Collection Name', 'Form Name', 'Field Variable Name', 'Field Label', 'Field Type']
 
     # Split all columns into categories
     cols = {}
-    for step in df_study['Step name'].unique():
-        cols[step] = df_study['Variable name'][df_study['Step name'] == step].tolist()
+    for step in df_study_vars['Step name'].unique():
+        cols[step] = df_study_vars['Variable name'][df_study_vars['Step name'] == step].tolist()
+    for step in df_report_vars['Step name'].unique():
+        cols[step] = df_report_vars['Variable name'][df_report_vars['Step name'] == step].tolist()
 
-    field_types = pd.concat([df_daily[['Field type', 'Variable name']], df_study[['Field type', 'Variable name']]], axis=0)
-
+    field_types = pd.concat([df_report_vars[['Field type', 'Variable name']], df_study_vars[['Field type', 'Variable name']]], axis=0)
 
     # Remove or fix erronous values:
-    df = fix_single_errors(df)
+    df, df_report = fix_single_errors(df, df_report)
 
+    df = merge_study_and_report(df, df_report)
+    
+    # TODO: Propagate merged CRF data further on!
     x, y = calculate_outcome_measure(df)
     x = select_baseline_data(x, cols)
 
     return x, y, cols, field_types
     
+
 def preprocess(data, col_dict, field_types):
     # TODO: Outlier detection
 	# TODO: Prepare data for model
@@ -192,13 +225,16 @@ def score_and_vizualize_prediction(model, test_x, test_y, y_hat, rep):
 
 path_creds = r'./covid19_CDSS/castor_api_creds/'
 path = r'C:\Users\p70066129\Projects\COVID-19 CDSS\covid19_CDSS\Data\200329_COVID-19_NL/'
-filename = r'COVID-19_NL_data.csv'  # 
-filename_study = r'study_variablelist.csv'
-filename_daily = r'report_variablelist.csv'
+filename_data = r'COVID-19_NL_data.csv'
+filename_report = r'COVID-19_NL_report.csv' 
+filename_study_vars = r'study_variablelist.csv'
+filename_report_vars = r'report_variablelist.csv'
 
-df, df_report = load_data_api(path_creds)
+# df, df_report = load_data_api(path_creds)
 
-x, y, col_dict, field_types = load_data(path+filename, path+filename_study, path+filename_daily)
+x, y, col_dict, field_types = load_data(path + filename_data, path + filename_report, 
+                                        path + filename_study_vars, path + filename_report_vars,
+                                        from_file=False, path_creds=path_creds)
 x = preprocess(x, col_dict, field_types)
 x = feature_selection(x, col_dict, field_types)
 
@@ -215,7 +251,7 @@ for i in range(repetitions):
     model_coefs.append(model.coef_)
 
 fig, ax = plot_model_results(aucs)
-fig, ax = plot_model_weights(model_coefs, model_intercepts, x.columns)
+fig, ax = plot_model_weights(model_coefs, model_intercepts, x.columns, show_n_labels=25)
 plt.show()
 print('done')
 
