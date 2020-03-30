@@ -35,8 +35,7 @@ RADIO_YN_YC_N =       ['CT_thorax_performed']
 RADIO_CATEGORY =      ['gender','preg_outcome','baby_ARI_testmethod','facility_transfer','oxygen_saturation_on',
                        'PaO2_sample_type_1','Coronavirus_type', 'culture',
                         # Report Variables
-                       'dept', 'PaO2un', 'PaO2_sample_type',]
-
+                       'dept', 'PaO2un', 'PaO2_sample_type']
                         # 'Birth_weight_unit'
 RADIO_UNIT=           ['Haemoglobin_unit_1','WBC_1_1','units_lymph','units_neutro','Platelets_unit_1',
                        'Total_Bilirubin_1_1','Glucose_unit_2','Blood_Urea_Nitrogen_unit_1','Lactate_1_1','Creatinine_unit_1',
@@ -49,18 +48,12 @@ RADIO_UNIT=           ['Haemoglobin_unit_1','WBC_1_1','units_lymph','units_neutr
 
 format_dt = lambda col: pd.to_datetime(col, format='%d-%m-%Y', errors='coerce').astype('datetime64[ns]')
 
-def merge_study_and_report(df_study, df_report):
-    ''' 
-    TODO: Remove data if whole_admission_yes_no(_1) == Yes 
+def merge_study_and_report(df_study, df_report, cols):
+    ''' Currently selects the earliest daily report in 
+    the database per patient. 
     
-    Record ID
-        Report Creation Date
-        Report Name Custom
-        Report Parent
-        whole_admission_yes_no
-        assessment_dt
-        dept
-        whole_admission_yes_no_1
+    TODO: Improve selection/summarization of multiple 
+          daily reports per patient.
     '''
 
     df_report.loc[:, 'assessment_dt'] = format_dt(df_report['assessment_dt'])
@@ -71,14 +64,28 @@ def merge_study_and_report(df_study, df_report):
         # Get earliest assessment_dt
         report = reports_per_id[reports_per_id['assessment_dt'] == reports_per_id['assessment_dt'].min()]
         if report.shape[0] > 1:
-            report = report.iloc[0, :] #TODO: Better selection if several entries per day. NOTE: will change anyway
+            report = report.iloc[0, :] # NOTE: If more than 1 on a single day, select first index
         df = df.append(report)
+
+    df = remove_invalid_report_data(df, cols)
 
     df = pd.merge(left=df_study, right=df, how='left', on='Record Id')
 
     return df
 
 
+def remove_invalid_report_data(data, cols):
+    '''Some entries are interpreted as the worst values
+    during the whole admission retrospectively. This was
+    later changed, but some of these entries are still
+    in the data and thus have to be removed.
+    '''
+    resp_cols = cols['Respiratory assessment'] 
+    blood_cols = cols['Blood assessment']
+    data.loc[data['whole_admission_yes_no'] == 1, resp_cols] = None
+    data.loc[data['whole_admission_yes_no_1'] == 1, blood_cols] = None
+
+    return data
 
 def calculate_outcome_measure(data):
     ''' Generated outcome measure   
@@ -88,8 +95,7 @@ def calculate_outcome_measure(data):
     Admission_dt_icu_1 = ICU admission at hospital presentation (immediate)
     Admission_dt_icu   = ICU admissions during hospitalization --> NOTE: only in daily reports?
     Outcome            = ICU admission within 3 weeks of admission
-
-    als dept == 3 --> ICU daily report
+    dept               = Department on which the daily report assessment is taken
     
     '''
     data['ICU_admitted'] = 0
@@ -155,14 +161,15 @@ def fix_single_errors(data, data_rep):
 
 def transform_time_features(data):
     '''
-    missing data = 11-11-1111
     TODO: Check difference hosp_admission and Outcome_dt
-    
+    TODO: Use assessment_dt (datetime of daily report assessment)
     '''
     date_cols = ['Enrolment_date', 'age', 'onset_dt', 'admission_dt', 
                 'time_admission', 'admission_facility_dt', 'Admission_dt_icu_1', 
                 'Admission_dt_mc_1', 'Outcome_dt', 'assessment_dt']
     # TODO: Change today to entry? date. (differs between retro and prospective patients, as the latter have daily reports)
+    # TODO: If data from hospital admission, use admission date,
+    #       elif from daily report, use assessment data
     today = pd.datetime.today() # TODO:TODO:TODO: Change to time of data entry/assessment
     
     # Age in years

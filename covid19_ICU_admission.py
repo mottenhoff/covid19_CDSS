@@ -23,10 +23,12 @@ from sklearn.metrics import roc_auc_score
 
 from castor_api import Castor_api
 from covid19_import import import_data
+
+from covid19_ICU_util import fix_single_errors
+from covid19_ICU_util import remove_invalid_report_data
 from covid19_ICU_util import merge_study_and_report
 from covid19_ICU_util import select_baseline_data
 from covid19_ICU_util import calculate_outcome_measure
-from covid19_ICU_util import fix_single_errors
 from covid19_ICU_util import transform_binary_features
 from covid19_ICU_util import transform_categorical_features
 from covid19_ICU_util import transform_numeric_features
@@ -70,10 +72,15 @@ def load_data_csv(path_study, path_report, path_study_vars, path_report_vars):
 
 def load_data(path_data, path_report, path_study_vars, path_report_vars, 
               from_file=True, path_creds=None):
+    ''' Loads data from files or API.
+        Create dictionary with all columns per subform
+        Create a dataframe with all field types
+        Fix errors
+        Combine admission data and daily report data
+        Generate and outcome measure
+        Select data for that outcome measure
+    '''
 
-    # Combine all data in single matrix (if possible)
-	# Set correct data types
-    
     # Load data
     if from_file:
         df, df_report, df_study_vars, df_report_vars = load_data_csv(path_data,
@@ -82,23 +89,22 @@ def load_data(path_data, path_report, path_study_vars, path_report_vars,
                                                                      path_report_vars)
     else:
         df, df_report, df_study_vars, df_report_vars = load_data_api(path_creds)
-        # var_cols = ['Form Collection Name', 'Form Name', 'Field Variable Name', 'Field Label', 'Field Type']
-
-    # Split all columns into categories
+        
+    # Columns per subform
     cols = {}
     for step in df_study_vars['Step name'].unique():
         cols[step] = df_study_vars['Variable name'][df_study_vars['Step name'] == step].tolist()
     for step in df_report_vars['Step name'].unique():
         cols[step] = df_report_vars['Variable name'][df_report_vars['Step name'] == step].tolist()
 
+    # Get field types
     field_types = pd.concat([df_report_vars[['Field type', 'Variable name']], df_study_vars[['Field type', 'Variable name']]], axis=0)
 
-    # Remove or fix erronous values:
+    # Fix and merge
     df, df_report = fix_single_errors(df, df_report)
-
-    df = merge_study_and_report(df, df_report)
+    df = merge_study_and_report(df, df_report, cols)
     
-    # TODO: Propagate merged CRF data further on!
+    # Outcome and data selection
     x, y = calculate_outcome_measure(df)
     x = select_baseline_data(x, cols)
 
@@ -106,12 +112,14 @@ def load_data(path_data, path_report, path_study_vars, path_report_vars,
     
 
 def preprocess(data, col_dict, field_types):
-    # TODO: Outlier detection
-	# TODO: Prepare data for model
-		# Rescale - e.g. range [0, 1]
-		# Rotate  - All values such that higher value should be better outcome
+    ''' Processed the data per datatype.
     
-    # TODO: Remove samples with little information
+    TODO: Remove all columns that represent if a value is measured
+    TODO: Rotate  - All values such that higher value should be better outcome
+    TODO: Automatic outlier detection
+    '''
+    
+    
     is_in_columns = lambda df: [field for field in df if field in data.columns]
 
     # Binary features --> Most radio button fields
@@ -122,7 +130,7 @@ def preprocess(data, col_dict, field_types):
     category_fields = is_in_columns(field_types['Variable name'][field_types['Field type'].isin(['dropdown', 'checkbox'])].tolist())
     data = transform_categorical_features(data, category_fields, radio_fields) # NOTE: categorical radio fields are selected in util
     
-    # Numeric --> All fields same unit and between 0 and 1
+    # Numeric
     numeric_fields = is_in_columns(field_types['Variable name'][field_types['Field type'] == 'numeric'].tolist())
     data = transform_numeric_features(data, numeric_fields)
     
@@ -135,46 +143,50 @@ def preprocess(data, col_dict, field_types):
 
 
 def add_engineered_features(data, col_dict):
-	# DONE WITH CLINICAL/SCIENTIFIC KNOWLEDGE
-	# TODO: Develop features with higher predictive value based on knowledge
+    ''' Generate and add features'''
 
-    # Dimensionality reduction TODO: ADD as features
+    # Dimensional transformation
     n_components = 10
     pca = PCA(n_components=n_components)
-    princ_comps = pd.DataFrame(pca.fit_transform(data)) # TODO: Make better missing value computation
+    princ_comps = pd.DataFrame(pca.fit_transform(data))
     princ_comps.columns = ['pc_{:d}'.format(i) for i in range(n_components)]
 
+
+    # Add features
     data = pd.concat([data, princ_comps], axis=1)
 
     return data
 
 def feature_selection(data, col_dict, field_types):
-    ''' To start:
-        Select all radio and numeric fields + calculated features
+    ''' Fills all missing values with 0,
+        Drop columns without (relevant) information
+        Get engineered featured
+        Save the processed data
 
-        TODO:  
-            !! Check how the selected field here relate to the daily report features
-            !! Check if there are variables only measured in the ICU
-            Normalize numeric features (also to 0 to 1?)
-            Gradually add other type of fields
-            Some form of feature selection? 
+    TODO: Check how the selected field here relate to the daily report features
+    TODO: Check if there are variables only measured in the ICU
+    TODO: Normalize numeric features (also to 0 to 1?)
+    TODO: Some form of feature selection?
     ''' 
+
     exclude = ['Bleeding_sites', 'OTHER_intervention_1', 'same_id', 'facility_transfer', 
                'Add_Daily_CRF_1', 'ICU_Medium_Care_admission_1', 'Specify_Route_1', 'Corticosteroid_type_1']
-               
+    # Fill
     data = data.replace(-1, None)
     data = data.dropna(how='all', axis=0)
-    data = data.fillna(0) # TODO: TODO: TODO: Do this smarter! currently also a lot of -1, which is also missing
+    data = data.fillna(0) # TODO: Make smarter handling of missing data 
 
+    # Drop
     cols_to_drop  = [col for col in data.columns if col in exclude] + \
                     data.columns[(data.nunique() <= 1).values].to_list() # Find colums with a single or no values    
     data = data.drop(cols_to_drop, axis=1)
 
     print('{} columns left for feature_engineering and modelling'.format(data.columns.size))
 
+    # Add
     data = add_engineered_features(data, col_dict)
 
-
+    # Save
     try:
         data.to_excel('processed_data.xlsx')
     except Exception:
@@ -184,7 +196,12 @@ def feature_selection(data, col_dict, field_types):
 
 
 def model_and_predict(x, y, test_size=0.2, val_size=0.2, hpo=False):
-    # hpo = hyper-parameter optimization
+    ''' Select samples and fit model.
+        Currently uses random sub-sampling validation (also called
+            Monte Carlo cross-validation) with balanced class weight
+                (meaning test has the same Y-class distribution as
+                 train)
+    '''
 
     # Train/test-split
     train_x, test_x, train_y, test_y = train_test_split(x, y, test_size=test_size, stratify=y) # stratify == simila y distribution in both sets
@@ -194,14 +211,10 @@ def model_and_predict(x, y, test_size=0.2, val_size=0.2, hpo=False):
         # TODO: implement hpo if necessary
 
     # Model
-    # NOTE: set random_state for consistent results
     clf = LogisticRegression(solver='lbfgs', penalty='l2', class_weight='balanced', 
                              max_iter=200, random_state=0) # small dataset: solver='lbfgs'. multiclass: solver='lbgfs'
     # clf = LinearDiscriminantAnalysis(solver='eigen', shrinkage='auto')
     # clf = LinearDiscriminantAnalysis(solver='svd')
-    # clf = SVC(probability=True)
-    # clf = RandomForestClassifier()
-    # clf = GradientBoostingClassifier()
 
     clf.fit(train_x, train_y)
     
@@ -211,7 +224,7 @@ def model_and_predict(x, y, test_size=0.2, val_size=0.2, hpo=False):
     return clf, train_x, train_y, test_x, test_y, test_y_hat
 
 def score_and_vizualize_prediction(model, test_x, test_y, y_hat, rep):
-    y_hat = y_hat[:, 1]
+    y_hat = y_hat[:, 1] # Select P_(y=1)
     
     # Metrics
     roc_auc = roc_auc_score(test_y, y_hat)
@@ -223,14 +236,14 @@ def score_and_vizualize_prediction(model, test_x, test_y, y_hat, rep):
 
     return roc_auc
 
+
+
 path_creds = r'./covid19_CDSS/castor_api_creds/'
 path = r'C:\Users\p70066129\Projects\COVID-19 CDSS\covid19_CDSS\Data\200329_COVID-19_NL/'
 filename_data = r'COVID-19_NL_data.csv'
 filename_report = r'COVID-19_NL_report.csv' 
 filename_study_vars = r'study_variablelist.csv'
 filename_report_vars = r'report_variablelist.csv'
-
-# df, df_report = load_data_api(path_creds)
 
 x, y, col_dict, field_types = load_data(path + filename_data, path + filename_report, 
                                         path + filename_study_vars, path + filename_report_vars,
