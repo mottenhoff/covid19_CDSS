@@ -9,6 +9,7 @@ def process_table(txt):
 class Castor_api:
     """castor_api class
     USAGE:
+    from castor_api import Castor_api
     c = castor_api('/path/to/folder/with/secret_client')
     result = c.request('request type','additional options')
     
@@ -55,6 +56,7 @@ class Castor_api:
     def request(self,request):
         request_uri = self.base_url + self.api_request_path + request
         try:
+            print(request_uri)
             response = requests.get(request_uri,
                                      headers={'Authorization': 'Bearer ' + self.token})
             response.raise_for_status()

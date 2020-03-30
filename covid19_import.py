@@ -1,7 +1,7 @@
 """
 USAGE: 
 import covid19_import
-study_data, study_struct,reports_data, reports_struct = covid19_import.import_data()
+study_data, study_struct,reports_data, reports_struct, complications_struct, optiongroups_structure = covid19_import.import_data()
 """
 import pandas 
 from castor_api import Castor_api
@@ -18,6 +18,12 @@ def import_data():
     
     # get study ID for COVID study
     study_id = c.request_study_id('COVID')[0] 
+    
+    
+    ### STEP 0: collect answer options from optiongroups
+    
+    # get answer option groups
+    optiongroups_structure = c.request_study_export_optiongroups(study_id)
     
     
     ### STEP 1: collect data from study
@@ -62,7 +68,7 @@ def import_data():
           .pivot(index='Record ID',columns='Field Variable Name',values='Value')
     
     
-    ### STEP 2: collect data from reports 
+    ### STEP 2A: collect data from DAILY reports
     
     # get raw data without deleted and test data, ignore junk form instances
     reports_data_filtered = study_data[study_data['Form Type'].isin(['Report']) \
@@ -92,12 +98,12 @@ def import_data():
     # filter datatypes that are (most of the times) unusable for ML model; i.e. custom entries
     # filter variables that are repeated measurements (i.e. reports data).
     # filter variables that have no Field Variable name (additional remarks by user?)
-    reports_structure_filtered = reports_structure_filtered[\
-                                reports_structure_filtered['Field Type'].isin(['radio', 'date', 'dropdown', 'checkbox', 'string', 'numeric', 'calculation',
-     'time'])]
+#     reports_structure_filtered = reports_structure_filtered[\
+#                                 reports_structure_filtered['Field Type'].isin(['radio', 'date', 'dropdown', 'checkbox', 'string', 'numeric', 'calculation',
+#      'time'])]
     reports_structure_filtered = reports_structure_filtered[reports_structure_filtered['Form Type'].isin(['Report'])]
     reports_structure_filtered = reports_structure_filtered[(~reports_structure_filtered['Field Variable Name'].isna())]
-    
+    reports_structure_filtered = reports_structure_filtered[(reports_structure_filtered['Form Collection Name'].isin(['Daily case record form']))]
     # merge the structure and the data to get full dataset 
     reports_data_all = pandas.merge(reports_structure_filtered[['Field Variable Name','Field ID']],\
                   reports_data_filtered[['Record ID','Value','Form Instance ID','Field ID']],\
@@ -132,7 +138,7 @@ def import_data():
     # reports_structure_filtered
     # reports_data_final # note that record ID can not be the named index, because multiple entries exist.
     
-    return study_data_final, study_structure_filtered,reports_data_final, reports_structure_filtered
+    return study_data_final, study_structure_filtered,reports_data_final, reports_structure_filtered, complications_struct, optiongroups_structure
     
 
     ## STEP 5: (TODO) summarize data from reports and add the summary stats to study_data_final
