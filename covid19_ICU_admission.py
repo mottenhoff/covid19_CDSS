@@ -25,7 +25,6 @@ from castor_api import Castor_api
 from covid19_import import import_data
 
 from covid19_ICU_util import fix_single_errors
-from covid19_ICU_util import remove_invalid_report_data
 from covid19_ICU_util import merge_study_and_report
 from covid19_ICU_util import select_baseline_data
 from covid19_ICU_util import calculate_outcome_measure
@@ -34,6 +33,7 @@ from covid19_ICU_util import transform_categorical_features
 from covid19_ICU_util import transform_numeric_features
 from covid19_ICU_util import transform_time_features
 from covid19_ICU_util import transform_string_features
+from covid19_ICU_util import select_data
 from covid19_ICU_util import plot_model_results
 from covid19_ICU_util import plot_model_weights
 
@@ -119,7 +119,6 @@ def preprocess(data, col_dict, field_types):
     TODO: Automatic outlier detection
     '''
     
-    
     is_in_columns = lambda df: [field for field in df if field in data.columns]
 
     # Binary features --> Most radio button fields
@@ -138,6 +137,8 @@ def preprocess(data, col_dict, field_types):
     
     string_fields = field_types['Variable name'][field_types['Field type'] == 'string'].tolist()
     data = transform_string_features(data, string_fields)
+
+    data = select_data(data)
     
     return data
 
@@ -165,7 +166,7 @@ def feature_selection(data, col_dict, field_types):
 
     TODO: Check how the selected field here relate to the daily report features
     TODO: Check if there are variables only measured in the ICU
-    TODO: Normalize numeric features (also to 0 to 1?)
+    TODO: Normalize/scale numeric features (also to 0 to 1?)
     TODO: Some form of feature selection?
     ''' 
 
@@ -173,7 +174,7 @@ def feature_selection(data, col_dict, field_types):
                'Add_Daily_CRF_1', 'ICU_Medium_Care_admission_1', 'Specify_Route_1', 'Corticosteroid_type_1']
     # Fill
     data = data.replace(-1, None)
-    data = data.dropna(how='all', axis=0)
+    data = data.dropna(how='all', axis=1) # TODO: Drop empty columns??
     data = data.fillna(0) # TODO: Make smarter handling of missing data 
 
     # Drop
@@ -204,7 +205,7 @@ def model_and_predict(x, y, test_size=0.2, val_size=0.2, hpo=False):
     '''
 
     # Train/test-split
-    train_x, test_x, train_y, test_y = train_test_split(x, y, test_size=test_size, stratify=y) # stratify == simila y distribution in both sets
+    train_x, test_x, train_y, test_y = train_test_split(x, y, test_size=test_size, stratify=y, random_state=0) # stratify == simila y distribution in both sets
 
     if hpo:
         train_x, val_x, train_y, val_y = train_test_split(x, y, val_size=val_size)
@@ -254,7 +255,7 @@ x = feature_selection(x, col_dict, field_types)
 aucs = []
 model_coefs = []
 model_intercepts = []
-repetitions = 100
+repetitions = 10
 for i in range(repetitions):
     model, train_x, train_y, test_x, \
         test_y, test_y_hat = model_and_predict(x, y, test_size=0.20)

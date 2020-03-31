@@ -45,6 +45,18 @@ RADIO_UNIT=           ['Haemoglobin_unit_1','WBC_1_1','units_lymph','units_neutr
                        'lymph_units_1', 'neutro_units_2', 'Platelets_unit', 'Total_Bilirubin_1', 'Glucose_unit', 
                        'Blood_Urea_Nitrogen_unit', 'Lactate_1', 'Creatinine_unit', 'sodium_units_1', 'pot_units_2']
 
+IS_MEASURED_COLUMNS = ['baby_ARI', 'Haemoglobin_1', 'WBC_3', 'Lymphocyte_2', 'Neutrophil_1', 'Platelets_1', 'APT_APTR_2', 
+                       'INR_2', 'ALT_SGPT_2', 'Total_Bilirubin_3', 'AST_SGOT_2', 'Glucose_1', 'Blood_Urea_Nitrogen_1',
+                       'Lactate_3', 'Creatinine_1', 'Sodium_2', 'Potassium_2', 'CRP_1', 'Albumin_admision_1', 'CKina',
+                       'LDHadmi', 'bloed_gas', 'oxygentherapy_1', 'pao2_yes_no', 'Same_blood_gas_PaO2_PCO2_1', 'ph__1',
+                       'Chest_X_Ray_2', 'Add_Daily_CRF_1', 'Antiviral_agent_1', 'Corticosteroid_1', 
+                        # Report
+                       'oxygentherapy', 'pao2_yes_no_1', 'Same_blood_gas_PaO2_PCO2', 'ph_', 'HCO3', 'Base_excess', 
+                       'EMV_yes_no', 'resprat_yes_no_1', 'heartrate_yes_no_2', 'Systolic_bp', 'diastolic_bp', 
+                       'mean_arterial_bp', 'temperature_yes_no_3', 'temperature_yes_no_4', 'patient_interventions_yes_no', 
+                       'Haemoglobin', 'WBC', 'Lymphocyte', 'Neutrophil', 'Platelets', 'APT_APTR', 'INR', 'ALT_SGPT', 
+                       'Total_Bilirubin', 'AST_SGOT', 'Glucose', 'Blood_Urea_Nitrogen', 'Lactate', 'Creatinine', 
+                       'Sodium', 'Potassium', 'CRP', 'Albumin', 'CKin', 'LDH_daily', 'Chest_X_Ray', 'CTperf', ]
 
 format_dt = lambda col: pd.to_datetime(col, format='%d-%m-%Y', errors='coerce').astype('datetime64[ns]')
 
@@ -67,23 +79,29 @@ def merge_study_and_report(df_study, df_report, cols):
             report = report.iloc[0, :] # NOTE: If more than 1 on a single day, select first index
         df = df.append(report)
 
-    df = remove_invalid_report_data(df, cols)
 
     df = pd.merge(left=df_study, right=df, how='left', on='Record Id')
+
+    df = remove_invalid_data(df, cols)
+    df = df.reset_index(drop=True)
 
     return df
 
 
-def remove_invalid_report_data(data, cols):
-    '''Some entries are interpreted as the worst values
-    during the whole admission retrospectively. This was
-    later changed, but some of these entries are still
-    in the data and thus have to be removed.
-    '''
+def remove_invalid_data(data, cols):
+    '''Remove any data irregularities'''
+
+    # Some entries are interpreted as the worst values
+    # during the whole admission retrospectively. This was
+    # later changed, but some of these entries are still
+    # in the data and thus have to be removed.
     resp_cols = cols['Respiratory assessment'] 
     blood_cols = cols['Blood assessment']
     data.loc[data['whole_admission_yes_no'] == 1, resp_cols] = None
     data.loc[data['whole_admission_yes_no_1'] == 1, blood_cols] = None
+
+    # Remove all (possible) test entries
+    data = data.loc[data['Record Id'].astype(int) > 12000, :]
 
     return data
 
@@ -109,7 +127,8 @@ def calculate_outcome_measure(data):
     return x, y
 
 def select_baseline_data(data, col_dict):
-    #TODO Check if Report data is included
+    ''' Select data that is measured before ICU'''
+    
     baseline_groups = ['DEMOGRAPHICS', 'CO-MORBIDITIES', 'ONSET & ADMISSION', 
                        'SIGNS AND SYMPTOMS AT HOSPITAL ADMISSION', 
                        'ADMISSION SIGNS AND SYMPTOMS', 'BLOOD ASSESSMENT ADMISSION',
@@ -121,7 +140,6 @@ def select_baseline_data(data, col_dict):
     cols_baseline = [col for col in cols_baseline if col in data.columns]
                     # [col for col in data.columns if 'ethnic' in col] # checkbox questions are handles in API
 
-    
     return data[cols_baseline] 
 
 def select_retrospective_data(data, col_dict):
@@ -221,7 +239,7 @@ def transform_binary_features(data):
     df.loc[:, RADIO_YN_YC_N] = df.loc[:, RADIO_YN_YC_N].fillna(3).astype(int) \
                                                        .applymap(lambda x: dict_ct[x])
     
-    df[df_nan_mask] = None # NOTE:TODO: handle missing values later on in a central place
+    df[df_nan_mask] = None
     return df
 
 
@@ -252,7 +270,6 @@ def transform_categorical_features(data, category_fields, radio_fields):
 def transform_numeric_features(data, numeric_fields):
     #TODO: handle units, for now drop them
 
-
     data.loc[:, RADIO_UNIT] = None
 
     cols_to_drop = [col for col in data.columns if col in RADIO_UNIT]
@@ -265,6 +282,11 @@ def transform_string_features(data, string_fields):
 
     cols_to_drop = [col for col in data.columns if col in string_fields]
     data = data.drop(cols_to_drop, axis=1)
+    return data
+
+def select_data(data):
+    cols_to_keep = [col for col in data.columns if col not in IS_MEASURED_COLUMNS]
+    data = data.loc[:, cols_to_keep]
     return data
 
 def plot_model_results(aucs):
