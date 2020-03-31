@@ -64,7 +64,6 @@ def merge_study_and_report(df_study, df_report, cols):
     ''' Currently selects the latest daily report in 
     the database per patient that is NOT in ICU (dept=3)
     
-    
     TODO: Improve selection/summarization of multiple 
           daily reports per patient.
     '''
@@ -73,10 +72,11 @@ def merge_study_and_report(df_study, df_report, cols):
     df = pd.DataFrame(columns=df_report.columns)
     for id_ in df_report['Record Id'].unique():
         reports_per_id = df_report[df_report['Record Id'] == id_]
-        # Get earliest assessment_dt
+
         is_most_recent_date = reports_per_id['assessment_dt']==reports_per_id['assessment_dt'].max()
         is_not_in_ICU = reports_per_id['dept'] != 3
         report = reports_per_id[is_most_recent_date & is_not_in_ICU]
+
         if report.shape[0] > 1:
             report = report.iloc[0, :] # NOTE: If more than 1 on a single day, select first index
         df = df.append(report)
@@ -263,19 +263,27 @@ def transform_categorical_features(data, category_fields, radio_fields):
 
         TODO: Handle checkbox variables with multiple categories
     '''
+
+    get_name = lambda c, v: '{:s}_cat_{:s}'.format(col, str(v))
+
     cat_radio = [field for field in radio_fields if field in RADIO_CATEGORY]
     category_columns = category_fields + cat_radio
 
     dummies_list = []
     for col in category_columns:
-        dummies = pd.get_dummies(data[col], dummy_na=False)
-        if dummies.shape[1] >= 1: 
-            dummy_col_names = ['{:s}_cat_{:s}'.format(col, str(v)) \
-                                    for v in data[col].unique() if v != None]
-            if data[col].isna().sum() > 0: # incase missing values sneak in
-                dummy_col_names = [name for name in dummy_col_names if 'cat_nan' not in name]
-            dummies.columns = dummy_col_names
-            dummies_list += [dummies]  
+        # Get all unique categories in the column
+        unique_categories = pd.unique([cat for value in data[col].values for cat in str(value).split(';')])
+        dummy_column_names = [get_name(col, v) for v in unique_categories if v.lower() not in ['nan', 'none']]
+
+        # Create new dataframe with the dummies
+        dummies = pd.DataFrame(0, index=data.index, columns=dummy_column_names)
+
+        # Insert the data row-wise
+        for idx, value in data[col].iteritems():
+            cols = [get_name(col, cat) for cat in str(value).split(';') if cat.lower() not in ['nan', 'none']]
+            dummies.loc[idx, cols] = 1
+
+        dummies_list += [dummies]
     
     data = pd.concat([data] + dummies_list, axis=1)
     data = data.drop(category_columns, axis=1)
