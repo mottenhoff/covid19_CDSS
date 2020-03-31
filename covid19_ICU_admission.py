@@ -205,7 +205,7 @@ def model_and_predict(x, y, test_size=0.2, val_size=0.2, hpo=False):
     '''
 
     # Train/test-split
-    train_x, test_x, train_y, test_y = train_test_split(x, y, test_size=test_size, stratify=y, random_state=0) # stratify == simila y distribution in both sets
+    train_x, test_x, train_y, test_y = train_test_split(x, y, test_size=test_size, stratify=y) # stratify == simila y distribution in both sets
 
     if hpo:
         train_x, val_x, train_y, val_y = train_test_split(x, y, val_size=val_size)
@@ -255,7 +255,7 @@ x = feature_selection(x, col_dict, field_types)
 aucs = []
 model_coefs = []
 model_intercepts = []
-repetitions = 10
+repetitions = 100
 for i in range(repetitions):
     model, train_x, train_y, test_x, \
         test_y, test_y_hat = model_and_predict(x, y, test_size=0.20)

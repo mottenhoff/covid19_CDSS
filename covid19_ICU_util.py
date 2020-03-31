@@ -61,24 +61,25 @@ IS_MEASURED_COLUMNS = ['baby_ARI', 'Haemoglobin_1', 'WBC_3', 'Lymphocyte_2', 'Ne
 format_dt = lambda col: pd.to_datetime(col, format='%d-%m-%Y', errors='coerce').astype('datetime64[ns]')
 
 def merge_study_and_report(df_study, df_report, cols):
-    ''' Currently selects the earliest daily report in 
-    the database per patient. 
+    ''' Currently selects the latest daily report in 
+    the database per patient that is NOT in ICU (dept=3)
+    
     
     TODO: Improve selection/summarization of multiple 
           daily reports per patient.
     '''
-
     df_report.loc[:, 'assessment_dt'] = format_dt(df_report['assessment_dt'])
 
-    df = pd.DataFrame(columns = df_report.columns)
+    df = pd.DataFrame(columns=df_report.columns)
     for id_ in df_report['Record Id'].unique():
         reports_per_id = df_report[df_report['Record Id'] == id_]
         # Get earliest assessment_dt
-        report = reports_per_id[reports_per_id['assessment_dt'] == reports_per_id['assessment_dt'].min()]
+        is_most_recent_date = reports_per_id['assessment_dt']==reports_per_id['assessment_dt'].max()
+        is_not_in_ICU = reports_per_id['dept'] != 3
+        report = reports_per_id[is_most_recent_date & is_not_in_ICU]
         if report.shape[0] > 1:
             report = report.iloc[0, :] # NOTE: If more than 1 on a single day, select first index
         df = df.append(report)
-
 
     df = pd.merge(left=df_study, right=df, how='left', on='Record Id')
 
@@ -156,6 +157,7 @@ def select_prospective_data(data_study, data_daily, col_dict):
     return data
 
 def fix_single_errors(data, data_rep):
+    data['Enrolment_date'].replace('24-02-1960', '24-02-2020', inplace=True)
     data['onset_dt'].replace('11-11-1111', None, inplace=True)
     data['admission_dt'].replace('19-03-0202', '19-03-2020', inplace=True)
     data['admission_facility_dt'].replace('01-01-2998', None, inplace=True)
@@ -182,27 +184,39 @@ def transform_time_features(data):
     TODO: Check difference hosp_admission and Outcome_dt
     TODO: Use assessment_dt (datetime of daily report assessment)
     '''
-    date_cols = ['Enrolment_date', 'age', 'onset_dt', 'admission_dt', 
-                'time_admission', 'admission_facility_dt', 'Admission_dt_icu_1', 
-                'Admission_dt_mc_1', 'Outcome_dt', 'assessment_dt']
-    # TODO: Change today to entry? date. (differs between retro and prospective patients, as the latter have daily reports)
-    # TODO: If data from hospital admission, use admission date,
-    #       elif from daily report, use assessment data
-    today = pd.datetime.today() # TODO:TODO:TODO: Change to time of data entry/assessment
-    
-    # Age in years
-    age = (today - format_dt(data['age'])).dt.days // 365
-    days_since_onset = (today - format_dt(data['onset_dt'])).dt.days
-    days_in_current_hosp = (today - format_dt(data['admission_dt'])).dt.days
-    days_since_first_hosp = (today - format_dt(data['admission_facility_dt'])).dt.days
-    days_untreated = days_since_onset - days_since_first_hosp
-    days_untreated[days_untreated < 0] = 0  # If negative, person already in hospital at onset
+    date_cols = ['Enrolment_date',	        # First patient presentation at (any) hospital AND report date (?)
+                 'age',	                    # Date of birth
+                 'onset_dt',                # Disease onset
+                 'admission_dt',            # Admission date at current hospital
+                 'time_admission',          # Admission time at current hospital
+                 'admission_facility_dt',   # Admission date at the hospital of which the patient is tranferred from
+                 'Admission_dt_icu_1',      # Admission date ICU (study|retrospective)
+                 'Discharge_dt_icu_1',      # Discharge date ICU (study|retrospective)
+                 'Admission_dt_mc_1',       # Admission date into MC (study|retrospective)
+                 'Discharge_dt_mc_1',       # Discharge date into MC (study|retrospective)
+                 'Inotropes_First_dt_1',    # Date start of Intropes (study|retrospective)
+                 'Inotropes_Last_dt_1',     # Date of end Intropes (study|retrospective)
+                 'Outcome_dt',              # Date of outcome measurement (e.g, discharge/death/transfer)
+                 'assessment_dt']           # Datetime of assessment of report
 
-    # Inotropes_days TODO: Inotropes_First_dt_1 Inotropes_Last_dt_1
-    
+
+    # Last known dt = max([outcome_dt, assessment_dt])
+    # Days untreated = "earliest known hospital admission" - onset
+    # Days in hospital = last_known_date - "earliest known hospital admission" 
+    # Days since onset = last_known_date - onset
+    # Days latest_report since onset = assessment_dt - admission_dt
+    # ReInotropes_duration = Inotropes_last - inotroped_first
+    most_recent_date = format_dt(data['assessment_dt'])         #most_recent_date = max(format_dt(data['Outcome_dt']), format_dt(data['assessment_dt']))
+
+    age = (most_recent_date - format_dt(data['age'])).dt.days // 365
+    days_since_onset = (most_recent_date - format_dt(data['onset_dt'])).dt.days
+    days_in_current_hosp = (most_recent_date - format_dt(data['admission_dt'])).dt.days
+    days_since_first_hosp = (most_recent_date - format_dt(data['admission_facility_dt'])).dt.days
+    days_untreated = (format_dt(data['admission_dt']) - format_dt(data['onset_dt'])).dt.days
+    days_untreated.loc[days_untreated < 0] = 0  # If negative, person already in hospital at onset
+
     df_time_feats = pd.concat([age, days_since_onset, days_in_current_hosp, days_since_first_hosp, days_untreated], axis=1)
     df_time_feats.columns = ['age_yrs', 'days_since_onset', 'days_in_current_hosp', 'days_in_first_hosp', 'days_untreated']
-    # df_time_feats = df_time_feats.fillna(-1) # TODO: check what best value is 
 
     cols_to_drop = [col for col in data.columns if col in date_cols]
     data = data.drop(cols_to_drop, axis=1)
