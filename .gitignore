@@ -1,4 +1,6 @@
-
+Data/
+Research/
+castor_api_creds/
 *.pyc
 client
 secret
