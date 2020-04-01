@@ -56,7 +56,6 @@ class Castor_api:
     def request(self,request):
         request_uri = self.base_url + self.api_request_path + request
         try:
-            print(request_uri)
             response = requests.get(request_uri,
                                      headers={'Authorization': 'Bearer ' + self.token})
             response.raise_for_status()
@@ -101,6 +100,8 @@ class Castor_api:
         response_dict = self.request_json('/study/'+study_id+'/record')
         if '_embedded' in response_dict and 'records' in response_dict['_embedded']:
             response_dict = response_dict['_embedded']['records']
+            # for some users with less rights record (and few records) 'Record ID' is regarded as an INT, whereas it should be STR.
+            response_dict.astype({'Record ID': 'str'}) 
             return response_dict
         else: 
             return None
@@ -119,3 +120,8 @@ class Castor_api:
         response = self.request('/study/'+study_id+'/export/optiongroups')
         data = process_table(response.text)
         return data
+    
+    def request_study_insitutes(self,study_id):
+        response_dict = self.request_json('/study/'+study_id+'/institute')
+        if '_embedded' in response_dict and 'institutes' in response_dict['_embedded']:
+                return response_dict['_embedded']['institutes']
