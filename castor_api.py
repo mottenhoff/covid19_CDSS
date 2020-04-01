@@ -16,6 +16,7 @@ def process_table(txt):
 class Castor_api:
     """castor_api class
     USAGE:
+    from castor_api import Castor_api
     c = castor_api('/path/to/folder/with/secret_client')
     result = c.request('request type','additional options')
     
@@ -107,6 +108,8 @@ class Castor_api:
         response_dict = self.request_json('/study/'+study_id+'/record')
         if '_embedded' in response_dict and 'records' in response_dict['_embedded']:
             response_dict = response_dict['_embedded']['records']
+            # for some users with less rights record (and few records) 'Record ID' is regarded as an INT, whereas it should be STR.
+            response_dict.astype({'Record ID': 'str'}) 
             return response_dict
         else: 
             return None
@@ -125,3 +128,8 @@ class Castor_api:
         response = self.request('/study/'+study_id+'/export/optiongroups')
         data = process_table(response.text)
         return data
+    
+    def request_study_insitutes(self,study_id):
+        response_dict = self.request_json('/study/'+study_id+'/institute')
+        if '_embedded' in response_dict and 'institutes' in response_dict['_embedded']:
+                return response_dict['_embedded']['institutes']
