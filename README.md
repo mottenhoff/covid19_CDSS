@@ -13,7 +13,5 @@ Work in progress
 5) put these two files a seperate private folder
 
 ### Import data
-``
-from covid19_import import import_data
-study, study_structure, report, report_structure, field_structure = import_data(PATH_TO_CREDENTIALS)
-``
+``from covid19_import import import_data``
+``study, study_structure, report, report_structure, field_structure = import_data(PATH_TO_CREDENTIALS)``
