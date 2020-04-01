@@ -10,7 +10,7 @@ Work in progress
 2) Create an API Client ID and Client Secret in yout Castor account settings
 3) Save the client_id (string with dashes) in a file called 'client'
 4) Save the client_secret (long alphanumerical string) in a file called 'secret'
-5) put these two files a seperate private folder
+5) Put these two files a seperate private folder
 
 ### Import data
 ```python
