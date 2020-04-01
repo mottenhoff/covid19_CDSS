@@ -53,6 +53,7 @@ def import_data(path_to_api_creds):
     
     # Get study data
     study_data = c.request_study_export_data(study_id)
+    print(study_data)
     
     # Filter data tbat is not a study entry (i.e. reports, complications) - repeated measures; should be summarized first
     # Filter archived data (=DELETED data)

@@ -70,8 +70,8 @@ def load_data_csv(path_study, path_report, path_study_vars, path_report_vars):
     return df_study, df_report, df_study_vars, df_report_vars
 
 
-def load_data(path_data, path_report, path_study_vars, path_report_vars, 
-              from_file=True, path_creds=None):
+def load_data(path_data=None, path_report=None, path_study_vars=None, path_report_vars=None, 
+              from_file=False, path_creds=None):
     ''' Loads data from files or API.
         Create dictionary with all columns per subform
         Create a dataframe with all field types
@@ -239,16 +239,14 @@ def score_and_vizualize_prediction(model, test_x, test_y, y_hat, rep):
 
 
 
-path_creds = r'./covid19_CDSS/castor_api_creds/'
-path = r'C:\Users\p70066129\Projects\COVID-19 CDSS\covid19_CDSS\Data\200329_COVID-19_NL/'
+path_creds = r'/Users/wouterpotters/Desktop/'
+# path = r'C:\Users\p70066129\Projects\COVID-19 CDSS\covid19_CDSS\Data\200329_COVID-19_NL/'
 filename_data = r'COVID-19_NL_data.csv'
 filename_report = r'COVID-19_NL_report.csv' 
 filename_study_vars = r'study_variablelist.csv'
 filename_report_vars = r'report_variablelist.csv'
 
-x, y, col_dict, field_types = load_data(path + filename_data, path + filename_report, 
-                                        path + filename_study_vars, path + filename_report_vars,
-                                        from_file=False, path_creds=path_creds)
+x, y, col_dict, field_types = load_data(from_file=False, path_creds=path_creds)
 x = preprocess(x, col_dict, field_types)
 x = feature_selection(x, col_dict, field_types)
 

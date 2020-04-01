@@ -2,3 +2,4 @@
 *.pyc
 client
 secret
+.ipynb_checkpoints/covid19_data_quality-checkpoint.ipynb

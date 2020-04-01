@@ -9,7 +9,7 @@ import requests
 
 def process_table(txt):
     f_handler = io.StringIO(txt) # created to enable use of read_table
-    data = pandas.read_table(f_handler,sep=';',quotechar='\"',header=0)
+    data = pandas.read_table(f_handler,sep=';',quotechar='\"',header=0,dtype='str')
     f_handler.close()
     return data
     
