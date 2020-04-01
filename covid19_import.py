@@ -12,12 +12,12 @@ from castor_api import Castor_api
 # TODO: free text fields are now ignored
 # TODO: filter on TEST institution rather than on patient 000001. (if possible)
 
-def import_data():
+def import_data(path_to_api_creds):
     ### STEP 0: connect to API
     
     # input: private folder where client & secret files (no extension, 1 string only per file) from castor are saved by the user
     # see also: https://helpdesk.castoredc.com/article/124-application-programming-interface-api
-    c = Castor_api('/Users/wouterpotters/Desktop/') # e.g. in user dir outside of GIT repo
+    c = Castor_api(path_to_api_creds) # e.g. in user dir outside of GIT repo
     
     # get study ID for COVID study
     study_id = c.request_study_id('COVID')[0]
@@ -27,7 +27,6 @@ def import_data():
     
     # get answer option groups
     optiongroups_struct = c.request_study_export_optiongroups(study_id)
-    
     
     ### STEP 1: collect data from study
     
@@ -47,11 +46,10 @@ def import_data():
     # filter datatypes that are (most of the times) unusable for ML model; i.e. custom entries
     # filter variables that are repeated measurements (i.e. reports data).
     # filter variables that have no Field Variable name (additional remarks by user?)
-    study_structure_filtered = study_structure_filtered[\
-                                study_structure_filtered['Field Type'].isin(['radio', 'date', 'dropdown', 'checkbox', 'string', 'numeric', 'calculation',
-     'time'])\
-                                & study_structure_filtered['Form Type'].isin(['Study'])\
-                                & ~(study_structure_filtered['Field Variable Name'].isna())] # keep only study forms; reports can exist multiple times and should be summarized.
+    study_structure_filtered = study_structure_filtered[study_structure_filtered['Field Type'].isin(['radio', 'date', 'dropdown', 'checkbox', 
+                                                                                 'string', 'numeric', 'calculation', 'time']) \
+                                                        & study_structure_filtered['Form Type'].isin(['Study']) \
+                                                        & ~(study_structure_filtered['Field Variable Name'].isna())] # keep only study forms; reports can exist multiple times and should be summarized.
     
     # Get study data
     study_data = c.request_study_export_data(study_id)
@@ -62,21 +60,21 @@ def import_data():
     study_data_filtered = study_data[study_data['Form Type'].isin(['Study']) \
                                               & (~study_data['Record ID'].str.match('^ARCHIVED-.*')) \
                                               & (~study_data['Record ID'].str.match('000001'))]\
-                          .filter(['Record ID','Field ID','Form Type','Value','Date'],axis=1)
+                                          .filter(['Record ID','Field ID','Form Type','Value','Date'],axis=1)
     
     # combine study data (patients and values) and study structure (variables)
-    study_data_final = pandas.merge(study_structure_filtered[['Field Variable Name','Field ID']],\
-                 study_data_filtered[['Record ID','Value','Field ID']],\
-                 on='Field ID')\
-          .pivot(index='Record ID',columns='Field Variable Name',values='Value')
+    study_data_final = pandas.merge(study_structure_filtered[['Field Variable Name','Field ID']], \
+                                    study_data_filtered[['Record ID','Value','Field ID']], \
+                                    on='Field ID') \
+                             .pivot(index='Record ID',columns='Field Variable Name',values='Value')
     
     
     ### STEP 2A: collect data from DAILY reports
     
     # get raw data without deleted and test data, ignore junk form instances
     reports_data_filtered = study_data[study_data['Form Type'].isin(['Report']) \
-                                       & (~study_data['Record ID'].str.match('^ARCHIVED-.*')) \
-                                       & (~study_data['Record ID'].str.match('000001'))]
+                                          & (~study_data['Record ID'].str.match('^ARCHIVED-.*')) \
+                                          & (~study_data['Record ID'].str.match('000001'))]
     reports_data_filtered = reports_data_filtered[(~reports_data_filtered['Form Instance ID'].isna())]
     
     
@@ -89,33 +87,32 @@ def import_data():
     
     # filter relevant columns for reports variables
     # sort on form collection order and field order (this matches how data is filled)
-    reports_structure_filtered = study_structure \
-    .filter(['Form Type', 'Form Collection Name',
-           'Form Collection Order', 'Form Name', 'Form Order',
-           'Field Variable Name', 'Field Label', 'Field ID', 'Field Type',
-           'Field Order', 'Calculation Template',
-           'Field Option Group'],axis=1) \
-    .sort_values(['Form Order','Form Collection Name','Form Collection Order','Field Order']) 
+    reports_structure_filtered = study_structure.filter(['Form Type', 'Form Collection Name',
+                                                         'Form Collection Order', 'Form Name', 'Form Order',
+                                                         'Field Variable Name', 'Field Label', 'Field ID', 'Field Type',
+                                                         'Field Order', 'Calculation Template',
+                                                         'Field Option Group'],axis=1) \
+                                                .sort_values(['Form Order','Form Collection Name','Form Collection Order','Field Order']) 
     
     
     # filter datatypes that are (most of the times) unusable for ML model; i.e. custom entries
     # filter variables that are repeated measurements (i.e. reports data).
     # filter variables that have no Field Variable name (additional remarks by user?)
-#     reports_structure_filtered = reports_structure_filtered[\
-#                                 reports_structure_filtered['Field Type'].isin(['radio', 'date', 'dropdown', 'checkbox', 'string', 'numeric', 'calculation',
-#      'time'])]
+    reports_structure_filtered = reports_structure_filtered[reports_structure_filtered['Field Type'] \
+                                                               .isin(['radio', 'date', 'dropdown', 'checkbox', 
+                                                                      'string', 'numeric', 'calculation', 'time'])]
     reports_structure_filtered = reports_structure_filtered[reports_structure_filtered['Form Type'].isin(['Report'])]
     reports_structure_filtered = reports_structure_filtered[(~reports_structure_filtered['Field Variable Name'].isna())]
     reports_structure_filtered = reports_structure_filtered[(reports_structure_filtered['Form Collection Name'].isin(['Daily case record form']))]
     # merge the structure and the data to get full dataset 
     reports_data_all = pandas.merge(reports_structure_filtered[['Field Variable Name','Field ID']],\
-                  reports_data_filtered[['Record ID','Value','Form Instance ID','Field ID']],\
-                  on='Field ID')\
-        .pivot(index='Form Instance ID',columns='Field Variable Name',values='Value')
+                                    reports_data_filtered[['Record ID','Value','Form Instance ID','Field ID']],\
+                                    on='Field ID')\
+                             .pivot(index='Form Instance ID',columns='Field Variable Name',values='Value')
     
     # Record ID has vanished; now add Record ID again. (probably smarter to do this using pivot_table, but cant figure this out)
     reports_data_all = pandas.merge(reports_data_all,reports_data_filtered[['Record ID','Form Instance ID']], on='Form Instance ID')\
-        .drop_duplicates()
+                             .drop_duplicates()
     
     # reorganize data to put record id and assesment date in front.
     cols = reports_data_all.columns.tolist()
@@ -123,7 +120,6 @@ def import_data():
     cols.insert(0, cols.pop(cols.index('Record ID')))
     cols.pop(cols.index('Form Instance ID')) # drop this one, not needed
     reports_data_final = reports_data_all.reindex(columns= cols)
-    
     
     ### STEP 2B: collect data from COMPLICATIONS reports
     # PLEASE NOTE THAT THIS WORKS, but as of 31/3 no complications data is present; hence this option is disabled.
@@ -169,8 +165,8 @@ def import_data():
     # reports_structure_filtered
     # reports_data_final # note that record ID can not be the named index, because multiple entries exist.
     
-    return study_data_final, study_structure_filtered,reports_data_final, reports_structure_filtered, optiongroups_struct
     
-
     ## STEP 5: (TODO) summarize data from reports and add the summary stats to study_data_final
     # TODO
+
+    return study_data_final, study_structure_filtered,reports_data_final, reports_structure_filtered, optiongroups_struct

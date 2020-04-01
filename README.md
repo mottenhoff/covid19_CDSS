@@ -3,6 +3,18 @@
 Work in progress
 
 
+## Importing data from the database
+
+1) Open castor_import.py
+
+2) change line 17 to your client and secret. 
+> c = Castor_api('/your/path/here')
+
+3) run castor_import with 4 output arguments to get all data that you have access to:
+> study_data, study_struct,reports_data, reports_struct = covid19_import.import_data()
+
+
+
 ## Connecting to castor API
 To connect to the Castor EDC database, one needs to create a client and a secret file (once) in your account:
 
