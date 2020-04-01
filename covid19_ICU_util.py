@@ -43,7 +43,8 @@ RADIO_UNIT=           ['Haemoglobin_unit_1','WBC_1_1','units_lymph','units_neutr
                        # Report variables
                         'PCO2_unit', 'Haemoglobin_unit', 'WBC_1', 
                        'lymph_units_1', 'neutro_units_2', 'Platelets_unit', 'Total_Bilirubin_1', 'Glucose_unit', 
-                       'Blood_Urea_Nitrogen_unit', 'Lactate_1', 'Creatinine_unit', 'sodium_units_1', 'pot_units_2']
+                       'Blood_Urea_Nitrogen_unit', 'Lactate_1', 'Creatinine_unit', 'sodium_units_1', 'pot_units_2',
+                       'units_d_dimer']
 
 IS_MEASURED_COLUMNS = ['baby_ARI', 'Haemoglobin_1', 'WBC_3', 'Lymphocyte_2', 'Neutrophil_1', 'Platelets_1', 'APT_APTR_2', 
                        'INR_2', 'ALT_SGPT_2', 'Total_Bilirubin_3', 'AST_SGOT_2', 'Glucose_1', 'Blood_Urea_Nitrogen_1',
@@ -51,12 +52,12 @@ IS_MEASURED_COLUMNS = ['baby_ARI', 'Haemoglobin_1', 'WBC_3', 'Lymphocyte_2', 'Ne
                        'LDHadmi', 'bloed_gas', 'oxygentherapy_1', 'pao2_yes_no', 'Same_blood_gas_PaO2_PCO2_1', 'ph__1',
                        'Chest_X_Ray_2', 'Add_Daily_CRF_1', 'Antiviral_agent_1', 'Corticosteroid_1', 
                         # Report
-                       'oxygentherapy', 'pao2_yes_no_1', 'Same_blood_gas_PaO2_PCO2', 'ph_', 'HCO3', 'Base_excess', 
+                       'oxygentherapy', 'pao2_yes_no_1', 'sa02_yes_no', 'Same_blood_gas_PaO2_PCO2', 'ph_', 'HCO3', 'Base_excess', 
                        'EMV_yes_no', 'resprat_yes_no_1', 'heartrate_yes_no_2', 'Systolic_bp', 'diastolic_bp', 
-                       'mean_arterial_bp', 'temperature_yes_no_3', 'temperature_yes_no_4', 'patient_interventions_yes_no', 
+                       'mean_arterial_bp', 'temperature_yes_no_3', 'temperature_yes_no_4', 'patient_interventions_yes_no', 'blood_assessment_yes_no',
                        'Haemoglobin', 'WBC', 'Lymphocyte', 'Neutrophil', 'Platelets', 'APT_APTR', 'INR', 'ALT_SGPT', 
                        'Total_Bilirubin', 'AST_SGOT', 'Glucose', 'Blood_Urea_Nitrogen', 'Lactate', 'Creatinine', 
-                       'Sodium', 'Potassium', 'CRP', 'Albumin', 'CKin', 'LDH_daily', 'Chest_X_Ray', 'CTperf', ]
+                       'Sodium', 'Potassium', 'CRP', 'Albumin', 'CKin', 'LDH_daily', 'Chest_X_Ray', 'CTperf', 'd_dimer_yes_no']
 
 format_dt = lambda col: pd.to_datetime(col, format='%d-%m-%Y', errors='coerce').astype('datetime64[ns]')
 
@@ -122,6 +123,7 @@ def calculate_outcome_measure(data):
     data.loc[data['Outcome']==3, 'ICU_admitted'] = 1
     data.loc[data['Admission_dt_icu_1'].notna(), 'ICU_admitted'] = 1
     data.loc[data['dept']==3, 'ICU_admitted'] = 1
+
     x = data.drop(['Outcome', 'Admission_dt_icu_1', 'dept'], axis=1)
     y = pd.Series(data['ICU_admitted'], copy=True)
 
@@ -157,8 +159,9 @@ def select_prospective_data(data_study, data_daily, col_dict):
     return data
 
 def fix_single_errors(data, data_rep):
+    data.replace('11-11-1111', None, inplace=True)
+
     data['Enrolment_date'].replace('24-02-1960', '24-02-2020', inplace=True)
-    data['onset_dt'].replace('11-11-1111', None, inplace=True)
     data['admission_dt'].replace('19-03-0202', '19-03-2020', inplace=True)
     data['admission_facility_dt'].replace('01-01-2998', None, inplace=True)
     data['age'].replace('14-09-2939', '14-09-1939', inplace=True)
@@ -343,6 +346,30 @@ def plot_model_weights(coefs, intercepts, field_names, show_n_labels=10):
     ax.set_xticks(n_bars)
     ax.set_xticklabels(bar_labels, rotation=90, fontdict={'fontsize': 6})
     ax.set_ylabel('Weight')
+    ax.set_title('Logistic regression - ICU admission at hospital presentation\nAverage weight value')
+    fig.savefig('Average_weight_variance.png')
+    return fig, ax
+
+
+def plot_model_weights(coefs, intercepts, field_names, show_n_labels=10):
+    coefs = np.array(coefs).squeeze()
+    intercepts = np.array(intercepts).squeeze()
+
+    avg_coefs = coefs.mean(axis=0)
+    var_coefs = coefs.var(axis=0)
+
+    idx_n_max_values = abs(avg_coefs).argsort()[:]
+    n_bars = np.arange(coefs.shape[1])
+    bar_labels = [''] * n_bars.size
+    for idx in idx_n_max_values:
+        bar_labels[idx] = field_names[idx]
+
+    bar_width = .5 # bar width
+    fig, ax = plt.subplots()
+    bars = ax.barh(n_bars, avg_coefs, bar_width, xerr=var_coefs,label='Weight')
+    ax.set_yticks(n_bars)
+    ax.set_yticklabels(bar_labels, fontdict={'fontsize': 6})
+    ax.set_xlabel('Weight')
     ax.set_title('Logistic regression - ICU admission at hospital presentation\nAverage weight value')
     fig.savefig('Average_weight_variance.png')
     return fig, ax

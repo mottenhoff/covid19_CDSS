@@ -38,7 +38,6 @@ from covid19_ICU_util import plot_model_results
 from covid19_ICU_util import plot_model_weights
 
 
-
 def load_data_api(path_credentials):
     df_study, df_structure, df_report, df_report_structure, df_optiongroup_structure = import_data(path_credentials)
 
@@ -171,11 +170,17 @@ def feature_selection(data, col_dict, field_types):
     ''' 
 
     exclude = ['Bleeding_sites', 'OTHER_intervention_1', 'same_id', 'facility_transfer', 
-               'Add_Daily_CRF_1', 'ICU_Medium_Care_admission_1', 'Specify_Route_1', 'Corticosteroid_type_1']
+               'Add_Daily_CRF_1', 'ICU_Medium_Care_admission_1', 'Specify_Route_1', 'Corticosteroid_type_1',
+               'whole_admission_yes_no', 'whole_admission_yes_no_1', 'facility_transfer_cat_1',
+               'facility_transfer_cat_2', 'facility_transfer_cat_3']#, 'Coronavirus_cat_1',
+            #    'Coronavirus_cat_2', 'Coronavirus_cat_3']
     # Fill
     data = data.replace(-1, None)
     data = data.dropna(how='all', axis=1) # TODO: Drop empty columns??
     data = data.fillna(0) # TODO: Make smarter handling of missing data 
+
+    # TEMP, might include only ICU variables
+    # data = data.drop([col for col in data.columns if 'patient_interventions' in col], axis=1)
 
     # Drop
     cols_to_drop  = [col for col in data.columns if col in exclude] + \
@@ -238,32 +243,34 @@ def score_and_vizualize_prediction(model, test_x, test_y, y_hat, rep):
     return roc_auc
 
 
+# TODO: config file
+if __name__ == "__main__":
+    path_creds = r'./covid19_CDSS/castor_api_creds/'
+    path = r'C:\Users\p70066129\Projects\COVID-19 CDSS\covid19_CDSS\Data\200329_COVID-19_NL/'
+    filename_data = r'COVID-19_NL_data.csv'
+    filename_report = r'COVID-19_NL_report.csv' 
+    filename_study_vars = r'study_variablelist.csv'
+    filename_report_vars = r'report_variablelist.csv'
 
-path_creds = r'/Users/wouterpotters/Desktop/'
-# path = r'C:\Users\p70066129\Projects\COVID-19 CDSS\covid19_CDSS\Data\200329_COVID-19_NL/'
-filename_data = r'COVID-19_NL_data.csv'
-filename_report = r'COVID-19_NL_report.csv' 
-filename_study_vars = r'study_variablelist.csv'
-filename_report_vars = r'report_variablelist.csv'
+    x, y, col_dict, field_types = load_data(path + filename_data, path + filename_report, 
+                                            path + filename_study_vars, path + filename_report_vars,
+                                            from_file=False, path_creds=path_creds)
+    x = preprocess(x, col_dict, field_types)
+    x = feature_selection(x, col_dict, field_types)
 
-x, y, col_dict, field_types = load_data(from_file=False, path_creds=path_creds)
-x = preprocess(x, col_dict, field_types)
-x = feature_selection(x, col_dict, field_types)
+    aucs = []
+    model_coefs = []
+    model_intercepts = []
+    repetitions = 100
+    for i in range(repetitions):
+        model, train_x, train_y, test_x, \
+            test_y, test_y_hat = model_and_predict(x, y, test_size=0.20)
+        auc = score_and_vizualize_prediction(model, test_x, test_y, test_y_hat, i)
+        aucs.append(auc)
+        model_intercepts.append(model.intercept_)
+        model_coefs.append(model.coef_)
 
-aucs = []
-model_coefs = []
-model_intercepts = []
-repetitions = 100
-for i in range(repetitions):
-    model, train_x, train_y, test_x, \
-        test_y, test_y_hat = model_and_predict(x, y, test_size=0.20)
-    auc = score_and_vizualize_prediction(model, test_x, test_y, test_y_hat, i)
-    aucs.append(auc)
-    model_intercepts.append(model.intercept_)
-    model_coefs.append(model.coef_)
-
-fig, ax = plot_model_results(aucs)
-fig, ax = plot_model_weights(model_coefs, model_intercepts, x.columns, show_n_labels=25)
-plt.show()
-print('done')
-
+    fig, ax = plot_model_results(aucs)
+    fig, ax = plot_model_weights(model_coefs, model_intercepts, x.columns, show_n_labels=50)
+    plt.show()
+    print('done')
