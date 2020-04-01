@@ -264,14 +264,15 @@ if __name__ == "__main__":
     repetitions = 100
     for i in range(repetitions):
         model, train_x, train_y, test_x, \
-            test_y, test_y_hat = model_and_predict(x, y, test_size=0.20)
+            test_y, test_y_hat = model_and_predict(x, y, test_size=0.25)
         auc = score_and_vizualize_prediction(model, test_x, test_y, test_y_hat, i)
         aucs.append(auc)
         model_intercepts.append(model.intercept_)
         model_coefs.append(model.coef_)
 
     fig, ax = plot_model_results(aucs)
-    fig, ax = plot_model_weights(model_coefs, model_intercepts, x.columns, show_n_labels=50)
+    fig, ax = plot_model_weights(model_coefs, model_intercepts, x.columns, 
+                                 show_n_labels=50, normalize_coefs=False)
     plt.show()
     print('done')
 

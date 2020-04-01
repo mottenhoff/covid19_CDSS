@@ -351,12 +351,15 @@ def plot_model_weights(coefs, intercepts, field_names, show_n_labels=10):
     return fig, ax
 
 
-def plot_model_weights(coefs, intercepts, field_names, show_n_labels=10):
+def plot_model_weights(coefs, intercepts, field_names, show_n_labels=10,
+                       normalize_coefs=False):
     coefs = np.array(coefs).squeeze()
     intercepts = np.array(intercepts).squeeze()
 
+    coefs = (coefs-coefs.mean(axis=0))/coefs.std(axis=0) if normalize_coefs else coefs
+
     avg_coefs = coefs.mean(axis=0)
-    var_coefs = coefs.var(axis=0)
+    var_coefs = coefs.var(axis=0) if not normalize_coefs else None
 
     idx_n_max_values = abs(avg_coefs).argsort()[:]
     n_bars = np.arange(coefs.shape[1])
