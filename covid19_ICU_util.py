@@ -97,37 +97,54 @@ def remove_invalid_data(data, cols):
     # during the whole admission retrospectively. This was
     # later changed, but some of these entries are still
     # in the data and thus have to be removed.
-    resp_cols = cols['Respiratory assessment'] 
-    blood_cols = cols['Blood assessment']
+
+    resp_cols = [col for col in cols['Respiratory assessment'] if col in data.columns] 
+    blood_cols = [col for col in cols['Blood assessment'] if col in data.columns]
     data.loc[data['whole_admission_yes_no'] == 1, resp_cols] = None
     data.loc[data['whole_admission_yes_no_1'] == 1, blood_cols] = None
 
-    # Remove all (possible) test entries
-    data = data.loc[data['Record Id'].astype(int) > 12000, :]
 
     return data
 
-def calculate_outcome_measure(data):
+def calculate_outcome_measure(df_study, df_report):
     ''' Generated outcome measure   
-    Goal: predict ICU admission at hospital admissions (presentation) 
-    
+    Goal: Probability that patient will decease at any time in ICU
+          TODO: predict death after short or long stay
+
     Variables used and their meaning:
     Admission_dt_icu_1 = ICU admission at hospital presentation (immediate)
     Admission_dt_icu   = ICU admissions during hospitalization --> NOTE: only in daily reports?
     Outcome            = ICU admission within 3 weeks of admission
     dept               = Department on which the daily report assessment is taken
-    
     '''
-    data['ICU_admitted'] = 0
+
+    is_at_icu_at_wk3 = df_study['Outcome'].astype(str)=='3'                      # 3==ICU
+    is_at_icu_at_wk6 = df_study['Outcome_6wk'].astype(str)=='3'
+    has_been_at_icu = df_study['unit_admission_1'].astype(str).str.contains('1') # 1==ICU, 2==MC
+    has_icu_admission_date = df_study['Admission_dt_icu_1'].notna() 
+    has_icu_discharge_date = df_study['Discharge_dt_icu_1'].notna()
     
-    data.loc[data['Outcome']==3, 'ICU_admitted'] = 1
-    data.loc[data['Admission_dt_icu_1'].notna(), 'ICU_admitted'] = 1
-    data.loc[data['dept']==3, 'ICU_admitted'] = 1
+    df_study['has_report_at_icu'] = 0
+    for id_ in df_report['Record Id'].unique():
+        has_dept_3 = any(df_report.loc[df_report['Record Id']==id_, 'dept'] == '3')
+        try:
+            df_study.loc[df_study['Record Id']==id_, 'has_report_at_icu'] = 1 if has_dept_3 else 0
+        except Exception:
+            print("WARNING: Record Id {} not in df_study, skipping...".format(id_))
+    has_report_at_icu = df_study['has_report_at_icu'] == 1
+    df_study = df_study.drop('has_report_at_icu', axis=1)
 
-    x = data.drop(['Outcome', 'Admission_dt_icu_1', 'dept'], axis=1)
-    y = pd.Series(data['ICU_admitted'], copy=True)
+    df_study['ICU_admitted'] = 0
+    df_study.loc[is_at_icu_at_wk3 | 
+                 is_at_icu_at_wk6 |
+                 has_been_at_icu |
+                 has_icu_admission_date | 
+                 has_icu_discharge_date | 
+                 has_report_at_icu,
+                 'ICU_admitted'] = 1
+    y = pd.Series(df_study['ICU_admitted'], copy=True)
+    return df_study, df_report, y
 
-    return x, y
 
 def select_baseline_data(data, col_dict):
     ''' Select data that is measured before ICU'''

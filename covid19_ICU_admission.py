@@ -54,6 +54,9 @@ def load_data_api(path_credentials):
     df_study = df_study.rename({'Record ID': "Record Id"}, axis=1)
     df_report = df_report.rename({'Record ID': "Record Id"}, axis=1)
 
+    # Remove test records
+    df_study = df_study.loc[df_study['Record Id'].astype(int) > 12000, :]
+
     return df_study, df_report, df_structure, df_report_structure
 
 def load_data_csv(path_study, path_report, path_study_vars, path_report_vars):
@@ -101,11 +104,12 @@ def load_data(path_data=None, path_report=None, path_study_vars=None, path_repor
 
     # Fix and merge
     df, df_report = fix_single_errors(df, df_report)
+
+    df, df_report, y = calculate_outcome_measure(df, df_report)
     df = merge_study_and_report(df, df_report, cols)
     
     # Outcome and data selection
-    x, y = calculate_outcome_measure(df)
-    x = select_baseline_data(x, cols)
+    x = select_baseline_data(df, cols)
 
     return x, y, cols, field_types
     
@@ -272,7 +276,7 @@ if __name__ == "__main__":
 
     fig, ax = plot_model_results(aucs)
     fig, ax = plot_model_weights(model_coefs, model_intercepts, x.columns, 
-                                 show_n_labels=50, normalize_coefs=False)
+                                 show_n_labels=50, normalize_coefs=True)
     plt.show()
     print('done')
 
