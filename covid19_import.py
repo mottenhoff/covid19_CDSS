@@ -57,6 +57,7 @@ def import_data(path_to_api_creds):
     # Filter data tbat is not a study entry (i.e. reports, complications) - repeated measures; should be summarized first
     # Filter archived data (=DELETED data)
     # Filter all patients from test institute (=TEST patient)
+    study_data['Record ID'] = study_data['Record ID'].astype(str)
     study_data_filtered = study_data[study_data['Form Type'].isin(['Study']) \
                                               & (~study_data['Record ID'].str.match('^ARCHIVED-.*')) \
                                               & (~study_data['Record ID'].str.match('000001'))]\

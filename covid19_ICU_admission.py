@@ -36,7 +36,7 @@ from covid19_ICU_util import transform_string_features
 from covid19_ICU_util import select_data
 from covid19_ICU_util import plot_model_results
 from covid19_ICU_util import plot_model_weights
-
+from covid19_ICU_util import explore_data
 
 def load_data_api(path_credentials):
     df_study, df_structure, df_report, df_report_structure, df_optiongroup_structure = import_data(path_credentials)
@@ -146,18 +146,20 @@ def preprocess(data, col_dict, field_types):
     return data
 
 
-def add_engineered_features(data, col_dict):
+def add_engineered_features(data):
     ''' Generate and add features'''
-
+    # TODO: Normalize/scale numeric features (also to 0 to 1?)
+    # TODO: PCA not for complete dataset...
     # Dimensional transformation
+    data = data.reset_index(drop=True)
+
     n_components = 10
     pca = PCA(n_components=n_components)
     princ_comps = pd.DataFrame(pca.fit_transform(data))
     princ_comps.columns = ['pc_{:d}'.format(i) for i in range(n_components)]
 
-
     # Add features
-    data = pd.concat([data, princ_comps], axis=1)
+    data = pd.concat([data, princ_comps], axis=1, ignore_index=True)
 
     return data
 
@@ -167,9 +169,10 @@ def feature_selection(data, col_dict, field_types):
         Get engineered featured
         Save the processed data
 
+
+    TODO: Function does data selection now, name accordingly
     TODO: Check how the selected field here relate to the daily report features
     TODO: Check if there are variables only measured in the ICU
-    TODO: Normalize/scale numeric features (also to 0 to 1?)
     TODO: Some form of feature selection?
     ''' 
 
@@ -178,9 +181,10 @@ def feature_selection(data, col_dict, field_types):
                'whole_admission_yes_no', 'whole_admission_yes_no_1', 'facility_transfer_cat_1',
                'facility_transfer_cat_2', 'facility_transfer_cat_3']#, 'Coronavirus_cat_1',
             #    'Coronavirus_cat_2', 'Coronavirus_cat_3']
+    
     # Fill
     data = data.replace(-1, None)
-    data = data.dropna(how='all', axis=1) # TODO: Drop empty columns??
+    data = data.dropna(how='all', axis=1)
     data = data.fillna(0) # TODO: Make smarter handling of missing data 
 
     # TEMP, might include only ICU variables
@@ -191,10 +195,7 @@ def feature_selection(data, col_dict, field_types):
                     data.columns[(data.nunique() <= 1).values].to_list() # Find colums with a single or no values    
     data = data.drop(cols_to_drop, axis=1)
 
-    print('{} columns left for feature_engineering and modelling'.format(data.columns.size))
-
-    # Add
-    data = add_engineered_features(data, col_dict)
+    print('{} columns left for feature engineering and modelling'.format(data.columns.size))
 
     # Save
     try:
@@ -212,9 +213,12 @@ def model_and_predict(x, y, test_size=0.2, val_size=0.2, hpo=False):
                 (meaning test has the same Y-class distribution as
                  train)
     '''
-
     # Train/test-split
     train_x, test_x, train_y, test_y = train_test_split(x, y, test_size=test_size, stratify=y) # stratify == simila y distribution in both sets
+
+    # Add engineered features:
+    train_x = add_engineered_features(train_x)
+    test_x = add_engineered_features(test_x)
 
     if hpo:
         train_x, val_x, train_y, val_y = train_test_split(x, y, val_size=val_size)
@@ -262,13 +266,15 @@ if __name__ == "__main__":
     x = preprocess(x, col_dict, field_types)
     x = feature_selection(x, col_dict, field_types)
 
+    explore_data(x, y)
+
     aucs = []
     model_coefs = []
     model_intercepts = []
     repetitions = 100
     for i in range(repetitions):
         model, train_x, train_y, test_x, \
-            test_y, test_y_hat = model_and_predict(x, y, test_size=0.25)
+            test_y, test_y_hat = model_and_predict(x, y, test_size=0.2)
         auc = score_and_vizualize_prediction(model, test_x, test_y, test_y_hat, i)
         aucs.append(auc)
         model_intercepts.append(model.intercept_)
@@ -276,7 +282,7 @@ if __name__ == "__main__":
 
     fig, ax = plot_model_results(aucs)
     fig, ax = plot_model_weights(model_coefs, model_intercepts, x.columns, 
-                                 show_n_labels=50, normalize_coefs=True)
+                                 show_n_labels=25, normalize_coefs=False)
     plt.show()
     print('done')
 
