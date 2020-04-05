@@ -27,14 +27,14 @@ def import_data_by_record(path_to_api_creds=None):
     config = configparser.ConfigParser()
     config.read('user_settings.ini') # create this once using covid19_createconfig and never upload this file to git.
     
-    if not path_to_api_creds:
+    if path_to_api_creds == None:
         path_to_api_creds = config['CastorCredentials']['local_private_path']
     # alternative for import_data if import_data fails due to server-side timeout errors (i.e. for large datasets)
     # this alternative loops over de records and report instances to load the data
     
     # input: private folder where client & secret files (no extension, 1 string only per file) from castor are saved by the user
     # see also: https://helpdesk.castoredc.com/article/124-application-programming-interface-api
-    c = Castor_api(path_to_api_creds=None) # e.g. in user dir outside of GIT repo
+    c = Castor_api(path_to_api_creds) # e.g. in user dir outside of GIT repo
     
     # get study ID for COVID study
     study_id = c.select_study_by_name(config['CastorCredentials']['study_name'])    
@@ -45,9 +45,9 @@ def import_data_by_record(path_to_api_creds=None):
     test_inst = [i for i in c.request_institutes() if 'test' in i['name'].lower()][0]
     test_records = [r['record_id'] for r in c.request_study_records(institute=test_inst['institute_id'])]
     test_records += [r['record_id'] for r in c.request_study_records() if r['archived']==1]
-    print(test_records)
-    df_study.drop(index=df_study[df_study['record_id'].isin(test_records)].index, inplace=True)
-    df_report.drop(index=df_report[df_report['record_id'].isin(test_records)].index, inplace=True)
+
+    df_study.drop(index=df_study[df_study['Record Id'].isin(test_records)].index, inplace=True)
+    df_report.drop(index=df_report[df_report['Record Id'].isin(test_records)].index, inplace=True)
     
     return df_study, df_structure_study, df_report, df_structure_report, df_optiongroups_structure
 
@@ -56,7 +56,7 @@ def import_data(path_to_api_creds=None):
     config = configparser.ConfigParser()
     config.read('user_settings.ini') # create this once using covid19_createconfig and never upload this file to git.
 
-    if not path_to_api_creds:
+    if path_to_api_creds == None:
         path_to_api_creds = config['CastorCredentials']['local_private_path']
         
     # input: private folder where client & secret files (no extension, 1 string only per file) from castor are saved by the user

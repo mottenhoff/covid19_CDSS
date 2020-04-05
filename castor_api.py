@@ -105,10 +105,10 @@ class Castor_api:
         if not study_id_input: # loaded from class instance
             study_id_output = self.__study_id_saved
             if not study_id_output:
-                raise NameError('study_id not set. Use \'request_study(study_id)\' to set the study_id')
+                raise NameError('study_id not set. Use \'select_study_by_name(study_name)\' or \'request_study(study_id)\' to set the study_id')
         else: # set by user
             study_id_output = study_id_input
-            if self.__study_id_saved != study_id_output:
+            if self.__study_id_saved != study_id_output and type(study_id_output) == str:
                 self.__study_id_saved = study_id_output
                 print('study_id \''+study_id_output+'\' was saved in castor_api class instance' )
         return study_id_output
@@ -620,10 +620,12 @@ class Castor_api:
         
         # get option groups
         df_optiongroups_structure = pd.DataFrame(self.request_study_export_optiongroups())
-
+        
         # GET ALL STUDY RECORDS
         records = self.request_study_records(study_id)
-        # records = records[0:10] # test data
+        if True:
+            print('DEBUG MODE ACTIVE. ONLY PROCESSING 2 RECORDS')
+            records = records[10:50] # test data
 
         # GET ALL STUDY AND REPORT VALUES FOR STUDY RECORDS - if no data was found, use None
         study_data = []
@@ -640,9 +642,19 @@ class Castor_api:
         df_study.reset_index(level=0, inplace=True)
 
         df_report = pd.DataFrame(report_data)
-        df_report = pd.pivot_table(df_report,index=['record_id','report_instance_id'],values='field_value',columns='field_id',aggfunc=', '.join)
-        df_report.rename(columns=field_dict, inplace=True)
-        df_report.reset_index(level=0, inplace=True)
+        if not df_report.empty:
+            # aggfunc is ', '.join, but no duplicate entries are expected when indexing on report_instance_id.
+            df_report = pd.pivot_table(df_report,index=['record_id','report_instance_id'],values='field_value',columns='field_id',aggfunc=', '.join)
+            df_report.rename(columns=field_dict, inplace=True)
+            df_report.reset_index(level=0, inplace=True)
+        else:
+            print('No reports found; df_report is empty.')
+
+        # for some reason the names of some variables are different in the export format, rename them
+        rename_cols = {"study_id":"Study ID","record_id":"Record Id","form_type":"Form Type","form_instance id":"Form Instance ID","form_instance_name":"Form Instance Name","field_id":"Field ID","value":"Value","date":"Date","user_id":"User ID"};
+        if not df_report.empty:
+            df_report.rename(columns=rename_cols, inplace=True)
+        df_study.rename(columns=rename_cols, inplace=True)
 
         # return data
         return df_study, df_structure_study, df_report, df_structure_report, df_optiongroups_structure
