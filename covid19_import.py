@@ -12,6 +12,37 @@ from castor_api import Castor_api
 # TODO: free text fields are now ignored
 # TODO: filter on TEST institution rather than on patient 000001. (if possible)
 
+
+def compare_import_methods():
+    path = '/Users/wouterpotters/Desktop/'
+    study, study_struct, reports, reports_struct, option_struct = import_data(path)
+    study2, study_struct2, reports2, reports_struct2, option_struct2 = import_data_by_record(path)
+
+    return study, study_struct, reports, reports_struct, option_struct, study2, study_struct2, reports2, reports_struct2, option_struct2
+    
+def import_data_by_record(path_to_api_creds):
+    # alternative for import_data if import_data fails due to server-side timeout errors (i.e. for large datasets)
+    # this alternative loops over de records and report instances to load the data
+    
+    # input: private folder where client & secret files (no extension, 1 string only per file) from castor are saved by the user
+    # see also: https://helpdesk.castoredc.com/article/124-application-programming-interface-api
+    c = Castor_api(path_to_api_creds) # e.g. in user dir outside of GIT repo
+    
+    # get study ID for COVID study
+    study_id = c.select_study_by_name('COVID')    
+    
+    df_study, df_structure_study, df_report, df_structure_report, df_optiongroups_structure = c.records_reports_all(report_names=['Daily'])
+    
+    # remove test institute and archived (deleted) records
+    test_inst = [i for i in c.request_institutes() if 'test' in i['name'].lower()][0]
+    test_records = [r['record_id'] for r in c.request_study_records(institute=test_inst['institute_id'])]
+    test_records += [r['record_id'] for r in c.request_study_records() if r['archived']==1]
+    print(test_records)
+    df_study.drop(index=df_study[df_study['record_id'].isin(test_records)].index, inplace=True)
+    df_report.drop(index=df_report[df_report['record_id'].isin(test_records)].index, inplace=True)
+    
+    return df_study, df_structure_study, df_report, df_structure_report, df_optiongroups_structure
+
 def import_data(path_to_api_creds):
     ### STEP 0: connect to API
     
@@ -20,18 +51,17 @@ def import_data(path_to_api_creds):
     c = Castor_api(path_to_api_creds) # e.g. in user dir outside of GIT repo
     
     # get study ID for COVID study
-    study_id = c.request_study_id('COVID')[0]
-    
+    study_id = c.select_study_by_name('COVID')    
     
     ### STEP 0: collect answer options from optiongroups
     
     # get answer option groups
-    optiongroups_struct = c.request_study_export_optiongroups(study_id)
+    optiongroups_struct = c.request_study_export_optiongroups()
     
     ### STEP 1: collect data from study
     
     # get the main study structure (i.e. questions)
-    study_structure = c.request_study_export_structure(study_id)
+    study_structure = c.request_study_export_structure()
     
     # filter unused columns
     # sort fields
@@ -52,8 +82,7 @@ def import_data(path_to_api_creds):
                                                         & ~(study_structure_filtered['Field Variable Name'].isna())] # keep only study forms; reports can exist multiple times and should be summarized.
     
     # Get study data
-    study_data = c.request_study_export_data(study_id)
-    print(study_data)
+    study_data = c.request_study_export_data()
     
     # Filter data tbat is not a study entry (i.e. reports, complications) - repeated measures; should be summarized first
     # Filter archived data (=DELETED data)

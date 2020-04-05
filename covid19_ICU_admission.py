@@ -23,6 +23,7 @@ from sklearn.metrics import roc_auc_score
 
 from castor_api import Castor_api
 from covid19_import import import_data
+from covid19_import import import_data_by_record
 
 from covid19_ICU_util import fix_single_errors
 from covid19_ICU_util import merge_study_and_report
@@ -39,7 +40,7 @@ from covid19_ICU_util import plot_model_weights
 
 
 def load_data_api(path_credentials):
-    df_study, df_structure, df_report, df_report_structure, df_optiongroup_structure = import_data(path_credentials)
+    df_study, df_structure, df_report, df_report_structure, df_optiongroup_structure = import_data_by_record(path_credentials)
 
     # Select useful columns
     var_columns = ['Form Collection Name', 'Form Name', 'Field Variable Name', 'Field Label', 'Field Type']
