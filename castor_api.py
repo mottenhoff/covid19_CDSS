@@ -623,9 +623,9 @@ class Castor_api:
         
         # GET ALL STUDY RECORDS
         records = self.request_study_records(study_id)
-        if True:
-            print('DEBUG MODE ACTIVE. ONLY PROCESSING 2 RECORDS')
-            records = records[10:50] # test data
+        if False: # set to True when debugging.
+            records = records[0:25] # test data
+            print('DEBUG MODE ACTIVE. ONLY PROCESSING '+str(len(records))+' RECORDS')
 
         # GET ALL STUDY AND REPORT VALUES FOR STUDY RECORDS - if no data was found, use None
         study_data = []
