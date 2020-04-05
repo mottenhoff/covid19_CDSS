@@ -74,8 +74,8 @@ def merge_study_and_report(df_study, df_report, cols):
     df_report.loc[:, 'assessment_dt'] = format_dt(df_report['assessment_dt'])
 
     df = pd.DataFrame(columns=df_report.columns)
-    for id_ in df_report['record_id'].unique():
-        reports_per_id = df_report[df_report['record_id'] == id_]
+    for id_ in df_report['Record Id'].unique():
+        reports_per_id = df_report[df_report['Record Id'] == id_]
 
         is_most_recent_date = reports_per_id['assessment_dt']==reports_per_id['assessment_dt'].max()
         is_not_in_ICU = reports_per_id['dept'] != '3'
@@ -85,7 +85,7 @@ def merge_study_and_report(df_study, df_report, cols):
             report = report.iloc[0, :] # NOTE: If more than 1 on a single day, select first index
         df = df.append(report)
 
-    df = pd.merge(left=df_study, right=df, how='left', on='record_id')
+    df = pd.merge(left=df_study, right=df, how='left', on='Record Id')
 
     df = remove_invalid_data(df, cols)
     df = df.reset_index(drop=True)
