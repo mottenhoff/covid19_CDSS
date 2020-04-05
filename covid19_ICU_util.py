@@ -2,6 +2,9 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
+from sklearn.model_selection import cross_val_predict
+from sklearn.metrics import roc_auc_score
+
                       #'post_partum','baby_ARI','infant','Breastfed', 'Currently_breastfed','development','vaccinations',
 RADIO_Y_N_NA =        ['healthcare_worker','microbiology_worker','Pregnancy','contact','ccd','hypertension','cpd','asthma','ckd',
                        'live_disease','mld','cnd','mneoplasm','chd','immune_sup','aids_hiv','obesity','Cachexia',
@@ -186,14 +189,18 @@ def calculate_outcome_measure(df_study, df_report):
     y.loc[(df_study['ICU_admitted']==1) & (~is_alive)] = 0
 
     # NOTE: Uncomment to predict ICU admission 
-    # y = pd.Series(df_study['ICU_admitted'], copy=True)
+    y = pd.Series(df_study['ICU_admitted'], copy=True)
+    y = y.fillna(0)
+
+    # NOTE: 1 = death, 0 alive
+    y = pd.Series(0, index=df_study.index)
+    y[df_study['Outcome'].isin(['7', '8'])] = 1
 
     # Remove record without outcome
     df_study = df_study.loc[~y.isna(), :]
     y = y.loc[~y.isna()]
 
     return df_study, df_report, y
-
 
 def select_baseline_data(data, col_dict):
     ''' Select data that is measured before ICU'''
@@ -211,18 +218,6 @@ def select_baseline_data(data, col_dict):
 
     return data[cols_baseline] 
 
-def select_retrospective_data(data, col_dict):
-    # TODO: Also return y values?
-    return data
-
-def select_prospective_data(data_study, data_daily, col_dict):
-    ''' 
-    # TODO: Also return y values?
-    Hospital admission: BASELINE + HOSPITAL
-    Current progress: Daily report
-    '''
-    data = None
-    return data
 
 def fix_single_errors(data, data_rep):
     data.replace('11-11-1111', None, inplace=True)
@@ -396,7 +391,6 @@ def plot_model_results(aucs):
 def plot_model_weights(coefs, intercepts, field_names, show_n_labels=10,
                        normalize_coefs=False):
     show_n_labels = coefs.shape[1] if show_n_labels == None else show_n_labels
-
     coefs = np.array(coefs).squeeze()
     intercepts = np.array(intercepts).squeeze()
 
@@ -404,7 +398,6 @@ def plot_model_weights(coefs, intercepts, field_names, show_n_labels=10,
 
     avg_coefs = coefs.mean(axis=0)
     var_coefs = coefs.var(axis=0) if not normalize_coefs else None
-
 
     idx_n_max_values = abs(avg_coefs).argsort()[-show_n_labels:]
     n_bars = np.arange(coefs.shape[1])
@@ -418,9 +411,45 @@ def plot_model_weights(coefs, intercepts, field_names, show_n_labels=10,
     ax.set_yticks(n_bars)
     ax.set_yticklabels(bar_labels, fontdict={'fontsize': 6})
     ax.set_xlabel('Weight')
-    ax.set_title('Logistic regression - ICU admission at hospital admission\nAverage weight value')
+    ax.set_title('Logistic regression - Average weight value')
     fig.savefig('Average_weight_variance.png')
     return fig, ax
 
 def explore_data(x, y):
-    pass
+    data = pd.concat([x, y], axis=1)
+    corr = data.corr(method='spearman')
+    plt.matshow(corr)
+
+
+def feature_contribution(clf, x, y, plot_graph=False, plot_n_features=None,
+                            n_cv=2, method='predict_proba'):
+
+    plot_n_features = x.shape[1] if not plot_n_features else plot_n_features
+    y_hat = cross_val_predict(clf, x, y, cv=n_cv, method=method)
+    baseline_score = roc_auc_score(y, y_hat[:, 1])
+
+    importances = np.array([])
+    
+    for col in x.columns:
+        x_tmp = x.drop(col, axis=1)
+        y_hat = cross_val_predict(clf, x_tmp, y, cv=n_cv, method=method)
+        score = roc_auc_score(y, y_hat[:, 1])
+        importances = np.append(importances, baseline_score-score)
+
+    if plot_graph:
+        idc = np.argsort(importances)
+        columns = x.columns[idc]
+        fig, ax = plt.subplots(1, 1)
+        ax.plot(importances[idc[-plot_n_features:]])
+        ax.axhline(0, color='k', linewidth=.5)
+        ax.set_xticks(np.arange(x.shape[1]))
+        ax.set_xticklabels(columns[-plot_n_features:], rotation=90, fontdict={'fontsize': 6})
+        ax.set_xlabel('Features')
+        ax.set_ylabel('Difference with baseline')
+
+    return importances
+
+
+    
+
+    
