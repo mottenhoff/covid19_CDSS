@@ -10,6 +10,7 @@ import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import cross_val_predict
+from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import LeaveOneOut
 from sklearn.linear_model import LogisticRegression
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
@@ -37,7 +38,8 @@ from covid19_ICU_util import transform_string_features
 from covid19_ICU_util import select_data
 from covid19_ICU_util import plot_model_results
 from covid19_ICU_util import plot_model_weights
-
+from covid19_ICU_util import explore_data
+from covid19_ICU_util import feature_contribution
 
 def load_data_api(path_credentials):
     df_study, df_structure, df_report, df_report_structure, df_optiongroup_structure = import_data_by_record(path_credentials)
@@ -54,6 +56,9 @@ def load_data_api(path_credentials):
 
     df_study = df_study.rename({'Record ID': "Record Id"}, axis=1)
     df_report = df_report.rename({'Record ID': "Record Id"}, axis=1)
+
+    # Remove test records
+    df_study = df_study.loc[df_study['Record Id'].astype(int) > 12000, :]
 
     return df_study, df_report, df_structure, df_report_structure
 
@@ -102,11 +107,12 @@ def load_data(path_data=None, path_report=None, path_study_vars=None, path_repor
 
     # Fix and merge
     df, df_report = fix_single_errors(df, df_report)
+
+    df, df_report, y = calculate_outcome_measure(df, df_report)
     df = merge_study_and_report(df, df_report, cols)
     
     # Outcome and data selection
-    x, y = calculate_outcome_measure(df)
-    x = select_baseline_data(x, cols)
+    x = select_baseline_data(df, cols)
 
     return x, y, cols, field_types
     
@@ -143,30 +149,16 @@ def preprocess(data, col_dict, field_types):
     return data
 
 
-def add_engineered_features(data, col_dict):
-    ''' Generate and add features'''
-
-    # Dimensional transformation
-    n_components = 10
-    pca = PCA(n_components=n_components)
-    princ_comps = pd.DataFrame(pca.fit_transform(data))
-    princ_comps.columns = ['pc_{:d}'.format(i) for i in range(n_components)]
-
-
-    # Add features
-    data = pd.concat([data, princ_comps], axis=1)
-
-    return data
-
 def feature_selection(data, col_dict, field_types):
     ''' Fills all missing values with 0,
         Drop columns without (relevant) information
         Get engineered featured
         Save the processed data
 
+
+    TODO: Function does data selection now, name accordingly
     TODO: Check how the selected field here relate to the daily report features
     TODO: Check if there are variables only measured in the ICU
-    TODO: Normalize/scale numeric features (also to 0 to 1?)
     TODO: Some form of feature selection?
     ''' 
 
@@ -175,9 +167,10 @@ def feature_selection(data, col_dict, field_types):
                'whole_admission_yes_no', 'whole_admission_yes_no_1', 'facility_transfer_cat_1',
                'facility_transfer_cat_2', 'facility_transfer_cat_3']#, 'Coronavirus_cat_1',
             #    'Coronavirus_cat_2', 'Coronavirus_cat_3']
+    
     # Fill
     data = data.replace(-1, None)
-    data = data.dropna(how='all', axis=1) # TODO: Drop empty columns??
+    data = data.dropna(how='all', axis=1)
     data = data.fillna(0) # TODO: Make smarter handling of missing data 
 
     # TEMP, might include only ICU variables
@@ -188,10 +181,7 @@ def feature_selection(data, col_dict, field_types):
                     data.columns[(data.nunique() <= 1).values].to_list() # Find colums with a single or no values    
     data = data.drop(cols_to_drop, axis=1)
 
-    print('{} columns left for feature_engineering and modelling'.format(data.columns.size))
-
-    # Add
-    data = add_engineered_features(data, col_dict)
+    print('{} columns left for feature engineering and modelling'.format(data.columns.size))
 
     # Save
     try:
@@ -201,30 +191,59 @@ def feature_selection(data, col_dict, field_types):
     
     return data
 
+def add_engineered_features(data, pca=None):
+    ''' Generate and add features'''
+    # TODO: Normalize/scale numeric features (also to 0 to 1?)
+    # TODO: MAKE PCA TRANSFORM MATRIX AND APPLY TO TEST
+    # Dimensional transformation
+    n_components = 10
+    data = data.reset_index(drop=True)
+    if not pca:
+        pca = PCA(n_components=n_components)
+        pca = pca.fit(data)
+    
+    princ_comps = pd.DataFrame(pca.transform(data))
+    princ_comps.columns = ['pc_{:d}'.format(i) for i in range(n_components)]
 
-def model_and_predict(x, y, test_size=0.2, val_size=0.2, hpo=False):
+    # Add features
+    data = pd.concat([data, princ_comps], axis=1)
+
+    return data, pca 
+
+def model_and_predict(x, y, test_size=0.2, val_size=0.2, 
+                      select_features=False, feature_cutoff=0.01, plot_graph=False):
     ''' Select samples and fit model.
         Currently uses random sub-sampling validation (also called
             Monte Carlo cross-validation) with balanced class weight
                 (meaning test has the same Y-class distribution as
                  train)
     '''
-
     # Train/test-split
     train_x, test_x, train_y, test_y = train_test_split(x, y, test_size=test_size, stratify=y) # stratify == simila y distribution in both sets
 
-    if hpo:
-        train_x, val_x, train_y, val_y = train_test_split(x, y, val_size=val_size)
-        # TODO: implement hpo if necessary
+    # Add engineered features:
+    train_x, pca = add_engineered_features(train_x)
+    test_x, pca = add_engineered_features(test_x, pca)
 
-    # Model
-    clf = LogisticRegression(solver='lbfgs', penalty='l2', class_weight='balanced', 
+    # Initialize Classifier
+    clf = LogisticRegression(solver='lbfgs', penalty='l2', #class_weight='balanced', 
                              max_iter=200, random_state=0) # small dataset: solver='lbfgs'. multiclass: solver='lbgfs'
     # clf = LinearDiscriminantAnalysis(solver='eigen', shrinkage='auto')
     # clf = LinearDiscriminantAnalysis(solver='svd')
-
-    clf.fit(train_x, train_y)
     
+    # Model and feature selection
+    if select_features:
+        importances = feature_contribution(clf, train_x, train_y, plot_graph=plot_graph)
+        # TODO: Make sure it never removes ALL features
+        train_x = train_x.iloc[:, importances>feature_cutoff]
+        test_x = test_x.iloc[:, importances>feature_cutoff]
+
+    # Model
+    try:
+        clf.fit(train_x, train_y)
+    except Exception as e:
+        print('Something went wrong!')
+        raise e
     # Predict
     test_y_hat = clf.predict_proba(test_x)
 
@@ -232,12 +251,12 @@ def model_and_predict(x, y, test_size=0.2, val_size=0.2, hpo=False):
 
 def score_and_vizualize_prediction(model, test_x, test_y, y_hat, rep):
     y_hat = y_hat[:, 1] # Select P_(y=1)
-    
+
     # Metrics
     roc_auc = roc_auc_score(test_y, y_hat)
-    
-    # Confusion ma
-    if rep<10:
+
+    if rep<5:
+        # Confusion matrix
         disp = plot_confusion_matrix(model, test_x, test_y, cmap=plt.cm.Blues) 
         disp.ax_.set_title('rep={:d} // ROC AUC: {:.3f}'.format(rep, roc_auc))
 
@@ -247,11 +266,12 @@ def score_and_vizualize_prediction(model, test_x, test_y, y_hat, rep):
 # TODO: config file
 if __name__ == "__main__":
     path_creds = r'./covid19_CDSS/castor_api_creds/'
-    path = r'C:\Users\p70066129\Projects\COVID-19 CDSS\covid19_CDSS\Data\200329_COVID-19_NL/'
+    path = r'C:\Users\p70066129\Projects\COVID-19 CDSS\covid19_CDSS\Data\200405_COVID-19_NL/'
     filename_data = r'COVID-19_NL_data.csv'
     filename_report = r'COVID-19_NL_report.csv' 
     filename_study_vars = r'study_variablelist.csv'
     filename_report_vars = r'report_variablelist.csv'
+
 
     x, y, col_dict, field_types = load_data(path + filename_data, path + filename_report, 
                                             path + filename_study_vars, path + filename_report_vars,
@@ -259,19 +279,28 @@ if __name__ == "__main__":
     x = preprocess(x, col_dict, field_types)
     x = feature_selection(x, col_dict, field_types)
 
+    explore_data(x, y)
+
     aucs = []
     model_coefs = []
     model_intercepts = []
     repetitions = 100
+    select_features = False # Couldn't throw error due to too high contribution cutoff
     for i in range(repetitions):
+        print('Current rep: {}'.format(i))
         model, train_x, train_y, test_x, \
-            test_y, test_y_hat = model_and_predict(x, y, test_size=0.20)
+            test_y, test_y_hat = model_and_predict(x, y, test_size=0.2, 
+                                                   select_features=select_features, 
+                                                   plot_graph=True if i==0 else False)
         auc = score_and_vizualize_prediction(model, test_x, test_y, test_y_hat, i)
+
         aucs.append(auc)
         model_intercepts.append(model.intercept_)
         model_coefs.append(model.coef_)
 
     fig, ax = plot_model_results(aucs)
-    fig, ax = plot_model_weights(model_coefs, model_intercepts, x.columns, show_n_labels=50)
+    if not select_features:
+        fig, ax = plot_model_weights(model_coefs, model_intercepts, test_x.columns, 
+                                     show_n_labels=25, normalize_coefs=False)
     plt.show()
     print('done')
