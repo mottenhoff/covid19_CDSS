@@ -2,6 +2,9 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
+from sklearn.model_selection import cross_val_predict
+from sklearn.metrics import roc_auc_score
+
                       #'post_partum','baby_ARI','infant','Breastfed', 'Currently_breastfed','development','vaccinations',
 RADIO_Y_N_NA =        ['healthcare_worker','microbiology_worker','Pregnancy','contact','ccd','hypertension','cpd','asthma','ckd',
                        'live_disease','mld','cnd','mneoplasm','chd','immune_sup','aids_hiv','obesity','Cachexia',
@@ -75,7 +78,7 @@ def merge_study_and_report(df_study, df_report, cols):
         reports_per_id = df_report[df_report['Record Id'] == id_]
 
         is_most_recent_date = reports_per_id['assessment_dt']==reports_per_id['assessment_dt'].max()
-        is_not_in_ICU = reports_per_id['dept'] != 3
+        is_not_in_ICU = reports_per_id['dept'] != '3'
         report = reports_per_id[is_most_recent_date & is_not_in_ICU]
 
         if report.shape[0] > 1:
@@ -97,37 +100,107 @@ def remove_invalid_data(data, cols):
     # during the whole admission retrospectively. This was
     # later changed, but some of these entries are still
     # in the data and thus have to be removed.
-    resp_cols = cols['Respiratory assessment'] 
-    blood_cols = cols['Blood assessment']
+
+    resp_cols = [col for col in cols['Respiratory assessment'] if col in data.columns] 
+    blood_cols = [col for col in cols['Blood assessment'] if col in data.columns]
     data.loc[data['whole_admission_yes_no'] == 1, resp_cols] = None
     data.loc[data['whole_admission_yes_no_1'] == 1, blood_cols] = None
 
-    # Remove all (possible) test entries
-    data = data.loc[data['Record Id'].astype(int) > 12000, :]
-
     return data
 
-def calculate_outcome_measure(data):
+def calculate_outcome_measure(df_study, df_report):
     ''' Generated outcome measure   
-    Goal: predict ICU admission at hospital admissions (presentation) 
-    
+    Goal: Probability that patient will decease at any time in ICU
+          TODO: predict death after short or long stay
+
     Variables used and their meaning:
     Admission_dt_icu_1 = ICU admission at hospital presentation (immediate)
     Admission_dt_icu   = ICU admissions during hospitalization --> NOTE: only in daily reports?
     Outcome            = ICU admission within 3 weeks of admission
     dept               = Department on which the daily report assessment is taken
-    
     '''
-    data['ICU_admitted'] = 0
+
+    # Step 1) Determine if the patient has been at ICU at some point in the whole admission
+    is_at_icu_at_wk3 = df_study['Outcome'].astype(str)=='3'                      # 3==ICU
+    is_at_icu_at_wk6 = df_study['Outcome_6wk'].astype(str)=='3'
+    has_been_at_icu = df_study['unit_admission_1'].astype(str).str.contains('1') # 1==ICU, 2==MC
+    has_icu_admission_date = df_study['Admission_dt_icu_1'].notna() 
+    has_icu_discharge_date = df_study['Discharge_dt_icu_1'].notna()
     
-    data.loc[data['Outcome']==3, 'ICU_admitted'] = 1
-    data.loc[data['Admission_dt_icu_1'].notna(), 'ICU_admitted'] = 1
-    data.loc[data['dept']==3, 'ICU_admitted'] = 1
+    df_study['has_report_at_icu'] = 0
+    for id_ in df_report['Record Id'].unique():
+        has_dept_3 = any(df_report.loc[df_report['Record Id']==id_, 'dept'] == '3')
+        try:
+            df_study.loc[df_study['Record Id']==id_, 'has_report_at_icu'] = 1 if has_dept_3 else 0
+        except Exception:
+            print("WARNING: Record Id {} not in df_study, skipping...".format(id_))
+    has_report_at_icu = df_study['has_report_at_icu'] == 1
+    df_study = df_study.drop('has_report_at_icu', axis=1)
 
-    x = data.drop(['Outcome', 'Admission_dt_icu_1', 'dept'], axis=1)
-    y = pd.Series(data['ICU_admitted'], copy=True)
+    df_study['ICU_admitted'] = 0
+    df_study.loc[is_at_icu_at_wk3 | is_at_icu_at_wk6 | has_been_at_icu |
+                 has_icu_admission_date | has_icu_discharge_date | has_report_at_icu,
+                 'ICU_admitted'] = 1
+    
+    # Step 2) Check if patient is alive
+    df_study['is_alive'] = 0
+    df_study.loc[~df_study['Outcome'].isin(['7', '8']), 'is_alive'] = 1 
+    
+    # Step 3a) Determine where the patient currently is
+    # Retrieve the department of the most recent daily report to 
+    # determine where the patient currently is
+    df_report['assessment_dt'] = format_dt(df_report['assessment_dt'])
+    df_study['most_recent_report_at_icu'] = 0
+    for id_ in df_report['Record Id'].unique():
+        report_current_record = df_report.loc[df_report['Record Id'] == id_, :]
+        # Get most recent daily report
+        is_most_recent_report = report_current_record.loc[:, 'assessment_dt'] == \
+                                report_current_record.loc[:, 'assessment_dt'].max()
+        has_dept_3 = report_current_record.loc[is_most_recent_report, 'dept'] == '3'
+        df_study.loc[df_study['Record Id']==id_, 'most_recent_report_at_icu'] = 1 if any(has_dept_3) else 0 
+    has_most_recent_report_at_icu = df_study['most_recent_report_at_icu'] == 1
+    is_alive = df_study['is_alive'] == 1
 
-    return x, y
+    # Step 3b) Determine the current status of the patient
+    # Currently at the ICU
+    df_study['currently_at_ICU'] = 0
+    df_study.loc[(has_most_recent_report_at_icu & is_alive) |
+                 (has_icu_admission_date & (~has_icu_discharge_date) & is_alive),
+                 'currently_at_ICU'] = 1
+    
+    # Discharged from ICU
+    df_study['discharged_from_ICU'] = 0
+    df_study.loc[((df_study['ICU_admitted']==1) & (~has_most_recent_report_at_icu) & is_alive) |
+                 (has_icu_admission_date & has_icu_discharge_date & is_alive) |
+                 ((df_study['ICU_admitted']==1) & (df_study['Outcome'].isin(['1', '2', '4', '5', '6', '10']))), 
+                 'discharged_from_ICU'] = 1
+    
+    # Discharged from ICU and is still alive after 21 weeks (discharge ICU doesn't guarantee survival)
+    df_study.loc[(df_study['discharged_from_ICU']==1) & is_alive, 'post_icu_alive'] = 1
+
+    # Outcome measure:
+    #   0 = patient is currently at ICU
+    #   1 = patient was at ICU but died
+    #   nan = patients was never at ICU 
+    #   NOTE: 2pt get lost(MUMC data), were at ICU, but no outcome
+    #   NOTE: There should be 1pt leaving ICU alive
+    y = pd.Series(None, index=df_study.index)
+    y.loc[(df_study['currently_at_ICU']==1) | (df_study['post_icu_alive']==1)] = 1
+    y.loc[(df_study['ICU_admitted']==1) & (~is_alive)] = 0
+
+    # NOTE: Uncomment to predict ICU admission 
+    y = pd.Series(df_study['ICU_admitted'], copy=True)
+    y = y.fillna(0)
+
+    # NOTE: 1 = death, 0 alive
+    y = pd.Series(0, index=df_study.index)
+    y[df_study['Outcome'].isin(['7', '8'])] = 1
+
+    # Remove record without outcome
+    df_study = df_study.loc[~y.isna(), :]
+    y = y.loc[~y.isna()]
+
+    return df_study, df_report, y
 
 def select_baseline_data(data, col_dict):
     ''' Select data that is measured before ICU'''
@@ -145,18 +218,6 @@ def select_baseline_data(data, col_dict):
 
     return data[cols_baseline] 
 
-def select_retrospective_data(data, col_dict):
-    # TODO: Also return y values?
-    return data
-
-def select_prospective_data(data_study, data_daily, col_dict):
-    ''' 
-    # TODO: Also return y values?
-    Hospital admission: BASELINE + HOSPITAL
-    Current progress: Daily report
-    '''
-    data = None
-    return data
 
 def fix_single_errors(data, data_rep):
     data.replace('11-11-1111', None, inplace=True)
@@ -327,38 +388,18 @@ def plot_model_results(aucs):
     return fig, ax
 
 
-def plot_model_weights(coefs, intercepts, field_names, show_n_labels=10):
+def plot_model_weights(coefs, intercepts, field_names, show_n_labels=10,
+                       normalize_coefs=False):
+    show_n_labels = coefs.shape[1] if show_n_labels == None else show_n_labels
     coefs = np.array(coefs).squeeze()
     intercepts = np.array(intercepts).squeeze()
 
+    coefs = (coefs-coefs.mean(axis=0))/coefs.std(axis=0) if normalize_coefs else coefs
+
     avg_coefs = coefs.mean(axis=0)
-    var_coefs = coefs.var(axis=0)
+    var_coefs = coefs.var(axis=0) if not normalize_coefs else None
 
     idx_n_max_values = abs(avg_coefs).argsort()[-show_n_labels:]
-    n_bars = np.arange(coefs.shape[1])
-    bar_labels = [''] * n_bars.size
-    for idx in idx_n_max_values:
-        bar_labels[idx] = field_names[idx]
-
-    bar_width = .5 # bar width
-    fig, ax = plt.subplots()
-    bars = ax.bar(n_bars, avg_coefs, bar_width, yerr=var_coefs,label='Weight')
-    ax.set_xticks(n_bars)
-    ax.set_xticklabels(bar_labels, rotation=90, fontdict={'fontsize': 6})
-    ax.set_ylabel('Weight')
-    ax.set_title('Logistic regression - ICU admission at hospital presentation\nAverage weight value')
-    fig.savefig('Average_weight_variance.png')
-    return fig, ax
-
-
-def plot_model_weights(coefs, intercepts, field_names, show_n_labels=10):
-    coefs = np.array(coefs).squeeze()
-    intercepts = np.array(intercepts).squeeze()
-
-    avg_coefs = coefs.mean(axis=0)
-    var_coefs = coefs.var(axis=0)
-
-    idx_n_max_values = abs(avg_coefs).argsort()[:]
     n_bars = np.arange(coefs.shape[1])
     bar_labels = [''] * n_bars.size
     for idx in idx_n_max_values:
@@ -370,6 +411,45 @@ def plot_model_weights(coefs, intercepts, field_names, show_n_labels=10):
     ax.set_yticks(n_bars)
     ax.set_yticklabels(bar_labels, fontdict={'fontsize': 6})
     ax.set_xlabel('Weight')
-    ax.set_title('Logistic regression - ICU admission at hospital presentation\nAverage weight value')
+    ax.set_title('Logistic regression - Average weight value')
     fig.savefig('Average_weight_variance.png')
     return fig, ax
+
+def explore_data(x, y):
+    data = pd.concat([x, y], axis=1)
+    corr = data.corr(method='spearman')
+    plt.matshow(corr)
+
+
+def feature_contribution(clf, x, y, plot_graph=False, plot_n_features=None,
+                            n_cv=2, method='predict_proba'):
+
+    plot_n_features = x.shape[1] if not plot_n_features else plot_n_features
+    y_hat = cross_val_predict(clf, x, y, cv=n_cv, method=method)
+    baseline_score = roc_auc_score(y, y_hat[:, 1])
+
+    importances = np.array([])
+    
+    for col in x.columns:
+        x_tmp = x.drop(col, axis=1)
+        y_hat = cross_val_predict(clf, x_tmp, y, cv=n_cv, method=method)
+        score = roc_auc_score(y, y_hat[:, 1])
+        importances = np.append(importances, baseline_score-score)
+
+    if plot_graph:
+        idc = np.argsort(importances)
+        columns = x.columns[idc]
+        fig, ax = plt.subplots(1, 1)
+        ax.plot(importances[idc[-plot_n_features:]])
+        ax.axhline(0, color='k', linewidth=.5)
+        ax.set_xticks(np.arange(x.shape[1]))
+        ax.set_xticklabels(columns[-plot_n_features:], rotation=90, fontdict={'fontsize': 6})
+        ax.set_xlabel('Features')
+        ax.set_ylabel('Difference with baseline')
+
+    return importances
+
+
+    
+
+    
