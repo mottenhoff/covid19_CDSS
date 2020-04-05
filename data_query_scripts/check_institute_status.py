@@ -9,16 +9,21 @@ Created on Thu Mar 26 21:51:39 2020
 """
 import time, statistics
 from castor_api import Castor_api
-c = Castor_api('/Users/wouterpotters/Desktop/') # e.g. in user dir outside of GIT repo
+
+import configparser
+config = configparser.ConfigParser()
+config.read('user_settings.ini')
+
+c = Castor_api(config['CastorCredentials']['local_private_path']) # e.g. in user dir outside of GIT repo
 
 # get study ID for COVID study
-study_id = c.request_study_id('COVID')[0]
+study_id = c.select_study_by_name(config['CastorCredentials']['study_name'])
 
 center = 'AUMC - VUmc'
 center = 'AUMC - AMC'
 center = 'MUMC'
 
-records = c.request_study_records(study_id)
+records = c.request_study_records()
 count = (len([x['_embedded']['institute']['name'] for x in records if x['_embedded']['institute']['name'] == center and x['archived'] == False]))
 completion_rate = [x['progress'] for x in records if x['_embedded']['institute']['name'] == center  and x['archived'] == False]
 completion_rate_100 = sum([x['progress']==100 for x in records if x['_embedded']['institute']['name'] == center and x['archived'] == False])

@@ -7,6 +7,7 @@ To match optiongroups_structure with study_struct, merge them on study_struct['F
 
 """
 import pandas 
+import configparser
 from castor_api import Castor_api
 
 # TODO: free text fields are now ignored
@@ -14,22 +15,29 @@ from castor_api import Castor_api
 
 
 def compare_import_methods():
-    path = '/Users/wouterpotters/Desktop/'
-    study, study_struct, reports, reports_struct, option_struct = import_data(path)
-    study2, study_struct2, reports2, reports_struct2, option_struct2 = import_data_by_record(path)
+    config = configparser.ConfigParser()
+    config.read('user_settings.ini') # create this once using covid19_createconfig and never upload this file to git.
+
+    study, study_struct, reports, reports_struct, option_struct = import_data()
+    study2, study_struct2, reports2, reports_struct2, option_struct2 = import_data_by_record()
 
     return study, study_struct, reports, reports_struct, option_struct, study2, study_struct2, reports2, reports_struct2, option_struct2
     
-def import_data_by_record(path_to_api_creds):
+def import_data_by_record(path_to_api_creds=None):
+    config = configparser.ConfigParser()
+    config.read('user_settings.ini') # create this once using covid19_createconfig and never upload this file to git.
+    
+    if not path_to_api_creds:
+        path_to_api_creds = config['CastorCredentials']['local_private_path']
     # alternative for import_data if import_data fails due to server-side timeout errors (i.e. for large datasets)
     # this alternative loops over de records and report instances to load the data
     
     # input: private folder where client & secret files (no extension, 1 string only per file) from castor are saved by the user
     # see also: https://helpdesk.castoredc.com/article/124-application-programming-interface-api
-    c = Castor_api(path_to_api_creds) # e.g. in user dir outside of GIT repo
+    c = Castor_api(path_to_api_creds=None) # e.g. in user dir outside of GIT repo
     
     # get study ID for COVID study
-    study_id = c.select_study_by_name('COVID')    
+    study_id = c.select_study_by_name(config['CastorCredentials']['study_name'])    
     
     df_study, df_structure_study, df_report, df_structure_report, df_optiongroups_structure = c.records_reports_all(report_names=['Daily'])
     
@@ -43,15 +51,20 @@ def import_data_by_record(path_to_api_creds):
     
     return df_study, df_structure_study, df_report, df_structure_report, df_optiongroups_structure
 
-def import_data(path_to_api_creds):
+def import_data(path_to_api_creds=None):
     ### STEP 0: connect to API
-    
+    config = configparser.ConfigParser()
+    config.read('user_settings.ini') # create this once using covid19_createconfig and never upload this file to git.
+
+    if not path_to_api_creds:
+        path_to_api_creds = config['CastorCredentials']['local_private_path']
+        
     # input: private folder where client & secret files (no extension, 1 string only per file) from castor are saved by the user
     # see also: https://helpdesk.castoredc.com/article/124-application-programming-interface-api
     c = Castor_api(path_to_api_creds) # e.g. in user dir outside of GIT repo
     
     # get study ID for COVID study
-    study_id = c.select_study_by_name('COVID')    
+    study_id = c.select_study_by_name(config['CastorCredentials']['study_name'])    
     
     ### STEP 0: collect answer options from optiongroups
     

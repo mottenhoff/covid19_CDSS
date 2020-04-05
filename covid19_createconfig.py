@@ -15,7 +15,8 @@ This way we avoid updates with custom files and custom paths in the github.
 
 To use data from the config file, use:
     import configparser
-    usersettings = config.read('user_settings.ini')
+    config = configparser.ConfigParser()
+    config.read('user_settings.ini')
     usersettings['datafiles']['filename_data']
 """
 

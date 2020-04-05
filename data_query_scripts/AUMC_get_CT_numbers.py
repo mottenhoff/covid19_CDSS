@@ -9,8 +9,12 @@ import site
 site.addsitedir('./../') # add directory to path to enable import of castor_api
 from castor_api import Castor_api
 
-c = Castor_api('/Users/wouterpotters/Desktop')
-study_id = c.select_study_by_name('COVID')
+import configparser
+config = configparser.ConfigParser()
+config.read('user_settings.ini')
+
+c = Castor_api(config['CastorCredentials']['local_private_path'])
+study_id = c.select_study_by_name(config['CastorCredentials']['study_name'])
 
 # select AMC + VUmc
 institutes = c.request_institutes()

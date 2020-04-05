@@ -7,6 +7,8 @@ Please do not use without permission
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import configparser
+
 from sklearn.decomposition import PCA
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import cross_val_predict
@@ -263,14 +265,16 @@ def score_and_vizualize_prediction(model, test_x, test_y, y_hat, rep):
     return roc_auc
 
 
-# TODO: config file
 if __name__ == "__main__":
-    path_creds = r'./covid19_CDSS/castor_api_creds/'
-    path = r'C:\Users\p70066129\Projects\COVID-19 CDSS\covid19_CDSS\Data\200405_COVID-19_NL/'
-    filename_data = r'COVID-19_NL_data.csv'
-    filename_report = r'COVID-19_NL_report.csv' 
-    filename_study_vars = r'study_variablelist.csv'
-    filename_report_vars = r'report_variablelist.csv'
+    config = configparser.ConfigParser()
+    config.read('user_settings.ini') # create this once using covid19_createconfig and never upload this file to git.
+
+    path_creds = config['CastorCredentials']['local_private_path']
+    path = config['datafiles']['folder_path']
+    filename_data = config['datafiles']['filename_data']
+    filename_report = config['datafiles']['filename_report']
+    filename_study_vars = config['datafiles']['filename_study_vars']
+    filename_report_vars = config['datafiles']['filename_report_vars']
 
 
     x, y, col_dict, field_types = load_data(path + filename_data, path + filename_report, 
