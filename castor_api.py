@@ -34,7 +34,7 @@ class Castor_api:
     """
     
     # define URLs for API
-    base_url = 'https://data.castoredc.com';
+    base_url = 'https://data.castoredc.com'
     token_path = '/oauth/token'
     api_request_path = '/api'
 
