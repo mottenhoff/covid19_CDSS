@@ -20,7 +20,6 @@ To use data from the config file, use:
     usersettings['datafiles']['filename_data']
 """
 
-
 import configparser
 
 config = configparser.ConfigParser()
@@ -28,12 +27,16 @@ config = configparser.ConfigParser()
 config['CastorCredentials'] = {}
 config['CastorCredentials']['local_private_path'] = r'./covid19_CDSS/castor_api_creds/'
 config['CastorCredentials']['study_name'] = 'COVID-19'
+
 config['datafiles'] = {}
 config['datafiles']['folder_path'] = r'C:\Users\p70066129\Projects\COVID-19 CDSS\covid19_CDSS\Data\200405_COVID-19_NL/'
 config['datafiles']['filename_data'] = r'COVID-19_NL_data.csv'
 config['datafiles']['filename_report'] = r'COVID-19_NL_report.csv'
 config['datafiles']['filename_study_vars'] = r'study_variablelist.csv'
 config['datafiles']['filename_report_vars'] = r'report_variablelist.csv'
+
+config['SlackAPI'] = {}
+config['SlackAPI']['local_private_path'] = ''
 
 with open('user_settings.ini', 'w') as configfile:
     config.write(configfile)

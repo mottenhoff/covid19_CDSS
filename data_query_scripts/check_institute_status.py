@@ -12,7 +12,7 @@ from castor_api import Castor_api
 
 import configparser
 config = configparser.ConfigParser()
-config.read('user_settings.ini')
+config.read('../user_settings.ini')
 
 c = Castor_api(config['CastorCredentials']['local_private_path']) # e.g. in user dir outside of GIT repo
 
