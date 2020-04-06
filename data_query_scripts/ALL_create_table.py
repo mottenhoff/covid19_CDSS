@@ -100,7 +100,7 @@ print('', file=open("output.txt", "a"))
 # 4. Ventilation support longer than 21 days (probably very bad outcome)
 # Op punt 4 kun je allerlei op aanmerkingen hebben maar toch.
 
-print('Added \'not recorded\' group to alive group:', file=open("output.txt", "a"))
+print('Added \'not recorded\' group to \'unknown\' group:', file=open("output.txt", "a"))
 for o in outcomes[0].unique().tolist():
     print('Outcome '+o+': n='+str(sum([o2 == o for o2 in outcomes[0]])), file=open("output.txt", "a"))
 
