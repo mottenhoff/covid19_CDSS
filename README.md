@@ -5,6 +5,9 @@ Work in progress
 
 ## Import data via Castor API
 
+### Requirements:
+`pip install -r requirements.txt`
+
 ### Create Credentials
 1) Login on https://data.castoredc.com
 2) Create an API Client ID and Client Secret in yout Castor account settings
@@ -18,3 +21,10 @@ from covid19_import import import_data
 
 study, study_structure, report, report_structure, field_structure = import_data(PATH_TO_CREDENTIALS)
 ```
+
+### Create Config file
+1) Fill in paths to API-credentials and/or path to files in `covid19_createconfig.py`. Do not push this file filled in to master.
+2) Run `covid19_createconfig.py`
+
+### Run analysis
+`python covid19_ICU_admission.py`
