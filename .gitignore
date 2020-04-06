@@ -6,3 +6,5 @@ client
 secret
 .ipynb_checkpoints/covid19_data_quality-checkpoint.ipynb
 user_settings.ini
+model_vars.txt
+covid19_variables.xlsx

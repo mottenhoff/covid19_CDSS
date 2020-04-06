@@ -1,0 +1,6 @@
+matplotlib==3.1.1
+numpy==1.17.3
+pandas==0.25.2
+progressbar2==3.50.1
+sklearn==0.0
+requests==2.22.0
