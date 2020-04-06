@@ -4,3 +4,5 @@ castor_api_creds/
 *.pyc
 client
 secret
+.ipynb_checkpoints/covid19_data_quality-checkpoint.ipynb
+user_settings.ini
