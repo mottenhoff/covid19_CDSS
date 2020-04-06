@@ -11,8 +11,12 @@ import time, statistics, os, site, sys
 site.addsitedir('./../') # add directory to path to enable import of castor_api
 from castor_api import Castor_api
 
+import configparser
+config = configparser.ConfigParser()
+config.read('../user_settings.ini')
+
 # put both the secret, client and the tokens_slack file here
-location_castor_slack_api_data = '/Users/wouterpotters/Desktop/'
+location_castor_slack_api_data = config['SlackAPI']['local_private_path']
 
 c = Castor_api(location_castor_slack_api_data) # e.g. in user dir outside of GIT repo
 
