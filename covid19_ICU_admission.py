@@ -44,21 +44,7 @@ from covid19_ICU_util import explore_data
 from covid19_ICU_util import feature_contribution
 
 def load_data_api(path_credentials):
-    # df_study, df_structure, df_report, df_report_structure, df_optiongroup_structure = import_data_by_record(path_credentials)
-
-    # NOTE: TMP
-    # df_study.to_pickle('df_study.pkl')
-    # df_structure.to_pickle('df_structure.pkl')
-    # df_report.to_pickle('df_report.pkl')
-    # df_report_structure.to_pickle('df_report_structure.pkl')
-    # df_optiongroup_structure.to_pickle('df_optiongroupstructure.pkl')
-
-
-    # df_study = pd.read_pickle('df_study.pkl')
-    # df_structure = pd.read_pickle('df_structure.pkl')
-    # df_report = pd.read_pickle('df_report.pkl')
-    # df_report_structure = pd.read_pickle('df_report_structure.pkl')
-    # df_optiongroup_structure = pd.read_pickle('df_optiongroupstructure.pkl')
+    df_study, df_structure, df_report, df_report_structure, df_optiongroup_structure = import_data_by_record(path_credentials)
 
     # Select useful columns
     var_columns = ['Form Collection Name', 'Form Name', 'Field Variable Name', 'Field Label', 'Field Type']
@@ -227,7 +213,7 @@ def add_engineered_features(data, pca=None):
     return data, pca 
 
 def model_and_predict(x, y, test_size=0.2, val_size=0.2, 
-                      select_features=False, feature_cutoff=0.01, plot_graph=False):
+                      select_features=False, n_best_features=10, plot_graph=False):
     ''' Select samples and fit model.
         Currently uses random sub-sampling validation (also called
             Monte Carlo cross-validation) with balanced class weight
@@ -250,9 +236,9 @@ def model_and_predict(x, y, test_size=0.2, val_size=0.2,
     # Model and feature selection
     if select_features:
         importances = feature_contribution(clf, train_x, train_y, plot_graph=plot_graph)
-        # TODO: Make sure it never removes ALL features
-        train_x = train_x.iloc[:, importances>feature_cutoff]
-        test_x = test_x.iloc[:, importances>feature_cutoff]
+        n_best = np.argsort(importances)[-n_best_features:]
+        train_x = train_x.iloc[:, n_best]
+        test_x = test_x.iloc[:, n_best]
 
     # Model
     try:
@@ -302,12 +288,13 @@ if __name__ == "__main__":
     model_coefs = []
     model_intercepts = []
     repetitions = 100
-    select_features = False # Couldn't throw error due to too high contribution cutoff
+    select_features = False
     for i in range(repetitions):
         print('Current rep: {}'.format(i))
         model, train_x, train_y, test_x, \
             test_y, test_y_hat = model_and_predict(x, y, test_size=0.2, 
-                                                   select_features=select_features, 
+                                                   select_features=select_features,
+                                                   n_best_features=10,
                                                    plot_graph=True if i==0 else False)
         auc = score_and_vizualize_prediction(model, test_x, test_y, test_y_hat, i)
 
