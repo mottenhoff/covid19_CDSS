@@ -11,7 +11,7 @@ from castor_api import Castor_api
 
 import configparser
 config = configparser.ConfigParser()
-config.read('user_settings.ini')
+config.read(os.path.join(os.path.dirname(__file__), '../user_settings.ini'))
 
 c = Castor_api(config['CastorCredentials']['local_private_path'])
 study_id = c.select_study_by_name(config['CastorCredentials']['study_name'])
