@@ -24,7 +24,7 @@ from sklearn.metrics import confusion_matrix
 from sklearn.metrics import plot_confusion_matrix
 from sklearn.metrics import roc_auc_score
 
-from castor_api import Castor_api
+# from castor_api import Castor_api
 from covid19_import import import_data
 from covid19_import import import_data_by_record
 
@@ -44,7 +44,21 @@ from covid19_ICU_util import explore_data
 from covid19_ICU_util import feature_contribution
 
 def load_data_api(path_credentials):
-    df_study, df_structure, df_report, df_report_structure, df_optiongroup_structure = import_data_by_record(path_credentials)
+    # df_study, df_structure, df_report, df_report_structure, df_optiongroup_structure = import_data_by_record(path_credentials)
+
+    # NOTE: TMP
+    # df_study.to_pickle('df_study.pkl')
+    # df_structure.to_pickle('df_structure.pkl')
+    # df_report.to_pickle('df_report.pkl')
+    # df_report_structure.to_pickle('df_report_structure.pkl')
+    # df_optiongroup_structure.to_pickle('df_optiongroupstructure.pkl')
+
+
+    # df_study = pd.read_pickle('df_study.pkl')
+    # df_structure = pd.read_pickle('df_structure.pkl')
+    # df_report = pd.read_pickle('df_report.pkl')
+    # df_report_structure = pd.read_pickle('df_report_structure.pkl')
+    # df_optiongroup_structure = pd.read_pickle('df_optiongroupstructure.pkl')
 
     # Select useful columns
     var_columns = ['Form Collection Name', 'Form Name', 'Field Variable Name', 'Field Label', 'Field Type']
@@ -53,7 +67,7 @@ def load_data_api(path_credentials):
     df_structure.columns = ['Phase name', 'Step name', 'Variable name', 'Field label', 'Field type']
     df_report_structure.columns = ['Phase name', 'Step name', 'Variable name', 'Field label', 'Field type']
 
-    df_study = df_study.reset_index()
+    df_study = df_study.reset_index(drop=True)
     df_report = df_report.reset_index(drop=True)
 
     df_study = df_study.rename({'Record ID': "Record Id"}, axis=1)
@@ -275,7 +289,6 @@ if __name__ == "__main__":
     filename_report = config['datafiles']['filename_report']
     filename_study_vars = config['datafiles']['filename_study_vars']
     filename_report_vars = config['datafiles']['filename_report_vars']
-
 
     x, y, col_dict, field_types = load_data(path + filename_data, path + filename_report, 
                                             path + filename_study_vars, path + filename_report_vars,

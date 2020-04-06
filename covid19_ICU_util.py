@@ -178,7 +178,8 @@ def calculate_outcome_measure(df_study, df_report):
     # Discharged from ICU and is still alive after 21 weeks (discharge ICU doesn't guarantee survival)
     df_study.loc[(df_study['discharged_from_ICU']==1) & is_alive, 'post_icu_alive'] = 1
 
-    # Outcome measure:
+    #
+    # NOTE: Use this for death/alive for ICU admitted patients
     #   0 = patient is currently at ICU
     #   1 = patient was at ICU but died
     #   nan = patients was never at ICU 
@@ -188,11 +189,11 @@ def calculate_outcome_measure(df_study, df_report):
     y.loc[(df_study['currently_at_ICU']==1) | (df_study['post_icu_alive']==1)] = 1
     y.loc[(df_study['ICU_admitted']==1) & (~is_alive)] = 0
 
-    # NOTE: Uncomment to predict ICU admission 
+    # NOTE: Use this for admission to ICU as outcome
     y = pd.Series(df_study['ICU_admitted'], copy=True)
     y = y.fillna(0)
 
-    # NOTE: 1 = death, 0 alive
+    # NOTE: Use this for death/alive outcome
     y = pd.Series(0, index=df_study.index)
     y[df_study['Outcome'].isin(['7', '8'])] = 1
 
@@ -220,6 +221,7 @@ def select_baseline_data(data, col_dict):
 
 
 def fix_single_errors(data, data_rep):
+    # TODO: Consider moving this after merge study & report
     data.replace('11-11-1111', None, inplace=True)
 
     data['Enrolment_date'].replace('24-02-1960', '24-02-2020', inplace=True)
@@ -232,14 +234,25 @@ def fix_single_errors(data, data_rep):
     data['oxygentherapy_1'].replace('Missing (asked but unknown)', None, inplace=True)
     data['Smoking'].replace(-99, None, inplace=True)
     data['Smoking'].replace('Missing (not done)', None, inplace=True)
-    
+
+    data_rep['assessment_dt'].replace('20-02-2020', '20-03-2020', inplace=True)
+
     txt_missing = ['Missing (asked but unknown)', 'Missing (measurement failed)',
                    'Missing (not applicable)', 'Missing (not done)']
     for txt in txt_missing:
         data.replace(txt, None, inplace=True)
         data_rep.replace(txt, None, inplace=True)
 
-    data_rep['assessment_dt'].replace('20-02-2020', '20-03-2020', inplace=True)
+    for s in ['##USER_MISSING_{}##'.format(i) for i in [96, 97, 98, 99]]:
+        data.replace(s, None, inplace=True)
+        data_rep.replace(s, None, inplace=True)
+
+    data = data.mask(data=='', None)
+    data_rep = data_rep.mask(data_rep=='', None)
+    #TODO: Why doesn't this regex work?
+    # data.replace(r'##USER_MISSING', None, regex=True, inplace=True)
+    # data_rep.replace(r'##USER_MISSING', None, regex=True, inplace=True)    
+
     return data, data_rep
 
 
@@ -368,6 +381,9 @@ def transform_string_features(data, string_fields):
 
     cols_to_drop = [col for col in data.columns if col in string_fields]
     data = data.drop(cols_to_drop, axis=1)
+    
+    data = data.drop('med_specify', axis=1)
+
     return data
 
 def select_data(data):

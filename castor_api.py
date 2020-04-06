@@ -34,15 +34,9 @@ class Castor_api:
     # FIXME: ADD PATCH METHODS and PATCH API ENDPOINTS
     
     # define URLs for API
-<<<<<<< HEAD
-    base_url = 'https://data.castoredc.com'
-    token_path = '/oauth/token'
-    api_request_path = '/api'
-=======
     _base_url = 'https://data.castoredc.com';
     _token_path = '/oauth/token'
     _api_request_path = '/api'
->>>>>>> ce7ccb6a37d24ef57a7b9d5416f917f4b13a5294
 
     _token = None
     
@@ -636,7 +630,7 @@ class Castor_api:
         # GET ALL STUDY AND REPORT VALUES FOR STUDY RECORDS - if no data was found, use None
         study_data = []
         report_data = []
-        for record in progressbar.progressbar(records,prefix='Retrieving records: '):
+        for record in progressbar.progressbar(records, prefix='Retrieving records: '):
             study_data += self.request_datapointcollection(record_id=record['record_id'])
             report_data += self.request_datapointcollection(request_type='report-instance',record_id=record['record_id'])
         df_study = pd.pivot(pd.DataFrame(study_data), values='field_value',index='record_id',columns='field_id')
