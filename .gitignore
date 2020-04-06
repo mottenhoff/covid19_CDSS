@@ -140,3 +140,5 @@ Data/
 Research/
 castor_api_creds/
 data_query_scripts/output.txt
+model_vars.txt
+covid19_variables.xlsx
