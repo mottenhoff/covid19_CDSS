@@ -28,3 +28,9 @@ study, study_structure, report, report_structure, field_structure = import_data(
 
 ### Run analysis
 `python covid19_ICU_admission.py`
+
+---
+For questions:
+API: Wouter Potters
+Pipeline: Maarten Ottenhoff
+
