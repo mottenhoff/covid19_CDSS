@@ -5,7 +5,7 @@ Created on Fri Apr  3 12:46:07 2020
 
 @author: wouterpotters
 """
-import site
+import site,os
 site.addsitedir('./../') # add directory to path to enable import of castor_api
 from castor_api import Castor_api
 
@@ -19,8 +19,10 @@ varname = 'Outcome'
 
 # select AMC + VUmc + MUMC
 institutes = c.request_institutes()
-inst_amc_vumc = [inst['institute_id'] for inst in c.request_institutes() if (inst['name'] == 'AUMC - AMC' or inst['name'] == 'AUMC - VUmc' or inst['name'] == 'MUMC')];
-records = c.request_study_records(institute=inst_amc_vumc[0]) + c.request_study_records(institute=inst_amc_vumc[1])
+records = []
+for inst_sel in ['AUMC - AMC','AUMC - VUmc','MUMC']:
+    sel = [inst['institute_id'] for inst in c.request_institutes() if (inst['name'] == inst_sel)]
+    records += c.request_study_records(institute=sel[0])
 
 options = c.request_fieldoptiongroup(optiongroup_id=c.field_optiongroup_by_variable_name(varname))
 values = c.field_values_by_variable_name(varname,records=records)

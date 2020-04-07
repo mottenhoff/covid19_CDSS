@@ -623,7 +623,8 @@ class Castor_api:
         
         # GET ALL STUDY RECORDS
         records = self.request_study_records(study_id)
-        if False: # set to True when debugging.
+        institutes_dict = {r['record_id']:r['_embedded']['institute']['name'] for r in records}
+        if True: # set to True when debugging.
             records = records[0:25] # test data
             print('DEBUG MODE ACTIVE. ONLY PROCESSING '+str(len(records))+' RECORDS')
 
@@ -640,6 +641,7 @@ class Castor_api:
         field_dict = {f['field_id']:f['field_variable_name'] for f in fields}
         df_study.rename(columns=field_dict, inplace=True)
         df_study.reset_index(level=0, inplace=True)
+        df_study.insert(len(institutes),'institute',[institutes[r] for r in df_study['Record Id']])
 
         df_report = pd.DataFrame(report_data)
         if not df_report.empty:
