@@ -17,7 +17,7 @@ Work in progress
 
 ### Import data
 ```python
-from covid19_import import import_data
+from covid19_import import import_data_by_record
 
 study, study_structure, report, report_structure, field_structure = import_data_by_record(PATH_TO_CREDENTIALS)
 ```
