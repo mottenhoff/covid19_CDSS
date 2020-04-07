@@ -109,46 +109,62 @@ def remove_invalid_data(data, cols):
     return data
 
 def calculate_outcome_measure(df_study, df_report):
-    ''' Generated outcome measure   
-    Goal: Probability that patient will decease at any time in ICU
-          TODO: predict death after short or long stay
+    '''
+    Four binary columns about results are determined;
+        1) is_alive              = the patient is alive
+        2) has_been_ICU_admitted = Patient is/has been admitted at some 
+                                   point during the whole admission.
+        3) is_currently_at_ICU   = Patient is at the ICU according to
+                                   the most recent outcome
+        4) went_to_icu_and_died  = patient went to ICU but died
 
     Variables used and their meaning:
     Admission_dt_icu_1 = ICU admission at hospital presentation (immediate)
-    Admission_dt_icu   = ICU admissions during hospitalization --> NOTE: only in daily reports?
+    Admission_dt_icu   = ICU admissions during hospitalization 
     Outcome            = ICU admission within 3 weeks of admission
     dept               = Department on which the daily report assessment is taken
     '''
 
-    # Step 1) Determine if the patient has been at ICU at some point in the whole admission
+    # Step 1) Check if patient is alive
+    #         Assumed everyone who does not have outcome death is alive.
+    df_study['is_alive'] = 1
+    is_dead_at_3wk = df_study['Outcome'].isin(['7', '8'])
+    is_dead_at_6wk = df_study['Outcome_6wk'].isin(['7', '8'])
+    df_study.loc[is_dead_at_3wk | is_dead_at_6wk, 'is_alive'] = 0
+    is_alive = df_study['is_alive'] == 1
+        
+    # Step 2) Patient has been at ICU at some point during the whole hospital admission
     is_at_icu_at_wk3 = df_study['Outcome'].astype(str)=='3'                      # 3==ICU
     is_at_icu_at_wk6 = df_study['Outcome_6wk'].astype(str)=='3'
     has_been_at_icu = df_study['unit_admission_1'].astype(str).str.contains('1') # 1==ICU, 2==MC
     has_icu_admission_date = df_study['Admission_dt_icu_1'].notna() 
     has_icu_discharge_date = df_study['Discharge_dt_icu_1'].notna()
     
-    df_study['has_report_at_icu'] = 0
+    df_study['has_any_report_at_icu'] = 0
     for id_ in df_report['Record Id'].unique():
         has_dept_3 = any(df_report.loc[df_report['Record Id']==id_, 'dept'] == '3')
         try:
-            df_study.loc[df_study['Record Id']==id_, 'has_report_at_icu'] = 1 if has_dept_3 else 0
+            df_study.loc[df_study['Record Id']==id_, 'has_any_report_at_icu'] = 1 if has_dept_3 else 0
         except Exception:
             print("WARNING: Record Id {} not in df_study, skipping...".format(id_))
-    has_report_at_icu = df_study['has_report_at_icu'] == 1
-    df_study = df_study.drop('has_report_at_icu', axis=1)
+    has_any_report_at_icu = df_study['has_any_report_at_icu'] == 1
 
     df_study['ICU_admitted'] = 0
     df_study.loc[is_at_icu_at_wk3 | is_at_icu_at_wk6 | has_been_at_icu |
-                 has_icu_admission_date | has_icu_discharge_date | has_report_at_icu,
+                 has_icu_admission_date | has_icu_discharge_date | has_any_report_at_icu,
                  'ICU_admitted'] = 1
+    has_been_icu_admitted = df_study['ICU_admitted']
     
-    # Step 2) Check if patient is alive
-    df_study['is_alive'] = 0
-    df_study.loc[~df_study['Outcome'].isin(['7', '8']), 'is_alive'] = 1 
+
+    # Step 3) Is the patient currently at the ICU?
+    #   patients is assumed to be at ICU if:    
+    #       a) the most recent report is at dept=3 (= ICU) OR
+    #       b) patients has an ICU admission date, but not
+    #            an discharge data
+    #       c) patients outcome is ICU
+    #       c) AND is not dead or transferred
     
-    # Step 3a) Determine where the patient currently is
-    # Retrieve the department of the most recent daily report to 
-    # determine where the patient currently is
+    # 3a) Is most recent report at ICU
     df_report['assessment_dt'] = format_dt(df_report['assessment_dt'])
     df_study['most_recent_report_at_icu'] = 0
     for id_ in df_report['Record Id'].unique():
@@ -159,47 +175,53 @@ def calculate_outcome_measure(df_study, df_report):
         has_dept_3 = report_current_record.loc[is_most_recent_report, 'dept'] == '3'
         df_study.loc[df_study['Record Id']==id_, 'most_recent_report_at_icu'] = 1 if any(has_dept_3) else 0 
     has_most_recent_report_at_icu = df_study['most_recent_report_at_icu'] == 1
-    is_alive = df_study['is_alive'] == 1
-
-    # Step 3b) Determine the current status of the patient
-    # Currently at the ICU
-    df_study['currently_at_ICU'] = 0
-    df_study.loc[(has_most_recent_report_at_icu & is_alive) |
-                 (has_icu_admission_date & (~has_icu_discharge_date) & is_alive),
-                 'currently_at_ICU'] = 1
     
-    # Discharged from ICU
-    df_study['discharged_from_ICU'] = 0
-    df_study.loc[((df_study['ICU_admitted']==1) & (~has_most_recent_report_at_icu) & is_alive) |
-                 (has_icu_admission_date & has_icu_discharge_date & is_alive) |
-                 ((df_study['ICU_admitted']==1) & (df_study['Outcome'].isin(['1', '2', '4', '5', '6', '10']))), 
-                 'discharged_from_ICU'] = 1
+    # 3b) Does patient have an ICU admission date but not a ICU discharge date?
+    #       NOTE: Should 0 be ICU admitted and discharged? Currently 0 = ~not_discharged
+    df_study['has_not_been_discharged_from_ICU'] = 0
+    df_study.loc[has_icu_admission_date & ~has_icu_discharge_date, 
+                 'has_not_been_discharged_from_ICU'] = 1
+    has_not_been_discharged_from_ICU = df_study['has_not_been_discharged_from_ICU']
+
+    df_study['outcome_is_in_hospital'] = 0
+    df_study.loc[(df_study['Outcome'].isin(['2', '3', '10'])) |  # Transfer to other hospital is considered as left hospital
+                 (df_study['Outcome'].isna()), # No outcome is also considered to be in the hospital
+                'outcome_is_in_hospital'] = 1
+    outcome_is_in_hospital = df_study['outcome_is_in_hospital']
+
+    # 3c) Patient has not been discharged from ICU does not have an outcome
+    #       NOTE: Remember that "no outcome" is also considered as in hospital
+    df_study['is_currently_at_icu'] = 0
+    df_study.loc[(has_most_recent_report_at_icu & outcome_is_in_hospital) |
+                 (has_not_been_discharged_from_ICU & outcome_is_in_hospital) |
+                 (df_study['Outcome']=='3'), 'is_currently_at_icu'] = 1
+    is_currently_at_icu = df_study['is_currently_at_icu']
+
+
+    # Step 4) Patient is/has been to ICU and did not die during or after ICU admission
+    df_study['has_died_after_ICU'] = None # during or after
+    df_study.loc[has_been_icu_admitted & (~is_alive), 'has_died_after_ICU'] = 1
+    df_study.loc[has_been_icu_admitted & is_alive, 'has_died_after_ICU'] = 0
+
     
-    # Discharged from ICU and is still alive after 21 weeks (discharge ICU doesn't guarantee survival)
-    df_study.loc[(df_study['discharged_from_ICU']==1) & is_alive, 'post_icu_alive'] = 1
+    # Step 5) Drop all calculation columns:
+    columns = ['has_any_report_at_icu', 'most_recent_report_at_icu',
+               'has_not_been_discharged_from_ICU', 'outcome_is_in_hospital']
+    df_study = df_study.drop(columns, axis=1)
 
-    #
-    # NOTE: Use this for death/alive for ICU admitted patients
-    #   0 = patient is currently at ICU
-    #   1 = patient was at ICU but died
-    #   nan = patients was never at ICU 
-    #   NOTE: 2pt get lost(MUMC data), were at ICU, but no outcome
-    #   NOTE: There should be 1pt leaving ICU alive
-    y = pd.Series(None, index=df_study.index)
-    y.loc[(df_study['currently_at_ICU']==1) | (df_study['post_icu_alive']==1)] = 1
-    y.loc[(df_study['ICU_admitted']==1) & (~is_alive)] = 0
+    # Step 6)
+    ##### UNCOMMENT TO SELECT OUTCOME MEASURE
+    outcome = 'ICU_admitted'       # Has been at ICU at any time
+    # outcome = 'has_died_after_ICU' # Is/has been at ICU and died
+    # outcome = 'is_alive'           # Did not die (including non-icu admitted patients)
 
-    # NOTE: Use this for admission to ICU as outcome
-    y = pd.Series(df_study['ICU_admitted'], copy=True)
-    y = y.fillna(0)
+    y = pd.Series(df_study[outcome], copy=True)
 
-    # NOTE: Use this for death/alive outcome
-    y = pd.Series(0, index=df_study.index)
-    y[df_study['Outcome'].isin(['7', '8'])] = 1
-
-    # Remove record without outcome
-    df_study = df_study.loc[~y.isna(), :]
-    y = y.loc[~y.isna()]
+    # Drop samples without outcome
+    no_outcome = y.isna()
+    y = y.loc[~no_outcome]
+    df_study = df_study.loc[~no_outcome, :]
+    y=y.astype(int)
 
     return df_study, df_report, y
 
@@ -243,7 +265,7 @@ def fix_single_errors(data, data_rep):
         data.replace(txt, None, inplace=True)
         data_rep.replace(txt, None, inplace=True)
 
-    for s in ['##USER_MISSING_{}##'.format(i) for i in [96, 97, 98, 99]]:
+    for s in ['##USER_MISSING_{}##'.format(i) for i in [95, 96, 97, 98, 99]]:
         data.replace(s, None, inplace=True)
         data_rep.replace(s, None, inplace=True)
 

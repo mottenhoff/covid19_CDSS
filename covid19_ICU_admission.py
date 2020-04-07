@@ -4,11 +4,11 @@
 
 Please do not use without permission
 '''
+import configparser
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import configparser
-
 from sklearn.decomposition import PCA
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import cross_val_predict
@@ -24,10 +24,8 @@ from sklearn.metrics import confusion_matrix
 from sklearn.metrics import plot_confusion_matrix
 from sklearn.metrics import roc_auc_score
 
-# from castor_api import Castor_api
 from covid19_import import import_data
 from covid19_import import import_data_by_record
-
 from covid19_ICU_util import fix_single_errors
 from covid19_ICU_util import merge_study_and_report
 from covid19_ICU_util import select_baseline_data
@@ -44,7 +42,21 @@ from covid19_ICU_util import explore_data
 from covid19_ICU_util import feature_contribution
 
 def load_data_api(path_credentials):
-    df_study, df_structure, df_report, df_report_structure, df_optiongroup_structure = import_data_by_record(path_credentials)
+    # df_study, df_structure, df_report, df_report_structure, df_optiongroup_structure = import_data_by_record(path_credentials)
+
+    # # NOTE: TMP
+    # df_study.to_pickle('df_study.pkl')
+    # df_structure.to_pickle('df_structure.pkl')
+    # df_report.to_pickle('df_report.pkl')
+    # df_report_structure.to_pickle('df_report_structure.pkl')
+    # df_optiongroup_structure.to_pickle('df_optiongroupstructure.pkl')
+
+
+    df_study = pd.read_pickle('df_study.pkl')
+    df_structure = pd.read_pickle('df_structure.pkl')
+    df_report = pd.read_pickle('df_report.pkl')
+    df_report_structure = pd.read_pickle('df_report_structure.pkl')
+    df_optiongroup_structure = pd.read_pickle('df_optiongroupstructure.pkl')
 
     # Select useful columns
     var_columns = ['Form Collection Name', 'Form Name', 'Field Variable Name', 'Field Label', 'Field Type']
@@ -60,7 +72,7 @@ def load_data_api(path_credentials):
     df_report = df_report.rename({'Record ID': "Record Id"}, axis=1)
 
     # Remove test records
-    df_study = df_study.loc[df_study['Record Id'].astype(int) > 12000, :]
+    df_study = df_study.loc[df_study['Record Id'].astype(int) > 11000, :]
 
     return df_study, df_report, df_structure, df_report_structure
 
@@ -105,7 +117,8 @@ def load_data(path_data=None, path_report=None, path_study_vars=None, path_repor
         cols[step] = df_report_vars['Variable name'][df_report_vars['Step name'] == step].tolist()
 
     # Get field types
-    field_types = pd.concat([df_report_vars[['Field type', 'Variable name']], df_study_vars[['Field type', 'Variable name']]], axis=0)
+    field_types = pd.concat([df_report_vars[['Field type', 'Variable name']], 
+                             df_study_vars[['Field type', 'Variable name']]], axis=0)
 
     # Fix and merge
     df, df_report = fix_single_errors(df, df_report)
