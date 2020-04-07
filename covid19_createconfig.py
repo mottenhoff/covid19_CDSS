@@ -28,6 +28,7 @@ config['CastorCredentials'] = {}
 config['CastorCredentials']['local_private_path'] = ''
 config['CastorCredentials']['study_name'] = 'COVID-19'
 
+config['exportresults'] = {}
 config['exportresults']['figures_folder'] = ''
 config['exportresults']['excel_file_variables'] = 'covid19_variables.xlsx'
 
