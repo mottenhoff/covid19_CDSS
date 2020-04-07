@@ -15,7 +15,7 @@ Work in progress
 4) Save the client_secret (long alphanumerical string) in a file called 'secret'
 5) Put these two files in one seperate private folder
 
-### using castor_api standalone
+### Using castor_api (standalone)
 See https://github.com/wouterpotters/castor-python
 
 ### Create Config file
