@@ -48,9 +48,9 @@ class Castor_api:
             # load client id & secret for current user from folder
             find_file = lambda name: [file for file in os.listdir(folder_with_client_and_secret) if name in file][0]
             with open(os.path.join(folder_with_client_and_secret, find_file('client')), 'r') as file:
-                client_id = file.read()
+                client_id = file.read().rstrip()
             with open(os.path.join(folder_with_client_and_secret, find_file('secret')), 'r') as file:
-                client_secret = file.read()
+                client_secret = file.read().rstrip()
             # using the client and secret, get an access token
             # this castor api token can usually be used for up to 18000 seconds, after which it stops working 
             # (and could theoretically be refreshed, but this is not documented in the Castor api: data.castoredc.com/api)
