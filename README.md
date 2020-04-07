@@ -13,13 +13,13 @@ Work in progress
 2) Create an API Client ID and Client Secret in your Castor account settings
 3) Save the client_id (string with dashes) in a file called 'client'
 4) Save the client_secret (long alphanumerical string) in a file called 'secret'
-5) Put these two files a seperate private folder
+5) Put these two files in one seperate private folder
 
 ### Import data
 ```python
-from covid19_import import import_data
+from covid19_import import import_data_by_record
 
-study, study_structure, report, report_structure, field_structure = import_data(PATH_TO_CREDENTIALS)
+study, study_structure, report, report_structure, field_structure = import_data_by_record(PATH_TO_CREDENTIALS)
 ```
 
 ### Create Config file
