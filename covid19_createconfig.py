@@ -25,15 +25,18 @@ import configparser
 config = configparser.ConfigParser()
 
 config['CastorCredentials'] = {}
-config['CastorCredentials']['local_private_path'] = r'./covid19_CDSS/castor_api_creds/'
+config['CastorCredentials']['local_private_path'] = ''
 config['CastorCredentials']['study_name'] = 'COVID-19'
 
+config['exportresults']['figures_folder'] = ''
+config['exportresults']['excel_file_variables'] = 'covid19_variables.xlsx'
+
 config['datafiles'] = {}
-config['datafiles']['folder_path'] = r'C:\Users\p70066129\Projects\COVID-19 CDSS\covid19_CDSS\Data\200405_COVID-19_NL/'
-config['datafiles']['filename_data'] = r'COVID-19_NL_data.csv'
-config['datafiles']['filename_report'] = r'COVID-19_NL_report.csv'
-config['datafiles']['filename_study_vars'] = r'study_variablelist.csv'
-config['datafiles']['filename_report_vars'] = r'report_variablelist.csv'
+config['datafiles']['folder_path'] = ''
+config['datafiles']['filename_data'] = ''
+config['datafiles']['filename_report'] = ''
+config['datafiles']['filename_study_vars'] = ''
+config['datafiles']['filename_report_vars'] = ''
 
 config['SlackAPI'] = {}
 config['SlackAPI']['local_private_path'] = ''

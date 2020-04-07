@@ -6,7 +6,7 @@ study_data, study_struct,reports_data, reports_struct, optiongroups_struct = cov
 To match optiongroups_structure with study_struct, merge them on study_struct['Field Option Group'] and optiongroups_struct['Option Group Id']
 
 """
-import pandas 
+import pandas, os
 import configparser
 from castor_api import Castor_api
 
@@ -16,7 +16,7 @@ from castor_api import Castor_api
 
 def compare_import_methods():
     config = configparser.ConfigParser()
-    config.read('user_settings.ini') # create this once using covid19_createconfig and never upload this file to git.
+    config.read(os.path.join(os.path.dirname(__file__), 'user_settings.ini'))
 
     study, study_struct, reports, reports_struct, option_struct = import_data()
     study2, study_struct2, reports2, reports_struct2, option_struct2 = import_data_by_record()
@@ -25,7 +25,7 @@ def compare_import_methods():
     
 def import_data_by_record(path_to_api_creds=None):
     config = configparser.ConfigParser()
-    config.read('user_settings.ini') # create this once using covid19_createconfig and never upload this file to git.
+    config.read(os.path.join(os.path.dirname(__file__), 'user_settings.ini'))
     
     if path_to_api_creds == None:
         path_to_api_creds = config['CastorCredentials']['local_private_path']
@@ -37,7 +37,7 @@ def import_data_by_record(path_to_api_creds=None):
     c = Castor_api(path_to_api_creds) # e.g. in user dir outside of GIT repo
     
     # get study ID for COVID study
-    study_id = c.select_study_by_name(config['CastorCredentials']['study_name'])    
+    c.select_study_by_name(config['CastorCredentials']['study_name'])    
     
     df_study, df_structure_study, df_report, df_structure_report, df_optiongroups_structure = c.records_reports_all(report_names=['Daily'])
     
@@ -50,6 +50,71 @@ def import_data_by_record(path_to_api_creds=None):
     df_report.drop(index=df_report[df_report['Record Id'].isin(test_records)].index, inplace=True)
     
     return df_study, df_structure_study, df_report, df_structure_report, df_optiongroups_structure
+
+def import_study_report_structure(path_to_api_creds=None):
+    config = configparser.ConfigParser()
+    config.read(os.path.join(os.path.dirname(__file__), 'user_settings.ini'))
+
+    if path_to_api_creds == None:
+        path_to_api_creds = config['CastorCredentials']['local_private_path']
+        
+    # input: private folder where client & secret files (no extension, 1 string only per file) from castor are saved by the user
+    # see also: https://helpdesk.castoredc.com/article/124-application-programming-interface-api
+    c = Castor_api(path_to_api_creds) # e.g. in user dir outside of GIT repo
+    
+    # get study ID for COVID study
+    c.select_study_by_name(config['CastorCredentials']['study_name'])    
+    
+    ### STEP 0: collect answer options from optiongroups
+    
+    # get answer option groups
+    optiongroups_struct = c.request_study_export_optiongroups()
+    
+    ### STEP 1: collect data from study
+    
+    # get the main study structure (i.e. questions)
+    study_structure = c.request_study_export_structure()
+    
+    # filter unused columns
+    # sort fields
+    study_structure_filtered = study_structure \
+        .filter(['Form Type', 'Form Collection Name',
+           'Form Collection Order', 'Form Name', 'Form Order',
+           'Field Variable Name', 'Field Label', 'Field ID', 'Field Type',
+           'Field Order', 'Calculation Template',
+           'Field Option Group'],axis=1) \
+    .sort_values(['Form Order','Form Collection Name','Form Collection Order','Field Order']) # sort on form collection order and field order (this matches how data is filled)
+    
+    # filter datatypes that are (most of the times) unusable for ML model; i.e. custom entries
+    # filter variables that are repeated measurements (i.e. reports data).
+    # filter variables that have no Field Variable name (additional remarks by user?)
+    study_structure_filtered = study_structure_filtered[study_structure_filtered['Field Type'].isin(['radio', 'date', 'dropdown', 'checkbox', 
+                                                                                 'string', 'numeric', 'calculation', 'time']) \
+                                                        & study_structure_filtered['Form Type'].isin(['Study']) \
+                                                        & ~(study_structure_filtered['Field Variable Name'].isna())] # keep only study forms; reports can exist multiple times and should be summarized.
+    
+    
+    # filter relevant columns for reports variables
+    # sort on form collection order and field order (this matches how data is filled)
+    reports_structure_filtered = study_structure.filter(['Form Type', 'Form Collection Name',
+                                                         'Form Collection Order', 'Form Name', 'Form Order',
+                                                         'Field Variable Name', 'Field Label', 'Field ID', 'Field Type',
+                                                         'Field Order', 'Calculation Template',
+                                                         'Field Option Group'],axis=1) \
+                                                .sort_values(['Form Order','Form Collection Name','Form Collection Order','Field Order']) 
+    
+    
+    # filter datatypes that are (most of the times) unusable for ML model; i.e. custom entries
+    # filter variables that are repeated measurements (i.e. reports data).
+    # filter variables that have no Field Variable name (additional remarks by user?)
+    reports_structure_filtered = reports_structure_filtered[reports_structure_filtered['Field Type'] \
+                                                               .isin(['radio', 'date', 'dropdown', 'checkbox', 
+                                                                      'string', 'numeric', 'calculation', 'time'])]
+    reports_structure_filtered = reports_structure_filtered[reports_structure_filtered['Form Type'].isin(['Report'])]
+    reports_structure_filtered = reports_structure_filtered[(~reports_structure_filtered['Field Variable Name'].isna())]
+    reports_structure_filtered = reports_structure_filtered[(reports_structure_filtered['Form Collection Name'].isin(['Daily case record form']))]
+
+    return study_structure_filtered, reports_structure_filtered, optiongroups_struct
 
 def import_data(path_to_api_creds=None):
     ### STEP 0: connect to API
@@ -64,7 +129,7 @@ def import_data(path_to_api_creds=None):
     c = Castor_api(path_to_api_creds) # e.g. in user dir outside of GIT repo
     
     # get study ID for COVID study
-    study_id = c.select_study_by_name(config['CastorCredentials']['study_name'])    
+    c.select_study_by_name(config['CastorCredentials']['study_name'])    
     
     ### STEP 0: collect answer options from optiongroups
     
@@ -195,7 +260,7 @@ def import_data(path_to_api_creds=None):
         
     ## STEP 3: CLEANUP
     
-    del(c, study_id, cols, reports_data_filtered, reports_data_all, study_structure)
+    del(c, cols, reports_data_filtered, reports_data_all, study_structure)
     del(study_data_filtered,study_data,daily_report_form_instance_IDs,daily_report_true)
     
     
