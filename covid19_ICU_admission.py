@@ -42,21 +42,16 @@ from covid19_ICU_util import explore_data
 from covid19_ICU_util import feature_contribution
 
 def load_data_api(path_credentials):
-    # df_study, df_structure, df_report, df_report_structure, df_optiongroup_structure = import_data_by_record(path_credentials)
-
-    # # NOTE: TMP
-    # df_study.to_pickle('df_study.pkl')
-    # df_structure.to_pickle('df_structure.pkl')
-    # df_report.to_pickle('df_report.pkl')
-    # df_report_structure.to_pickle('df_report_structure.pkl')
-    # df_optiongroup_structure.to_pickle('df_optiongroupstructure.pkl')
-
-
-    df_study = pd.read_pickle('df_study.pkl')
-    df_structure = pd.read_pickle('df_structure.pkl')
-    df_report = pd.read_pickle('df_report.pkl')
-    df_report_structure = pd.read_pickle('df_report_structure.pkl')
-    df_optiongroup_structure = pd.read_pickle('df_optiongroupstructure.pkl')
+    
+    # Try loading objects from disk file; delete saveddata.pkl to force reload data
+    try:
+        print('Loading data from PC... delete saveddata.pkl to force reload data from Castor')
+        with open(os.path.join(config['CastorCredentials']['local_private_path'],'saveddata.pkl'),'rb') as f:  # Python 3: open(..., 'rb')
+            df_study, df_structure, df_report, df_report_structure, df_optiongroup_structure = pickle.load(f)
+    except:
+        df_study, df_structure, df_report, df_report_structure, df_optiongroup_structure = import_data_by_record(path_credentials)
+        with open(str(os.path.join(config['CastorCredentials']['local_private_path'],'saveddata.pkl')), 'wb') as f:  # Python 3: open(..., 'wb')
+            pickle.dump([df_study, df_structure, df_report, df_report_structure, df_optiongroup_structure], f)
 
     # Select useful columns
     var_columns = ['Form Collection Name', 'Form Name', 'Field Variable Name', 'Field Label', 'Field Type']
