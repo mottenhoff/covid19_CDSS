@@ -45,10 +45,11 @@ def load_data_api(path_credentials):
     
     # Try loading objects from disk file; delete saveddata.pkl to force reload data
     try:
-        print('Loading data from PC... delete saveddata.pkl to force reload data from Castor')
         with open(os.path.join(config['CastorCredentials']['local_private_path'],'saveddata.pkl'),'rb') as f:  # Python 3: open(..., 'rb')
             df_study, df_structure, df_report, df_report_structure, df_optiongroup_structure = pickle.load(f)
+        print('Loading data from PC... delete saveddata.pkl to force reload data from Castor')
     except:
+        print('Loading data from PC failed, reloading from Castor server.')
         df_study, df_structure, df_report, df_report_structure, df_optiongroup_structure = import_data_by_record(path_credentials)
         with open(str(os.path.join(config['CastorCredentials']['local_private_path'],'saveddata.pkl')), 'wb') as f:  # Python 3: open(..., 'wb')
             pickle.dump([df_study, df_structure, df_report, df_report_structure, df_optiongroup_structure], f)
