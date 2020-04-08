@@ -22,6 +22,10 @@ See https://github.com/wouterpotters/castor-python
 1) Fill in paths to API-credentials and/or path to files in `covid19_createconfig.py`. Do not push this file filled in to master.
 2) Run `covid19_createconfig.py`
 
+### Run analysis
+`python covid19_ICU_admission.py`
+
+## Just import data by yourself
 ### Import raw unprocessed data
 ```python
 from covid19_import import import_data_by_record
@@ -49,8 +53,6 @@ x, y, col_dict, field_types = load_data(path + filename_data, path + filename_re
 x = preprocess(x, col_dict, field_types)
 ```
 
-### Run analysis
-`python covid19_ICU_admission.py`
 
 ---
 For questions:
