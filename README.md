@@ -23,10 +23,10 @@ Perform all steps listed here to complete setup
 ## Retrieving data and running analysis
 
 ### Retrieving data
-1) In `python covid19_ICU_admission.py __main__` set save to True. This will save 3 files: 1) all data directly from database. 2) Preprocessed data. 3) preprocessed data with outcome measure
+1) In `covid19_ICU_admission.py __main__` set save to True. This will save 3 files: 1) all data directly from database. 2) Preprocessed data. 3) preprocessed data with outcome measure
 2) run `python covid19_ICU_admission.py`
 
-NOTE: To select specific data groups, make changes in `python feature_selection()`. As example the function `python select_baseline_date()` is implemented to select only date from baseline.
+NOTE: To select specific data groups, make changes in `feature_selection()`. As example the function `select_baseline_data()` is implemented to select only date from baseline.
 
 ### Run analysis
 `python covid19_ICU_admission.py`, set save=False in `python __main__`.
