@@ -125,6 +125,7 @@ def fix_single_errors(data):
     # Global fix
     data = data.replace('11-11-1111', None)
     data = data.mask(data=='', None)
+
     
     values_to_replace = ['Missing (asked but unknown)', 'Missing (measurement failed)',
                          'Missing (not applicable)', 'Missing (not done)'] + \
@@ -232,21 +233,21 @@ def transform_binary_features(data, data_struct):
     if_yes_no = lambda x: 1 if type(x)==list and ("Yes" in x and "No" in x) else 0 
     is_yes_no = data_struct['Option Name'].apply(if_yes_no)==1
     vars_yes_no = is_in_columns(data_struct.loc[is_yes_no, 'Field Variable Name'].to_list(), data)
-    data.loc[:, vars_yes_no] = data.loc[:, vars_yes_no].fillna(3).astype(int).applymap(lambda x: dict_yes_no[x])
+    data.loc[:, vars_yes_no] = data.loc[:, vars_yes_no].fillna(3).astype(int).applymap(lambda x: dict_yes_no.get(x, 0))
 
     # Find all answers with Yes probable
     if_yes_probable = lambda x: 1 if type(x)==list and ("YES - Probable" in x or "Yes - Probable" in x) else 0
     is_yes_probable = data_struct['Option Name'].apply(if_yes_probable) == 1
     vars_yes_probable = is_in_columns(data_struct.loc[is_yes_probable, 'Field Variable Name'].to_list(), data)
-    data.loc[:, vars_yes_probable] = data.loc[:, vars_yes_probable].fillna(4).astype(int).applymap(lambda x: dict_yp[x])
+    data.loc[:, vars_yes_probable] = data.loc[:, vars_yes_probable].fillna(4).astype(int).applymap(lambda x: dict_yp.get(x, 0))
 
     # Hand code some other variables
     other_radio_vars = ['Bacteria', 'Smoking', 'CT_thorax_performed', 'facility_transfer', 'culture']
-    data.loc[:, 'Bacteria'].fillna(3).astype(int).apply(lambda x: dict_yes_no[x])
-    data.loc[:, 'Smoking'].fillna(4).astype(int).apply(lambda x: dict_smoke[x])
-    data.loc[:, 'CT_thorax_performed'].fillna(3).astype(int).apply(lambda x: {0:0, 1:0, 2:1, 3:0}[x])
-    data.loc[:, 'facility_transfer'].fillna(3).astype(int).apply(lambda x: dict_yes_no[x])
-    data.loc[:, 'culture'].fillna(1).astype(int).apply(lambda x: {0:0, 1:0, 2:1, 3:2}[x])
+    data.loc[:, 'Bacteria'].fillna(3).astype(int).apply(lambda x: dict_yes_no.get(x, 0))
+    data.loc[:, 'Smoking'].fillna(4).astype(int).apply(lambda x: dict_smoke.get(x, 0))
+    data.loc[:, 'CT_thorax_performed'].fillna(3).astype(int).apply(lambda x: {0:0, 1:0, 2:1, 3:0}.get(x, 0))
+    data.loc[:, 'facility_transfer'].fillna(3).astype(int).apply(lambda x: dict_yes_no.get(x, 0))
+    data.loc[:, 'culture'].fillna(1).astype(int).apply(lambda x: {0:0, 1:0, 2:1, 3:2}.get(x, 0))
 
     # Unit variables
     if_unit = lambda x: 1 if 'unit' in x.lower() or 'units' in x.lower() else 0
