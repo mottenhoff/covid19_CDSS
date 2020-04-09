@@ -5,7 +5,7 @@
 Please do not use without permission
 '''
 import configparser
-
+import os
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -44,21 +44,17 @@ from covid19_ICU_util import feature_contribution
 is_in_columns = lambda var_list, data: [v for v in var_list if v in data.columns]
 
 def load_data_api(path_credentials):
-    # df_study, df_structure, df_report, df_report_structure, df_optiongroup_structure = import_data_by_record(path_credentials)
-
-    # # NOTE: Uncomment to work around long API retrieval time
-    # df_study.to_pickle('df_study.pkl')
-    # df_structure.to_pickle('df_structure.pkl')
-    # df_report.to_pickle('df_report.pkl')
-    # df_report_structure.to_pickle('df_report_structure.pkl')
-    # df_optiongroup_structure.to_pickle('df_optiongroupstructure.pkl')
-
-
-    df_study = pd.read_pickle('df_study.pkl')
-    df_structure = pd.read_pickle('df_structure.pkl')
-    df_report = pd.read_pickle('df_report.pkl')
-    df_report_structure = pd.read_pickle('df_report_structure.pkl')
-    df_optiongroup_structure = pd.read_pickle('df_optiongroupstructure.pkl')
+    
+    # Try loading objects from disk file; delete saveddata.pkl to force reload data
+    try:
+        with open(os.path.join(config['CastorCredentials']['local_private_path'],'saveddata.pkl'),'rb') as f:  # Python 3: open(..., 'rb')
+            df_study, df_structure, df_report, df_report_structure, df_optiongroup_structure = pickle.load(f)
+        print('Loading data from PC... delete saveddata.pkl to force reload data from Castor')
+    except:
+        print('Loading data from PC failed, reloading from Castor server.')
+        df_study, df_structure, df_report, df_report_structure, df_optiongroup_structure = import_data_by_record(path_credentials)
+        with open(str(os.path.join(config['CastorCredentials']['local_private_path'],'saveddata.pkl')), 'wb') as f:  # Python 3: open(..., 'wb')
+            pickle.dump([df_study, df_structure, df_report, df_report_structure, df_optiongroup_structure], f)
 
     df_study = df_study.reset_index(drop=True)
     df_report = df_report.reset_index(drop=True)
@@ -253,8 +249,12 @@ def score_and_vizualize_prediction(model, test_x, test_y, y_hat, rep):
 
 
 if __name__ == "__main__":
+    config = configparser.ConfigParser()
+    config.read('user_settings.ini') # create this once using covid19_createconfig and never upload this file to git.
 
-    path_creds = r'./covid19_CDSS/castor_api_creds/'
+    path_creds = config['CastorCredentials']['local_private_path']
+
+    # Saves intermediate
     save = False # REMEMBER TO SAVE AS FEW A POSSIBLE FOR PRIVACY REASONS
 
     data, data_struct, var_groups = load_data(path_creds, save=save)
