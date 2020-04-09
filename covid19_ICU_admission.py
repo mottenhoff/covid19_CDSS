@@ -24,27 +24,29 @@ from sklearn.metrics import confusion_matrix
 from sklearn.metrics import plot_confusion_matrix
 from sklearn.metrics import roc_auc_score
 
-from covid19_import import import_data
 from covid19_import import import_data_by_record
+from covid19_ICU_util import get_all_field_information
 from covid19_ICU_util import fix_single_errors
-from covid19_ICU_util import merge_study_and_report
 from covid19_ICU_util import select_baseline_data
-from covid19_ICU_util import calculate_outcome_measure
+from covid19_ICU_util import calculate_outcomes
 from covid19_ICU_util import transform_binary_features
 from covid19_ICU_util import transform_categorical_features
 from covid19_ICU_util import transform_numeric_features
 from covid19_ICU_util import transform_time_features
 from covid19_ICU_util import transform_string_features
+from covid19_ICU_util import transform_calculated_features
 from covid19_ICU_util import select_data
 from covid19_ICU_util import plot_model_results
 from covid19_ICU_util import plot_model_weights
 from covid19_ICU_util import explore_data
 from covid19_ICU_util import feature_contribution
 
+is_in_columns = lambda var_list, data: [v for v in var_list if v in data.columns]
+
 def load_data_api(path_credentials):
     # df_study, df_structure, df_report, df_report_structure, df_optiongroup_structure = import_data_by_record(path_credentials)
 
-    # # NOTE: TMP
+    # # NOTE: Uncomment to work around long API retrieval time
     # df_study.to_pickle('df_study.pkl')
     # df_structure.to_pickle('df_structure.pkl')
     # df_report.to_pickle('df_report.pkl')
@@ -58,13 +60,6 @@ def load_data_api(path_credentials):
     df_report_structure = pd.read_pickle('df_report_structure.pkl')
     df_optiongroup_structure = pd.read_pickle('df_optiongroupstructure.pkl')
 
-    # Select useful columns
-    var_columns = ['Form Collection Name', 'Form Name', 'Field Variable Name', 'Field Label', 'Field Type']
-    df_structure = df_structure.loc[:, var_columns]
-    df_report_structure = df_report_structure.loc[:, var_columns]
-    df_structure.columns = ['Phase name', 'Step name', 'Variable name', 'Field label', 'Field type']
-    df_report_structure.columns = ['Phase name', 'Step name', 'Variable name', 'Field label', 'Field type']
-
     df_study = df_study.reset_index(drop=True)
     df_report = df_report.reset_index(drop=True)
 
@@ -74,142 +69,126 @@ def load_data_api(path_credentials):
     # Remove test records
     df_study = df_study.loc[df_study['Record Id'].astype(int) > 11000, :]
 
-    return df_study, df_report, df_structure, df_report_structure
+    var_columns = ['Form Type', 'Form Collection Name', 'Form Name', 'Field Variable Name', 
+                   'Field Label', 'Field Type', 'Option Name', 'Option Value']
+    data_struct = get_all_field_information(path_creds)
+    data_struct = data_struct.loc[:, var_columns]
 
-def load_data_csv(path_study, path_report, path_study_vars, path_report_vars):
-    df_study = pd.read_csv(path_study, sep=';', header=0)
-    df_report = pd.read_csv(path_report, sep=';', header=0)
-    df_study_vars = pd.read_csv(path_study_vars, sep=';', header=0)
-    df_report_vars = pd.read_csv(path_report_vars, sep=';', header=0)
-
-    var_columns = ['Phase name', 'Step name', 'Field type', 'Variable name', 'Field label']
-    df_study_vars = df_study_vars.loc[:, var_columns]
-    df_report_vars = df_report_vars.loc[:, var_columns]
-
-    return df_study, df_report, df_study_vars, df_report_vars
+    return df_study, df_report, data_struct
 
 
-def load_data(path_data=None, path_report=None, path_study_vars=None, path_report_vars=None, 
-              from_file=False, path_creds=None):
-    ''' Loads data from files or API.
-        Create dictionary with all columns per subform
-        Create a dataframe with all field types
-        Fix errors
-        Combine admission data and daily report data
-        Generate and outcome measure
-        Select data for that outcome measure
-    '''
+def load_data(path_to_creds, save=False):
 
-    # Load data
-    if from_file:
-        df, df_report, df_study_vars, df_report_vars = load_data_csv(path_data,
-                                                                     path_report,
-                                                                     path_study_vars,
-                                                                     path_report_vars)
-    else:
-        df, df_report, df_study_vars, df_report_vars = load_data_api(path_creds)
+    df_study, df_report, data_struct = load_data_api(path_to_creds)
         
-    # Columns per subform
-    cols = {}
-    for step in df_study_vars['Step name'].unique():
-        cols[step] = df_study_vars['Variable name'][df_study_vars['Step name'] == step].tolist()
-    for step in df_report_vars['Step name'].unique():
-        cols[step] = df_report_vars['Variable name'][df_report_vars['Step name'] == step].tolist()
+    # Remove all the cardiology variables for now
+    study_cols_to_drop = data_struct.loc[data_struct['Form Collection Name']=='CARDIO (OPTIONAL)', 'Field Variable Name']
+    report_cols_to_drop = data_struct.loc[data_struct['Form Collection Name'].isin([]), 'Field Variable Name']
+    df_study = df_study.drop([col for col in study_cols_to_drop if col in df_study.columns], axis=1)
+    df_report = df_report.drop([col for col in report_cols_to_drop if col in df_report.columns], axis=1)
+    data_struct = data_struct.loc[~data_struct['Form Collection Name'].isin(['CARDIO (OPTIONAL)', 'Repolarization', 'Cardiovascular'])]
 
-    # Get field types
-    field_types = pd.concat([df_report_vars[['Field type', 'Variable name']], 
-                             df_study_vars[['Field type', 'Variable name']]], axis=0)
+    var_groups = {}
+    for step in data_struct['Form Name'].unique():
+        var_groups[step] = data_struct['Field Variable Name'][data_struct['Form Name'] == step].tolist()
 
-    # Fix and merge
-    df, df_report = fix_single_errors(df, df_report)
+    data = pd.merge(left=df_study, right=df_report, how='right', on='Record Id')
 
-    df, df_report, y = calculate_outcome_measure(df, df_report)
-    df = merge_study_and_report(df, df_report, cols)
+    # Fix empty columns:
+    data = data.rename(columns={"": "EMPTY_COLUMN_NAME", None: "EMPTY_COLUMN_NAME"})
+
+    if save:
+        data.to_excel('data_unprocessed.xlsx')
+
+    return data, data_struct, var_groups
+
     
-    # Outcome and data selection
-    x = select_baseline_data(df, cols)
 
-    return x, y, cols, field_types
-    
+def preprocess(data, data_struct, save=False):
+    ''' Processed the data per datatype.'''
 
-def preprocess(data, col_dict, field_types):
-    ''' Processed the data per datatype.
+    # Fix single errors
+    data = fix_single_errors(data)
     
-    TODO: Remove all columns that represent if a value is measured
-    TODO: Rotate  - All values such that higher value should be better outcome
-    TODO: Automatic outlier detection
-    '''
-    
-    is_in_columns = lambda df: [field for field in df if field in data.columns]
-
-    # Binary features --> Most radio button fields
-    radio_fields = is_in_columns(field_types['Variable name'][field_types['Field type'] == 'radio'].tolist())
-    data[radio_fields] = transform_binary_features(data[radio_fields])
-
-    # Categorical --> Some radio button fields, dropdown fields, checkbox fields
-    category_fields = is_in_columns(field_types['Variable name'][field_types['Field type'].isin(['dropdown', 'checkbox'])].tolist())
-    data = transform_categorical_features(data, category_fields, radio_fields) # NOTE: categorical radio fields are selected in util
-    
-    # Numeric
-    numeric_fields = is_in_columns(field_types['Variable name'][field_types['Field type'] == 'numeric'].tolist())
-    data = transform_numeric_features(data, numeric_fields)
-    
-    data = transform_time_features(data)
-    
-    string_fields = field_types['Variable name'][field_types['Field type'] == 'string'].tolist()
-    data = transform_string_features(data, string_fields)
-
+     # Transform variables
+    data, data_struct = transform_binary_features(data, data_struct)
+    data = transform_categorical_features(data, data_struct)
+    data = transform_numeric_features(data, data_struct)
+    data = transform_time_features(data, data_struct)
+    data = transform_string_features(data, data_struct)
+    data = transform_calculated_features(data, data_struct)
+ 
+    # Remove columns without any information
     data = select_data(data)
     
-    return data
+    # Sort data chronologically
+    
+    if save:
+        data.to_excel('data_processed.xlsx')
+
+    return data, data_struct
 
 
-def feature_selection(data, col_dict, field_types):
-    ''' Fills all missing values with 0,
-        Drop columns without (relevant) information
-        Get engineered featured
-        Save the processed data
-
-
+def feature_selection(data, data_struct, var_groups, save=False):
+    '''
     TODO: Function does data selection now, name accordingly
     TODO: Check how the selected field here relate to the daily report features
     TODO: Check if there are variables only measured in the ICU
     TODO: Some form of feature selection?
     ''' 
 
-    exclude = ['Bleeding_sites', 'OTHER_intervention_1', 'same_id', 'facility_transfer', 
-               'Add_Daily_CRF_1', 'ICU_Medium_Care_admission_1', 'Specify_Route_1', 'Corticosteroid_type_1',
-               'whole_admission_yes_no', 'whole_admission_yes_no_1', 'facility_transfer_cat_1',
-               'facility_transfer_cat_2', 'facility_transfer_cat_3']#, 'Coronavirus_cat_1',
-            #    'Coronavirus_cat_2', 'Coronavirus_cat_3']
+    outcomes, used_columns = calculate_outcomes(data, data_struct)
+    data = pd.concat([data, outcomes], axis=1)
+
+    if save:
+        data.to_excel('data_processed_with_calculated_outcome.xlsx')
+
+    # Select only (selection of) reports
+    data = data.groupby(by='Record Id', axis=0).last()
     
-    # Fill
-    data = data.replace(-1, None)
-    data = data.dropna(how='all', axis=1)
-    data = data.fillna(0) # TODO: Make smarter handling of missing data 
+    # SELECT VARIABLES HERE
+    # Possble groups (as named in castor). Excluding cardio variables)
+    # ['DEMOGRAPHICS', 'TREATMENTS during admission', 'MEDICATIONS DURING ADMISSION', 'OUTCOME', 
+    #  'Complications', 'CO-MORBIDITIES', 'ONSET & ADMISSION', 'SIGNS AND SYMPTOMS AT HOSPITAL ADMISSION', 
+    #  'ADMISSION SIGNS AND SYMPTOMS', 'BLOOD ASSESSMENT ADMISSION', 'BLOOD GAS ADMISSION', 
+    #  'PATHOGEN TESTING / RADIOLOGY', 'DAILY ASSESSMENT FORM', 'Respiratory assessment', 'Blood assessment']
+    cols_to_exclude = [var_groups[group] for group in ['OUTCOME']][0] \
+                      + used_columns \
+                      + data.columns[(data.nunique()<=1)].to_list()
+    data = data.drop(is_in_columns(cols_to_exclude, data), axis=1)
 
-    # TEMP, might include only ICU variables
-    # data = data.drop([col for col in data.columns if 'patient_interventions' in col], axis=1)
+    # TODO: OUTPUT PROCESSED DATA HERE
+    # Select data for learning
+    y = data['final_outcome']
+    x = data.drop(['final_outcome', 'icu_within_7_days'], axis=1)
+    
+    has_outcome = y.notna()
+    y = y.loc[has_outcome]
+    x = x.loc[has_outcome, :]
+    x = x.replace(-1, None)
+    x = x.dropna(how='all', axis=1)
+    x = x.fillna(0) # TODO: Make smarter handling of missing data 
 
-    # Drop
-    cols_to_drop  = [col for col in data.columns if col in exclude] + \
-                    data.columns[(data.nunique() <= 1).values].to_list() # Find colums with a single or no values    
-    data = data.drop(cols_to_drop, axis=1)
+    # UNCOMMENT FOR ALL DATA
+    x = select_baseline_data(x, var_groups)
+
+    unhandled_columns = ['delivery_date', "EMPTY_COLUMN_NAME", "med_name_specific", "med_stop",
+                         'med_start']
+
+    x = x.drop(is_in_columns(unhandled_columns, x), axis=1)
 
     print('{} columns left for feature engineering and modelling'.format(data.columns.size))
 
-    # Save
-    try:
-        data.to_excel('processed_data.xlsx')
-    except Exception:
-        print('Excel file still opened, skipping...')
-    
-    return data
+    return x, y
+    # exclude = ['Bleeding_sites', 'OTHER_intervention_1', 'same_id', 'facility_transfer', 
+    #            'Add_Daily_CRF_1', 'ICU_Medium_Care_admission_1', 'Specify_Route_1', 'Corticosteroid_type_1',
+    #            'whole_admission_yes_no', 'whole_admission_yes_no_1', 'facility_transfer_cat_1',
+    #            'facility_transfer_cat_2', 'facility_transfer_cat_3']
 
 def add_engineered_features(data, pca=None):
     ''' Generate and add features'''
     # TODO: Normalize/scale numeric features (also to 0 to 1?)
-    # TODO: MAKE PCA TRANSFORM MATRIX AND APPLY TO TEST
+
     # Dimensional transformation
     n_components = 10
     data = data.reset_index(drop=True)
@@ -253,14 +232,9 @@ def model_and_predict(x, y, test_size=0.2, val_size=0.2,
         train_x = train_x.iloc[:, n_best]
         test_x = test_x.iloc[:, n_best]
 
-    # Model
-    try:
-        clf.fit(train_x, train_y)
-    except Exception as e:
-        print('Something went wrong!')
-        raise e
-    # Predict
-    test_y_hat = clf.predict_proba(test_x)
+   
+    clf.fit(train_x, train_y)  # Model
+    test_y_hat = clf.predict_proba(test_x) # Predict
 
     return clf, train_x, train_y, test_x, test_y, test_y_hat
 
@@ -279,21 +253,13 @@ def score_and_vizualize_prediction(model, test_x, test_y, y_hat, rep):
 
 
 if __name__ == "__main__":
-    config = configparser.ConfigParser()
-    config.read('user_settings.ini') # create this once using covid19_createconfig and never upload this file to git.
 
-    path_creds = config['CastorCredentials']['local_private_path']
-    path = config['datafiles']['folder_path']
-    filename_data = config['datafiles']['filename_data']
-    filename_report = config['datafiles']['filename_report']
-    filename_study_vars = config['datafiles']['filename_study_vars']
-    filename_report_vars = config['datafiles']['filename_report_vars']
+    path_creds = r'./covid19_CDSS/castor_api_creds/'
+    save = False # REMEMBER TO SAVE AS FEW A POSSIBLE FOR PRIVACY REASONS
 
-    x, y, col_dict, field_types = load_data(path + filename_data, path + filename_report, 
-                                            path + filename_study_vars, path + filename_report_vars,
-                                            from_file=False, path_creds=path_creds)
-    x = preprocess(x, col_dict, field_types)
-    x = feature_selection(x, col_dict, field_types)
+    data, data_struct, var_groups = load_data(path_creds, save=save)
+    data, data_struct = preprocess(data, data_struct, save=save)
+    x, y = feature_selection(data, data_struct, var_groups, save=save)
 
     explore_data(x, y)
 

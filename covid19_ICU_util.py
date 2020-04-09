@@ -5,49 +5,7 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import cross_val_predict
 from sklearn.metrics import roc_auc_score
 
-                      #'post_partum','baby_ARI','infant','Breastfed', 'Currently_breastfed','development','vaccinations',
-RADIO_Y_N_NA =        ['healthcare_worker','microbiology_worker','Pregnancy','contact','ccd','hypertension','cpd','asthma','ckd',
-                       'live_disease','mld','cnd','mneoplasm','chd','immune_sup','aids_hiv','obesity','Cachexia',
-                       'diabetes_complications','diabetes_without_complications','rheuma_disorder','Dementia','alcohol',
-                       'same_id','irregular','capillary_refill','fever','cough_sputum','cough_sputum_haemoptysis',
-                       'Sore_throat','Rhinorrhoea','ear_pain','Wheezing','Chest_pain','Myalgia','Arthralgia','Fatigue_Malaise',
-                       'Dyspnea','auxiliary_breathing_muscles','Headache','confusion','Seizures','Abdominal_pain','Vomiting_Nausea',
-                       'Diarrhoea','Bleeding_Haemorrhage','Haemoglobin_1','WBC_3','Lymphocyte_2','Neutrophil_1','Platelets_1',
-                       'APT_APTR_2','INR_2','ALT_SGPT_2','Total_Bilirubin_3','AST_SGOT_2','Glucose_1','Blood_Urea_Nitrogen_1',
-                       'Lactate_3','Creatinine_1','Sodium_2','Potassium_2','CRP_1','Albumin_admision_1','pao2_yes_no',
-                       'Same_blood_gas_PaO2_PCO2_1','ph__1','Bacteria','Chest_X_Ray_2','infiltrates_2', 
-                        # Report variables
-                       'whole_admission_yes_no', 'sa02_yes_no', 'pao2_yes_no_1', 'Same_blood_gas_PaO2_PCO2', 'ph_', 'HCO3', 
-                       'Base_excess', 'EMV_yes_no', 'resprat_yes_no_1', 'heartrate_yes_no_2', 'Systolic_bp', 'diastolic_bp', 
-                       'mean_arterial_bp', 'temperature_yes_no_3', 'patient_interventions_yes_no', 'whole_admission_yes_no_1', 
-                       'blood_assessment_yes_no', 'Haemoglobin', 'WBC', 'Lymphocyte', 'Neutrophil', 'Platelets', 'APT_APTR', 
-                       'INR', 'ALT_SGPT', 'Total_Bilirubin', 'AST_SGOT', 'Glucose', 'Blood_Urea_Nitrogen', 'Lactate', 
-                       'Creatinine', 'Sodium', 'Potassium', 'CRP', 'Albumin', 'Chest_X_Ray', 'infiltrates', 'glass', 'conso', 
-                       'bilat']
-
-RADIO_Y_N =           ['CKina','LDHadmi','bloed_gas','oxygentherapy_1',
-                       # Report variables
-                       'oxygentherapy', 'CKin', 'LDH_daily', 'CTperf']
-
-RADIO_YC_YP_N_NA =    ['Influenza', 'Coronavirus', 'RSV_', 'Adenovirus']
-RADIO_YC_YP_N =       ['infec_resp_diagnosis']
-RADIO_SMOKE =         ['Smoking']
-
-RADIO_YN_YC_N =       ['CT_thorax_performed']
-
-RADIO_CATEGORY =      ['gender','preg_outcome','baby_ARI_testmethod','facility_transfer','oxygen_saturation_on',
-                       'PaO2_sample_type_1','Coronavirus_type', 'culture',
-                        # Report Variables
-                       'dept', 'PaO2un', 'PaO2_sample_type']
-                        # 'Birth_weight_unit'
-RADIO_UNIT=           ['Haemoglobin_unit_1','WBC_1_1','units_lymph','units_neutro','Platelets_unit_1',
-                       'Total_Bilirubin_1_1','Glucose_unit_2','Blood_Urea_Nitrogen_unit_1','Lactate_1_1','Creatinine_unit_1',
-                       'sodium_units','pot_units_1','PaO2un_1','PCO2_unit_1', 'Neutrophil_unit_1', 'Glucose_unit_1_1',
-                       # Report variables
-                        'PCO2_unit', 'Haemoglobin_unit', 'WBC_1', 
-                       'lymph_units_1', 'neutro_units_2', 'Platelets_unit', 'Total_Bilirubin_1', 'Glucose_unit', 
-                       'Blood_Urea_Nitrogen_unit', 'Lactate_1', 'Creatinine_unit', 'sodium_units_1', 'pot_units_2',
-                       'units_d_dimer']
+from covid19_import import import_study_report_structure
 
 IS_MEASURED_COLUMNS = ['baby_ARI', 'Haemoglobin_1', 'WBC_3', 'Lymphocyte_2', 'Neutrophil_1', 'Platelets_1', 'APT_APTR_2', 
                        'INR_2', 'ALT_SGPT_2', 'Total_Bilirubin_3', 'AST_SGOT_2', 'Glucose_1', 'Blood_Urea_Nitrogen_1',
@@ -62,38 +20,26 @@ IS_MEASURED_COLUMNS = ['baby_ARI', 'Haemoglobin_1', 'WBC_3', 'Lymphocyte_2', 'Ne
                        'Total_Bilirubin', 'AST_SGOT', 'Glucose', 'Blood_Urea_Nitrogen', 'Lactate', 'Creatinine', 
                        'Sodium', 'Potassium', 'CRP', 'Albumin', 'CKin', 'LDH_daily', 'Chest_X_Ray', 'CTperf', 'd_dimer_yes_no']
 
+
 format_dt = lambda col: pd.to_datetime(col, format='%d-%m-%Y', errors='coerce').astype('datetime64[ns]')
+is_in_columns = lambda var_list, data: [v for v in var_list if v in data.columns]
 
-def merge_study_and_report(df_study, df_report, cols):
-    ''' Currently selects the latest daily report in 
-    the database per patient that is NOT in ICU (dept=3)
-    
-    TODO: Improve selection/summarization of multiple 
-          daily reports per patient.
-    '''
-    df_report.loc[:, 'assessment_dt'] = format_dt(df_report['assessment_dt'])
+def get_all_field_information(path_to_creds):
+    study_struct, reports_struct, optiongroups_struct = import_study_report_structure(path_to_creds)
+    answeroptions = pd.pivot_table(optiongroups_struct, index='Option Group Id', values=['Option Name','Option Value'], 
+                                        aggfunc=lambda x:list(x))
+    study_struct_withoptions = pd.merge(study_struct, answeroptions, how='left', 
+                                            left_on='Field Option Group', right_on='Option Group Id')
+    reports_struct_withoptions = pd.merge(reports_struct, answeroptions, how='left', 
+                                             left_on='Field Option Group', right_on='Option Group Id')
 
-    df = pd.DataFrame(columns=df_report.columns)
-    for id_ in df_report['Record Id'].unique():
-        reports_per_id = df_report[df_report['Record Id'] == id_]
+    data_struct = pd.concat([study_struct_withoptions, reports_struct_withoptions], axis=0)
 
-        is_most_recent_date = reports_per_id['assessment_dt']==reports_per_id['assessment_dt'].max()
-        is_not_in_ICU = reports_per_id['dept'] != '3'
-        report = reports_per_id[is_most_recent_date & is_not_in_ICU]
-
-        if report.shape[0] > 1:
-            report = report.iloc[0, :] # NOTE: If more than 1 on a single day, select first index
-        df = df.append(report)
-
-    df = pd.merge(left=df_study, right=df, how='left', on='Record Id')
-
-    df = remove_invalid_data(df, cols)
-    df = df.reset_index(drop=True)
-
-    return df
-
+    return data_struct
 
 def remove_invalid_data(data, cols):
+    # DEPRECATED
+
     '''Remove any data irregularities'''
 
     # Some entries are interpreted as the worst values
@@ -108,124 +54,57 @@ def remove_invalid_data(data, cols):
 
     return data
 
-def calculate_outcome_measure(df_study, df_report):
-    '''
-    Four binary columns about results are determined;
-        1) is_alive              = the patient is alive
-        2) has_been_ICU_admitted = Patient is/has been admitted at some 
-                                   point during the whole admission.
-        3) is_currently_at_ICU   = Patient is at the ICU according to
-                                   the most recent outcome
-        4) went_to_icu_and_died  = patient went to ICU but died
+def count_occurrences(col):
+    # Make counter of occurences in binary column
+    # NOTE: Make sure to supply sorted array
+    new_col = pd.Series(None, index=col.index)
+    ids = col*(np.diff(np.r_[0, col])==1).cumsum()
+    counts = np.bincount(ids) # Get Length per period
+    for i in ids.unique():
+        if i==0:
+            continue
+        new_col.loc[ids==i] = np.arange(1, counts[i]+1)
 
-    Variables used and their meaning:
-    Admission_dt_icu_1 = ICU admission at hospital presentation (immediate)
-    Admission_dt_icu   = ICU admissions during hospitalization 
-    Outcome            = ICU admission within 3 weeks of admission
-    dept               = Department on which the daily report assessment is taken
-    '''
-
-    # Step 1) Check if patient is alive
-    #         Assumed everyone who does not have outcome death is alive.
-    df_study['is_alive'] = 1
-    is_dead_at_3wk = df_study['Outcome'].isin(['7', '8'])
-    is_dead_at_6wk = df_study['Outcome_6wk'].isin(['7', '8'])
-    df_study.loc[is_dead_at_3wk | is_dead_at_6wk, 'is_alive'] = 0
-    is_alive = df_study['is_alive'] == 1
-        
-    # Step 2) Patient has been at ICU at some point during the whole hospital admission
-    is_at_icu_at_wk3 = df_study['Outcome'].astype(str)=='3'                      # 3==ICU
-    is_at_icu_at_wk6 = df_study['Outcome_6wk'].astype(str)=='3'
-    has_been_at_icu = df_study['unit_admission_1'].astype(str).str.contains('1') # 1==ICU, 2==MC
-    has_icu_admission_date = df_study['Admission_dt_icu_1'].notna() 
-    has_icu_discharge_date = df_study['Discharge_dt_icu_1'].notna()
-    
-    df_study['has_any_report_at_icu'] = 0
-    for id_ in df_report['Record Id'].unique():
-        has_dept_3 = any(df_report.loc[df_report['Record Id']==id_, 'dept'] == '3')
-        try:
-            df_study.loc[df_study['Record Id']==id_, 'has_any_report_at_icu'] = 1 if has_dept_3 else 0
-        except Exception:
-            print("WARNING: Record Id {} not in df_study, skipping...".format(id_))
-    has_any_report_at_icu = df_study['has_any_report_at_icu'] == 1
-
-    df_study['ICU_admitted'] = 0
-    df_study.loc[is_at_icu_at_wk3 | is_at_icu_at_wk6 | has_been_at_icu |
-                 has_icu_admission_date | has_icu_discharge_date | has_any_report_at_icu,
-                 'ICU_admitted'] = 1
-    has_been_icu_admitted = df_study['ICU_admitted']
-    
-
-    # Step 3) Is the patient currently at the ICU?
-    #   patients is assumed to be at ICU if:    
-    #       a) the most recent report is at dept=3 (= ICU) OR
-    #       b) patients has an ICU admission date, but not
-    #            an discharge data
-    #       c) patients outcome is ICU
-    #       c) AND is not dead or transferred
-    
-    # 3a) Is most recent report at ICU
-    df_report['assessment_dt'] = format_dt(df_report['assessment_dt'])
-    df_study['most_recent_report_at_icu'] = 0
-    for id_ in df_report['Record Id'].unique():
-        report_current_record = df_report.loc[df_report['Record Id'] == id_, :]
-        # Get most recent daily report
-        is_most_recent_report = report_current_record.loc[:, 'assessment_dt'] == \
-                                report_current_record.loc[:, 'assessment_dt'].max()
-        has_dept_3 = report_current_record.loc[is_most_recent_report, 'dept'] == '3'
-        df_study.loc[df_study['Record Id']==id_, 'most_recent_report_at_icu'] = 1 if any(has_dept_3) else 0 
-    has_most_recent_report_at_icu = df_study['most_recent_report_at_icu'] == 1
-    
-    # 3b) Does patient have an ICU admission date but not a ICU discharge date?
-    #       NOTE: Should 0 be ICU admitted and discharged? Currently 0 = ~not_discharged
-    df_study['has_not_been_discharged_from_ICU'] = 0
-    df_study.loc[has_icu_admission_date & ~has_icu_discharge_date, 
-                 'has_not_been_discharged_from_ICU'] = 1
-    has_not_been_discharged_from_ICU = df_study['has_not_been_discharged_from_ICU']
-
-    df_study['outcome_is_in_hospital'] = 0
-    df_study.loc[(df_study['Outcome'].isin(['2', '3', '10'])) |  # Transfer to other hospital is considered as left hospital
-                 (df_study['Outcome'].isna()), # No outcome is also considered to be in the hospital
-                'outcome_is_in_hospital'] = 1
-    outcome_is_in_hospital = df_study['outcome_is_in_hospital']
-
-    # 3c) Patient has not been discharged from ICU does not have an outcome
-    #       NOTE: Remember that "no outcome" is also considered as in hospital
-    df_study['is_currently_at_icu'] = 0
-    df_study.loc[(has_most_recent_report_at_icu & outcome_is_in_hospital) |
-                 (has_not_been_discharged_from_ICU & outcome_is_in_hospital) |
-                 (df_study['Outcome']=='3'), 'is_currently_at_icu'] = 1
-    is_currently_at_icu = df_study['is_currently_at_icu']
+    return new_col
 
 
-    # Step 4) Patient is/has been to ICU and did not die during or after ICU admission
-    df_study['has_died_after_ICU'] = None # during or after
-    df_study.loc[has_been_icu_admitted & (~is_alive), 'has_died_after_ICU'] = 1
-    df_study.loc[has_been_icu_admitted & is_alive, 'has_died_after_ICU'] = 0
+def calculate_outcomes(data, data_struct):
 
-    
-    # Step 5) Drop all calculation columns:
-    columns = ['has_any_report_at_icu', 'most_recent_report_at_icu',
-               'has_not_been_discharged_from_ICU', 'outcome_is_in_hospital']
-    df_study = df_study.drop(columns, axis=1)
+    # OUTCOME 1 ==> Outcome good or bad
+    data['has_severe_complications'] = 0    
+    data.loc[(data['Extracorporeal_support_1']==1) | (data['Liver_dysfunction_1_1']==1) |
+                (data['INR_1_1'].astype('float') > 1.5), 'has_severe_complications'] = 1
 
-    # Step 6)
-    ##### UNCOMMENT TO SELECT OUTCOME MEASURE
-    outcome = 'ICU_admitted'       # Has been at ICU at any time
-    # outcome = 'has_died_after_ICU' # Is/has been at ICU and died
-    # outcome = 'is_alive'           # Did not die (including non-icu admitted patients)
+    get_outcome_columns = lambda x: ['{}_{}'.format(str_, i) for i in x for str_ in ['Outcome_cat', 'Outcome_6wk_cat']]
+    positive_columns = is_in_columns(get_outcome_columns([1, 2, 5, 6]), data) 
+    negative_columns = is_in_columns(get_outcome_columns([7, 8]), data)
+    unknown_columns = is_in_columns(get_outcome_columns([4, 9, 10]), data)
+    icu_columns = is_in_columns(get_outcome_columns([3]), data)
 
-    y = pd.Series(df_study[outcome], copy=True)
+    final_outcome = pd.Series(None, index=data.index, name='final_outcome')
+    final_outcome.loc[(data.loc[:, positive_columns].any(axis=1)) | 
+                        ((data['has_severe_complications']==0) & (data.loc[:, icu_columns].any(axis=1)))] = 1
+    final_outcome.loc[data.loc[:, negative_columns].any(axis=1) |
+                        ((data['has_severe_complications']==0) & (data.loc[:, icu_columns].any(axis=1)))] = 0
 
-    # Drop samples without outcome
-    no_outcome = y.isna()
-    y = y.loc[~no_outcome]
-    df_study = df_study.loc[~no_outcome, :]
-    y=y.astype(int)
+    used_columns = positive_columns + negative_columns + unknown_columns + \
+                    icu_columns + ['Extracorporeal_support_1', 'Liver_dysfunction_1_1', 'INR_1_1']
 
-    return df_study, df_report, y
+    # Outcome 2 ==> ICU admission at n days
+    n_days = 7
+    icu_within_n_days = pd.Series(None, index=data.index, name='icu_within_{}_days'.format(n_days))
+    icu_within_n_days.loc[(data['days_since_admission_current_hosp'] >= n_days) & 
+                            ((data['days_at_icu']>=1) | (data['days_since_icu_admission']>=1))] = 0
+    icu_within_n_days.loc[(data['days_since_admission_current_hosp'] < n_days) & 
+                            ((data['days_at_icu']<1) | (data['days_since_icu_admission']<1))] = 1
 
-def select_baseline_data(data, col_dict):
+    used_columns += ['days_since_admission_current_hosp', 'days_at_icu', 'days_since_icu_admission']
+
+    outcomes = pd.concat([final_outcome, icu_within_n_days], axis=1)
+    return outcomes, used_columns
+
+
+def select_baseline_data(data, var_groups):
     ''' Select data that is measured before ICU'''
     
     baseline_groups = ['DEMOGRAPHICS', 'CO-MORBIDITIES', 'ONSET & ADMISSION', 
@@ -235,17 +114,25 @@ def select_baseline_data(data, col_dict):
                        'Respiratory assessment', 'Blood assessment']
     cols_baseline = []
     for group in baseline_groups:
-        cols_baseline += col_dict[group]
-    cols_baseline = [col for col in cols_baseline if col in data.columns]
-                    # [col for col in data.columns if 'ethnic' in col] # checkbox questions are handles in API
+        cols_baseline += var_groups[group]
+    cols_baseline = is_in_columns(cols_baseline, data)
 
     return data[cols_baseline] 
 
-
-def fix_single_errors(data, data_rep):
+def fix_single_errors(data):
     # TODO: Consider moving this after merge study & report
-    data.replace('11-11-1111', None, inplace=True)
 
+    # Global fix
+    data = data.replace('11-11-1111', None)
+    data = data.mask(data=='', None)
+    
+    values_to_replace = ['Missing (asked but unknown)', 'Missing (measurement failed)',
+                         'Missing (not applicable)', 'Missing (not done)'] + \
+                         ['##USER_MISSING_{}##'.format(i) for i in [95, 96, 97, 98, 99]]
+    for value in values_to_replace:
+        data = data.replace(value, None)
+
+    # Specific fix
     data['Enrolment_date'].replace('24-02-1960', '24-02-2020', inplace=True)
     data['admission_dt'].replace('19-03-0202', '19-03-2020', inplace=True)
     data['admission_facility_dt'].replace('01-01-2998', None, inplace=True)
@@ -253,39 +140,20 @@ def fix_single_errors(data, data_rep):
     data['specify_Acute_Respiratory_Distress_Syndrome_1_1'].replace('Covid-19 associated', None, inplace=True)
     data['specify_Acute_Respiratory_Distress_Syndrome_1_1'].replace('Hypoxomie wv invasieve beademing', None, inplace=True)
     data['oxygentherapy_1'].replace(-98, None, inplace=True)
-    data['oxygentherapy_1'].replace('Missing (asked but unknown)', None, inplace=True)
     data['Smoking'].replace(-99, None, inplace=True)
-    data['Smoking'].replace('Missing (not done)', None, inplace=True)
+    data['assessment_dt'].replace('20-02-2020', '20-03-2020', inplace=True)
 
-    data_rep['assessment_dt'].replace('20-02-2020', '20-03-2020', inplace=True)
-
-    txt_missing = ['Missing (asked but unknown)', 'Missing (measurement failed)',
-                   'Missing (not applicable)', 'Missing (not done)']
-    for txt in txt_missing:
-        data.replace(txt, None, inplace=True)
-        data_rep.replace(txt, None, inplace=True)
-
-    for s in ['##USER_MISSING_{}##'.format(i) for i in [95, 96, 97, 98, 99]]:
-        data.replace(s, None, inplace=True)
-        data_rep.replace(s, None, inplace=True)
-
-    data = data.mask(data=='', None)
-    data_rep = data_rep.mask(data_rep=='', None)
-    #TODO: Why doesn't this regex work?
-    # data.replace(r'##USER_MISSING', None, regex=True, inplace=True)
-    # data_rep.replace(r'##USER_MISSING', None, regex=True, inplace=True)    
-
-    return data, data_rep
+    return data
 
 
-def transform_time_features(data):
+def transform_time_features(data, data_struct):
     '''
     TODO: Check difference hosp_admission and Outcome_dt
     TODO: Use assessment_dt (datetime of daily report assessment)
     '''
     date_cols = ['Enrolment_date',	        # First patient presentation at (any) hospital AND report date (?)
-                 'age',	                    # Date of birth
-                 'onset_dt',                # Disease onset
+                 'age',	                    # Date of birth 
+                 'onset_dt',                # Disease onset 
                  'admission_dt',            # Admission date at current hospital
                  'time_admission',          # Admission time at current hospital
                  'admission_facility_dt',   # Admission date at the hospital of which the patient is tranferred from
@@ -295,7 +163,9 @@ def transform_time_features(data):
                  'Discharge_dt_mc_1',       # Discharge date into MC (study|retrospective)
                  'Inotropes_First_dt_1',    # Date start of Intropes (study|retrospective)
                  'Inotropes_Last_dt_1',     # Date of end Intropes (study|retrospective)
-                 'Outcome_dt',              # Date of outcome measurement (e.g, discharge/death/transfer)
+                 'Outcome_dt',              # Date of outcome measurement at 3wks(e.g, discharge/death/transfer) (supposedly)
+                 'Outcome6wk_dt_1',         # Date of outcome measurement at 6wks(e.g, discharge/death/transfer) (supposedly)
+                 'date_readmission_3wk',    # Date of readmission hospital
                  'assessment_dt']           # Datetime of assessment of report
 
 
@@ -306,81 +176,126 @@ def transform_time_features(data):
     # Days latest_report since onset = assessment_dt - admission_dt
     # ReInotropes_duration = Inotropes_last - inotroped_first
     most_recent_date = format_dt(data['assessment_dt'])         #most_recent_date = max(format_dt(data['Outcome_dt']), format_dt(data['assessment_dt']))
-
+    
     age = (most_recent_date - format_dt(data['age'])).dt.days // 365
     days_since_onset = (most_recent_date - format_dt(data['onset_dt'])).dt.days
     days_in_current_hosp = (most_recent_date - format_dt(data['admission_dt'])).dt.days
     days_since_first_hosp = (most_recent_date - format_dt(data['admission_facility_dt'])).dt.days
     days_untreated = (format_dt(data['admission_dt']) - format_dt(data['onset_dt'])).dt.days
     days_untreated.loc[days_untreated < 0] = 0  # If negative, person already in hospital at onset
+    days_until_outcome_3wk = (format_dt(data['Outcome_dt']) - format_dt(data['admission_dt'])).dt.days
+    days_until_outcome_6wk = (format_dt(data['Outcome6wk_dt_1']) - format_dt(data['admission_dt'])).dt.days
 
-    df_time_feats = pd.concat([age, days_since_onset, days_in_current_hosp, days_since_first_hosp, days_untreated], axis=1)
-    df_time_feats.columns = ['age_yrs', 'days_since_onset', 'days_in_current_hosp', 'days_in_first_hosp', 'days_untreated']
+    days_since_ICU_admission = (format_dt(data['assessment_dt']) - format_dt(data['Admission_dt_icu_1'])).dt.days
+    days_since_ICU_discharge = (format_dt(data['assessment_dt']) - format_dt(data['Discharge_dt_icu_1'])).dt.days
+    days_since_ICU_admission.loc[(days_since_ICU_admission<0) & (days_since_ICU_discharge>=0)] = None
+    days_since_ICU_discharge.loc[(days_since_ICU_discharge<0)] = None
+    days_since_MC_admission = (format_dt(data['assessment_dt']) - format_dt(data['Admission_dt_mc_1'])).dt.days
+    days_since_MC_discharge = (format_dt(data['assessment_dt']) - format_dt(data['Admission_dt_mc_1'])).dt.days
+    days_since_MC_admission.loc[(days_since_MC_admission<0) & (days_since_MC_discharge>=0)] = None
+    days_since_MC_discharge.loc[(days_since_MC_discharge<0)] = None
+
+    # TODO: Days until readmission
+    # TODO: Days Inotropes
+
+    df_time_feats = pd.concat([age, days_since_onset, days_in_current_hosp, days_since_first_hosp, 
+                               days_untreated, days_until_outcome_3wk, days_until_outcome_6wk,
+                               days_since_ICU_admission, days_since_ICU_discharge, 
+                               days_since_MC_admission, days_since_MC_discharge], axis=1)
+    df_time_feats.columns = ['age_yrs', 'days_since_onset', 'days_since_admission_current_hosp', 
+                             'days_since_admission_first_hosp', 'days_untreated', 'days_until_outcome_3wk', 
+                             'days_until_outcome_6wk', 'days_since_icu_admission', 'days_since_icu_discharge',
+                             'days_since_mc_admission', 'days_since_mc_discharge']
+    data = pd.concat([data, df_time_feats], axis=1)
+    data = data.sort_values(by=['Record Id', 'days_since_admission_current_hosp'], axis=0)
+    
+    data['days_at_ward'] = count_occurrences(data['dept_cat_1'])
+    data['days_at_mc'] = count_occurrences(data['dept_cat_2'])
+    data['days_at_icu'] = count_occurrences(data['dept_cat_3'])
 
     cols_to_drop = [col for col in data.columns if col in date_cols]
     data = data.drop(cols_to_drop, axis=1)
-    data = pd.concat([data, df_time_feats], axis=1)
 
     return data
 
 
-def transform_binary_features(data):
-    # TODO: N_YP_YN (Culture): Category
-    # TODO now: DROP UNIT --> TODO later: Calculate all numeric to same value
-    # TODO now: nothing --> TODO later: Handle as category (astype(category?))
+def transform_binary_features(data, data_struct):
+    value_na = None
+    dict_yes_no = {0:0, 1:1, 2:0, 3:value_na}
+    dict_yp = {0:0, 1:1, 2:.5, 3:0, 4:value_na} # [1, 2, 3, 4 ] --> [1, .5, 0, -1]
+    dict_smoke = {0:0,1:1, 2:0, 3:.5, 4:value_na} # [Yes, no, stopped_smoking] --> [1, 0, .5]
+
     
-    # TODO: N/a == None or -1???
-    value_na = -1
-    dict_y_n_na = {1: 1, 2: 0, 3: value_na} # [1, 2, 3] --> [1, 0, -1]
-    dict_yc_yp_n_na = {1: 1, 2: .5, 3: 0, 4: value_na} # [1, 2, 3, 4 ] --> [1, .5, 0, -1]
-    dict_smoke = {1: 1, 2: 0, 3: .5, 4: value_na} # [Yes, no, stopped_smoking] --> [1, 0, .5]
-    # dict_n_yp_yn = {1: -1, 2: 1, 3: -1} # NOTE: Positive bloodgroup = 1, negative = -1
-    dict_ct = {1: 0, 2: 1, 3: value_na} # [Normal, confirmed, Not performed] --> [0, 1, -1]
-                                  # NOTE: Handles Not performed as missing value
+    radio_fields = data_struct.loc[data_struct['Field Type'] == 'radio', 'Field Variable Name'].to_list()
 
-    df = pd.DataFrame(data, copy=True)
-    df_nan_mask = df.isna()
- 
-    df.loc[:, RADIO_Y_N_NA + RADIO_Y_N] = df.loc[:, RADIO_Y_N_NA + RADIO_Y_N] \
-                                            .fillna(3).astype(int) \
-                                            .applymap(lambda x: dict_y_n_na[x])
-    df.loc[:, RADIO_YC_YP_N_NA + RADIO_YC_YP_N] = df.loc[:, RADIO_YC_YP_N_NA + RADIO_YC_YP_N] \
-                                                    .fillna(4).astype(int) \
-                                                    .applymap(lambda x: dict_yc_yp_n_na[x])
-    df.loc[:, RADIO_SMOKE] = df.loc[:, RADIO_SMOKE].fillna(4).astype(int) \
-                                                   .applymap(lambda x: dict_smoke[x])
-    df.loc[:, RADIO_YN_YC_N] = df.loc[:, RADIO_YN_YC_N].fillna(3).astype(int) \
-                                                       .applymap(lambda x: dict_ct[x])
-    
-    df[df_nan_mask] = None
-    return df
+    # Find all answers with Yes No and re-value them
+    if_yes_no = lambda x: 1 if type(x)==list and ("Yes" in x and "No" in x) else 0 
+    is_yes_no = data_struct['Option Name'].apply(if_yes_no)==1
+    vars_yes_no = is_in_columns(data_struct.loc[is_yes_no, 'Field Variable Name'].to_list(), data)
+    data.loc[:, vars_yes_no] = data.loc[:, vars_yes_no].fillna(3).astype(int).applymap(lambda x: dict_yes_no[x])
+
+    # Find all answers with Yes probable
+    if_yes_probable = lambda x: 1 if type(x)==list and ("YES - Probable" in x or "Yes - Probable" in x) else 0
+    is_yes_probable = data_struct['Option Name'].apply(if_yes_probable) == 1
+    vars_yes_probable = is_in_columns(data_struct.loc[is_yes_probable, 'Field Variable Name'].to_list(), data)
+    data.loc[:, vars_yes_probable] = data.loc[:, vars_yes_probable].fillna(4).astype(int).applymap(lambda x: dict_yp[x])
+
+    # Hand code some other variables
+    other_radio_vars = ['Bacteria', 'Smoking', 'CT_thorax_performed', 'facility_transfer', 'culture']
+    data.loc[:, 'Bacteria'].fillna(3).astype(int).apply(lambda x: dict_yes_no[x])
+    data.loc[:, 'Smoking'].fillna(4).astype(int).apply(lambda x: dict_smoke[x])
+    data.loc[:, 'CT_thorax_performed'].fillna(3).astype(int).apply(lambda x: {0:0, 1:0, 2:1, 3:0}[x])
+    data.loc[:, 'facility_transfer'].fillna(3).astype(int).apply(lambda x: dict_yes_no[x])
+    data.loc[:, 'culture'].fillna(1).astype(int).apply(lambda x: {0:0, 1:0, 2:1, 3:2}[x])
+
+    # Unit variables
+    if_unit = lambda x: 1 if 'unit' in x.lower() or 'units' in x.lower() else 0
+    vars_units = data_struct.loc[(data_struct['Field Type'] == 'radio') & \
+                                 (data_struct['Field Label'].apply(if_unit)==1),
+                                 'Field Variable Name'].to_list() + ['WBC_1']
+    data_struct.loc[data_struct['Field Variable Name'].isin(vars_units), 'Field Type'] = 'unit'
+
+    # All other variables
+    handled_vars = vars_yes_no + vars_yes_probable + other_radio_vars + vars_units
+    vars_other = is_in_columns([v for v in radio_fields if v not in handled_vars], data)
+    data_struct.loc[data_struct['Field Variable Name'].isin(vars_other), 'Field Type'] = 'category'
+
+    return data, data_struct
 
 
-def transform_categorical_features(data, category_fields, radio_fields):
+def transform_categorical_features(data, data_struct):
     ''' Create dummyvariables for category variables, 
         removes empty variables and attaches column names 
 
         TODO: Handle checkbox variables with multiple categories
     '''
 
+    # # Get all information about category variables
+    cat_struct = data_struct.loc[data_struct['Field Type'].isin(['category', 'checkbox', 'dropdown']), 
+                                ['Field Variable Name', 'Option Name', 'Option Value']]
+    # # Make a mapping between names and values of the variable
+    # cat_struct['value_map'] = cat_struct.apply(lambda x: dict(zip(x['Option Value'], x['Option Name'])), axis=1)
+
+    category_columns = is_in_columns(cat_struct['Field Variable Name'], data)
+
     get_name = lambda c, v: '{:s}_cat_{:s}'.format(col, str(v))
-
-    cat_radio = [field for field in radio_fields if field in RADIO_CATEGORY]
-    category_columns = category_fields + cat_radio
-
+    
     dummies_list = []
     for col in category_columns:
         # Get all unique categories in the column
         unique_categories = pd.unique([cat for value in data[col].values for cat in str(value).split(';')])
+        unique_categories = [cat for cat in unique_categories if cat.lower() not in ['nan', 'none']]
+        if not any(unique_categories):
+            continue
+        
+        # TODO: Make column names to actual name instead of numeric answer
         dummy_column_names = [get_name(col, v) for v in unique_categories if v.lower() not in ['nan', 'none']]
-
         # Create new dataframe with the dummies
         dummies = pd.DataFrame(0, index=data.index, columns=dummy_column_names)
-
-        # Insert the data row-wise
-        for idx, value in data[col].iteritems():
-            cols = [get_name(col, cat) for cat in str(value).split(';') if cat.lower() not in ['nan', 'none']]
-            dummies.loc[idx, cols] = 1
+        # Insert the data
+        for cat in unique_categories:
+            data[col] = data[col].fillna('') # Can't handle nans, will be deleted anyway
+            dummies.loc[data[col].str.contains(cat), get_name(col, cat)] = 1
 
         dummies_list += [dummies]
     
@@ -388,24 +303,35 @@ def transform_categorical_features(data, category_fields, radio_fields):
     data = data.drop(category_columns, axis=1)
     return data
 
-def transform_numeric_features(data, numeric_fields):
+def transform_numeric_features(data, data_struct):
     #TODO: handle units, for now drop them
+    #      use created unit datatype in data_struct['Field Type']
+    # Consider outlier detection
+    #          fillna with other than 0
+    return data
 
-    data.loc[:, RADIO_UNIT] = None
+def transform_string_features(data, data_struct):
+    # TODO: Why it med_specify not in data_struct?
 
-    cols_to_drop = [col for col in data.columns if col in RADIO_UNIT]
+    struct_string = data_struct.loc[data_struct['Field Type']=='string', :]
+    string_cols = [col for col in data.columns if col in struct_string['Field Variable Name'].to_list()]
+    
+    get_n_medicine = lambda x: len([v for v in x.split(',') if len(v) > 15])
+    data['uses_n_medicine'] = data['med_specify'].fillna('').apply(get_n_medicine)
+
+    cols_to_drop = is_in_columns(string_cols + ['med_specify', 'other_drug_1'], data)
     data = data.drop(cols_to_drop, axis=1)
 
     return data
 
-def transform_string_features(data, string_fields):
-    # TODO: do something with them...?
 
-    cols_to_drop = [col for col in data.columns if col in string_fields]
+def transform_calculated_features(data, data_struct):
+    struct_calc = data_struct.loc[data_struct['Field Type']=='calculation', :]
+
+    calc_cols = is_in_columns(struct_calc.loc[:, 'Field Variable Name'], data)
+
+    cols_to_drop = [c for c in calc_cols if c not in ['discharge_live_3wk', 'discharge_live_6wk']]
     data = data.drop(cols_to_drop, axis=1)
-    
-    data = data.drop('med_specify', axis=1)
-
     return data
 
 def select_data(data):
