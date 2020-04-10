@@ -31,6 +31,8 @@ NOTE: To select specific data groups, make changes in `feature_selection()`. As 
 ### Run analysis
 `python covid19_ICU_admission.py`, set save=False in `python __main__`.
 
+Please note that currently the last daily assessment is selected. Change this is at `data.groupby().SUMMARIZE_FN()` in `feature_selection()` 
+
 ### Using castor_api (standalone)
 See https://github.com/wouterpotters/castor-python
 
