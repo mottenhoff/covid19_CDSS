@@ -29,7 +29,6 @@ from sklearn.metrics import roc_auc_score
 from covid19_import import import_data_by_record
 from covid19_ICU_util import get_all_field_information
 from covid19_ICU_util import fix_single_errors
-from covid19_ICU_util import select_baseline_data
 from covid19_ICU_util import calculate_outcomes
 from covid19_ICU_util import transform_binary_features
 from covid19_ICU_util import transform_categorical_features
@@ -38,6 +37,8 @@ from covid19_ICU_util import transform_time_features
 from covid19_ICU_util import transform_string_features
 from covid19_ICU_util import transform_calculated_features
 from covid19_ICU_util import select_data
+from covid19_ICU_util import select_baseline_data
+from covid19_ICU_util import select_categories
 from covid19_ICU_util import plot_model_results
 from covid19_ICU_util import plot_model_weights
 from covid19_ICU_util import explore_data
@@ -163,13 +164,22 @@ def feature_selection(data, data_struct, var_groups, save=False):
     has_outcome = y.notna()
     y = y.loc[has_outcome]
     x = x.loc[has_outcome, :]
+
+    # Currently: All variables at hospital admission, excluding daily assessments
+    categories = ['DEMOGRAPHICS', 'CO-MORBIDITIES', 'ONSET & ADMISSION', 
+                  'SIGNS AND SYMPTOMS AT HOSPITAL ADMISSION',
+                  'ADMISSION SIGNS AND SYMPTOMS', 'BLOOD ASSESSMENT ADMISSION',
+                  'BLOOD GAS ADMISSION', 'PATHOGEN TESTING / RADIOLOGY']
+    columns = is_in_columns(select_categories(categories, var_groups), x)
+    x = x.loc[:, columns]
+    # x = select_baseline_data(x, var_groups)
+
+    # Prepare for modelling
     x = x.replace(-1, None)
     x = x.dropna(how='all', axis=1)
     x = x.fillna(0) # TODO: Make smarter handling of missing data 
 
-    # UNCOMMENT FOR ALL DATA
-    x = select_baseline_data(x, var_groups)
-
+    # HACK: UNCOMMENT FOR ALL DATA
     unhandled_columns = ['delivery_date', "EMPTY_COLUMN_NAME", "med_name_specific", "med_stop",
                          'med_start']
 
