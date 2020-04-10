@@ -142,7 +142,9 @@ def fix_single_errors(data):
     data['specify_Acute_Respiratory_Distress_Syndrome_1_1'].replace('Hypoxomie wv invasieve beademing', None, inplace=True)
     data['oxygentherapy_1'].replace(-98, None, inplace=True)
     data['Smoking'].replace(-99, None, inplace=True)
-    data['assessment_dt'].replace('20-02-2020', '20-03-2020', inplace=True)
+
+    data.loc[data['Record Id'].isin(['120007', '130032']),
+            'assessment_dt'].replace('20-02-2020', '20-03-2020', inplace=True)
 
     return data
 
