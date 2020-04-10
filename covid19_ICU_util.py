@@ -6,6 +6,7 @@ from sklearn.model_selection import cross_val_predict
 from sklearn.metrics import roc_auc_score
 
 from covid19_import import import_study_report_structure
+from unit_lookup import get_unit_lookup_dict
 
 IS_MEASURED_COLUMNS = ['baby_ARI', 'Haemoglobin_1', 'WBC_3', 'Lymphocyte_2', 'Neutrophil_1', 'Platelets_1', 'APT_APTR_2', 
                        'INR_2', 'ALT_SGPT_2', 'Total_Bilirubin_3', 'AST_SGOT_2', 'Glucose_1', 'Blood_Urea_Nitrogen_1',
@@ -19,7 +20,6 @@ IS_MEASURED_COLUMNS = ['baby_ARI', 'Haemoglobin_1', 'WBC_3', 'Lymphocyte_2', 'Ne
                        'Haemoglobin', 'WBC', 'Lymphocyte', 'Neutrophil', 'Platelets', 'APT_APTR', 'INR', 'ALT_SGPT', 
                        'Total_Bilirubin', 'AST_SGOT', 'Glucose', 'Blood_Urea_Nitrogen', 'Lactate', 'Creatinine', 
                        'Sodium', 'Potassium', 'CRP', 'Albumin', 'CKin', 'LDH_daily', 'Chest_X_Ray', 'CTperf', 'd_dimer_yes_no']
-
 
 format_dt = lambda col: pd.to_datetime(col, format='%d-%m-%Y', errors='coerce').astype('datetime64[ns]')
 is_in_columns = lambda var_list, data: [v for v in var_list if v in data.columns]
@@ -126,7 +126,6 @@ def fix_single_errors(data):
     data = data.replace('11-11-1111', None)
     data = data.mask(data=='', None)
 
-    
     values_to_replace = ['Missing (asked but unknown)', 'Missing (measurement failed)',
                          'Missing (not applicable)', 'Missing (not done)'] + \
                          ['##USER_MISSING_{}##'.format(i) for i in [95, 96, 97, 98, 99]]
@@ -228,7 +227,6 @@ def transform_binary_features(data, data_struct):
     dict_yp = {0:0, 1:1, 2:.5, 3:0, 4:value_na} # [1, 2, 3, 4 ] --> [1, .5, 0, -1]
     dict_smoke = {0:0,1:1, 2:0, 3:.5, 4:value_na} # [Yes, no, stopped_smoking] --> [1, 0, .5]
 
-    
     radio_fields = data_struct.loc[data_struct['Field Type'] == 'radio', 'Field Variable Name'].to_list()
 
     # Find all answers with Yes No and re-value them
@@ -307,10 +305,28 @@ def transform_categorical_features(data, data_struct):
     return data
 
 def transform_numeric_features(data, data_struct):
-    #TODO: handle units, for now drop them
-    #      use created unit datatype in data_struct['Field Type']
-    # Consider outlier detection
-    #          fillna with other than 0
+    # Calculates all variables to the same unit, 
+    #   according to a handmade mapping in unit_lookup.py
+    unit_dict, var_numeric = get_unit_lookup_dict()
+
+    numeric_columns = is_in_columns(var_numeric.keys(), data)
+    wbc_value_study = 'WBC_2_1' #= 'units_lymph', 'units_neutro'
+    wbc_value_report = 'WBC_2' #= 'lymph_units_1', 'neutro_units_2'
+    
+    for col in numeric_columns:
+        unit_col = var_numeric[col]
+        data[unit_col] = data[unit_col].fillna(-1).astype(int).apply(lambda x: unit_dict[unit_col].get(x))
+        if unit_col in ['units_lymph', 'units_neutro']:
+            has_999 = data[unit_col]==-999
+            data.loc[has_999, unit_col] = data.loc[has_999, wbc_value_study].astype(float).div(100)
+        elif unit_col in ['lymph_units_1', 'neutro_units_2']:
+            has_999 = data[unit_col]==-999
+            data.loc[has_999, unit_col] = data.loc[has_999, wbc_value_report].astype(float).div(100)
+        has_value = data[col].notna()
+        data.loc[has_value, col] = data.loc[has_value, col].astype(float) * data.loc[has_value, unit_col].astype(float)
+
+    data = data.drop(is_in_columns(unit_dict.keys(), data), axis=1)
+
     return data
 
 def transform_string_features(data, data_struct):
