@@ -4,6 +4,7 @@ import os.path
 import pandas as pd
 import requests
 import progressbar
+import logging
 
 def process_table(txt):
     f_handler = io.StringIO(txt) # created to enable use of read_table
@@ -42,6 +43,8 @@ class Castor_api:
     
     # make it more convenient for the user by saving the last used ID's within the class instance
     __study_id_saved = None
+    
+    debug_mode = False # set to True when debugging and limiting the # records fetched to 25 (for Castor_api.records_reports_all())
 
     def __init__(self, folder_with_client_and_secret):
         if os.path.isdir(folder_with_client_and_secret):
@@ -70,15 +73,15 @@ class Castor_api:
                                      headers={'Authorization': 'Bearer ' + self._token})
             response.raise_for_status()
         except requests.exceptions.HTTPError as errh:
-            print ("Http Error:",errh)
+            logging.warning("Http Error:",errh)
             # 500: timeout when too much data is requested with export function
             # 404: data not available for request
         except requests.exceptions.ConnectionError as errc:
-            print ("Error Connecting:",errc)
+            logging.warning ("Error Connecting:",errc)
         except requests.exceptions.Timeout as errt:
-            print ("Timeout Error:",errt)
+            logging.warning ("Timeout Error:",errt)
         except requests.exceptions.RequestException as err:
-            print ("Oops: Something Else",err)
+            logging.warning ("Oops: Something Else",err)
         if response:
             return response
         else:
@@ -110,7 +113,7 @@ class Castor_api:
             study_id_output = study_id_input
             if self.__study_id_saved != study_id_output and type(study_id_output) == str:
                 self.__study_id_saved = study_id_output
-                print('study_id \''+study_id_output+'\' was saved in castor_api class instance' )
+                logging.info('study_id \''+study_id_output+'\' was saved in castor_api class instance' )
         return study_id_output
 
     # %% country
@@ -601,11 +604,11 @@ class Castor_api:
             self.__study_id_saveload(study_id[0])
             return study_id[0]
         elif len(study_id)==0:
-            print(str(len(study_id))+' studies found containing \''+study_name_input+'\' Try again using a different query or check your castor study access rights. These studies are available for you:')
-            [print(' > ' + r['name']) for r in response_dict]
+            logging.warning(str(len(study_id))+' studies found containing \''+study_name_input+'\' Try again using a different query or check your castor study access rights. These studies are available for you:')
+            [logging.warning(' > ' + r['name']) for r in response_dict]
         else:
-            print(str(len(study_id))+' studies found containing \''+study_name_input+'\', try to specify your query further.')
-            [print(' > ' + s['name']) for s in response_dict if study_name_input in s['name']]
+            logging.warning(str(len(study_id))+' studies found containing \''+study_name_input+'\', try to specify your query further.')
+            [logging.warning(' > ' + s['name']) for s in response_dict if study_name_input in s['name']]
             return None
 
     def records_reports_all(self,study_id=None,report_names=[]):
@@ -623,9 +626,9 @@ class Castor_api:
         
         # GET ALL STUDY RECORDS
         records = self.request_study_records(study_id)
-        if False: # set to True when debugging.
+        if self.debug_mode: # set to True when debugging.
             records = records[0:25] # test data
-            print('DEBUG MODE ACTIVE. ONLY PROCESSING '+str(len(records))+' RECORDS')
+            logging.warning('DEBUG MODE ACTIVE. ONLY PROCESSING '+str(len(records))+' RECORDS')
 
         # GET ALL STUDY AND REPORT VALUES FOR STUDY RECORDS - if no data was found, use None
         study_data = []
@@ -648,7 +651,7 @@ class Castor_api:
             df_report.rename(columns=field_dict, inplace=True)
             df_report.reset_index(level=0, inplace=True)
         else:
-            print('No reports found; df_report is empty.')
+            logging.warning('No reports found; df_report is empty.')
 
         # for some reason the names of some variables are different in the export format, rename them
         rename_cols = {"study_id":"Study ID","record_id":"Record Id","form_type":"Form Type","form_instance id":"Form Instance ID","form_instance_name":"Form Instance Name","field_id":"Field ID","value":"Value","date":"Date","user_id":"User ID"};
@@ -691,7 +694,7 @@ class Castor_api:
         
         # collect or use input records
         if not records:
-            print('no records provided, getting data for ALL records')
+            logging.warning('no records provided, getting data for ALL records')
             records = self.request_study_records()
         
         # get value or set None if no data was found
@@ -700,4 +703,12 @@ class Castor_api:
             return field_values
         else: 
             return None
-    
+        
+if __name__ == "__main__":
+    print('\nUSAGE of Castor_api:\n')
+    print(' c = Castor_api(\'/path/to/folder/with/secret_client\')')
+    print(' c.select_study_by_name(\'<CASTOR_STUDY_NAME>\') # all following commands use this study selection') 
+    print(' stats = c.request_statistics()')
+    print(' df_study, df_structure_study, df_report, df_structure_report, df_optiongroups_structure = c.records_reports_all()')
+    print(' users_in_study = c.request_studyuser()')
+    print('\nsee also: https://data.castoredc.com/api\n')

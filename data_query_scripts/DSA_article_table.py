@@ -9,11 +9,13 @@ Created on Fri Apr 10 14:01:40 2020
 import configparser
 import pickle
 import os 
+import site
 import pandas as pd
 import numpy as np
-
+import statsmodels.stats.multitest as mt
 from scipy import stats as ss
 
+site.addsitedir('./../') # add directory to path to enable import of covid19*
 from covid19_ICU_admission import load_data, preprocess
 from covid19_ICU_util import calculate_outcomes, calculate_outcomes_12_d21
 
@@ -56,27 +58,25 @@ def summarize_values(values,summary_type=None):
         if summary_type is None or summary_type == 'n_percn_meansd_medianiqr':
             if len(v) > 0:
                 n = len(v) - np.nansum(v.isna())
-                p = (len(v) - np.nansum(v.isna())) / total_len * 100
+                #p = (len(v) - np.nansum(v.isna())) / total_len * 100
                 mean = np.nanmean(v)
                 std = np.nanstd(v)
                 median = np.nanmedian(v)
                 iqr1 = np.nanpercentile(v,25)
                 iqr3 = np.nanpercentile(v,75)
-                unavail = np.nansum(v.isna())
                 s[key] = [format('n = ' + str(n) + '\n' +
-                                  ' (' + str(round(p,1)) + ')\n' +
-                                  str(round(mean,1))   + ' (' + str(round(std,1)) + ')\n' +
-                                  str(round(median,1)) + ' (' + str(round(iqr1,1)) + '-' + str(round(iqr3,1)) + ')' + 
-                                  '\ndata n/a: n = ' + str(unavail))]
+#                                 str(round(p,1)) + '%\n' +
+                                 str(round(mean,1))   + ' (' + str(round(std,1)) + ')\n' +
+                                 str(round(median,1)) + ' (' + str(round(iqr1,1)) + '-' + str(round(iqr3,1)) + ')')]
             else:
                 s[key] = ['n/a']
     return s
 
-def do_statistics(values, threshold=5e-2, correctionmethod=None):
+def do_statistics(values, threshold=5e-2):
     testtype = None
     pvalue = None
-    data1 = values['Dood']
-    data2 = values['Levend ontslagen en niet heropgenomen']
+    data1 = np.isfinite(values['Dood'])
+    data2 = np.isfinite(values['Levend ontslagen en niet heropgenomen'])
     normalresult1 = ss.normaltest(data1)
     normalresult2 = ss.normaltest(data2)
     variance1 = np.nanvar(data1)
@@ -113,7 +113,7 @@ def do_statistics(values, threshold=5e-2, correctionmethod=None):
                 testtype += ', gelijke variantie (bartlett)'
             pvalue = t.pvalue
             
-    elif type(data1[0]) == np.int64 or type(data1[0]) == int or type(data1[0]) == bool or type(data1[0]) == np.bool:
+    elif type(data1[0]) == np.int64 or type(data1[0]) == int or type(data1[0]) == bool or type(data1[0]) == np.bool or type(data1[0]) == np.bool_:
         if len(np.unique(np.append(data1.to_list(), data2.to_list()))) > 3:
             # niet binair - wel nominaal of ordinaal, misschien continu? 
             # toch een T-test?
@@ -167,17 +167,14 @@ def do_statistics(values, threshold=5e-2, correctionmethod=None):
     
     else:
         print(data1)
-        raise NameError('Data type not found for '+  +': ' + str(type(data1[0])))
-            
-    if correctionmethod is not None:
-        pvalue_corrected = pvalue
-        raise NameError('correctionmethod not implemented')
+        raise NameError('Data type not found: ' + str(type(data1[0])))
             
     return testtype, pvalue #, pvalue_corrected
     
     
 data_to_print = None
 cols = []
+pvalues = []
 for c in data.columns:
     # CLEAN DATA - should be moved to *admission.py or *util.py
     if c == 'EMPTY_COLUMN_NAME' or c in outcomes.columns.to_list() \
@@ -211,12 +208,13 @@ for c in data.columns:
         s = summarize_values(values)
     
     testused, pvalue = do_statistics(values,threshold=5e-2)
+    pvalues = np.append(pvalues, pvalue)
     
     try:
         s['statistiek'] = format(testused+' (p='+str(round(pvalue,3))+')')
     except:
         try:
-            s['statistiek'] = format(testused+' (p=n/a)')
+            s['statistiek'] = format(testused+' (p not calculated)')
         except:
             s['statistiek'] = 'None'
     
@@ -225,10 +223,15 @@ for c in data.columns:
     else:
         data_to_print = data_to_print.append(pd.DataFrame.from_dict(s))
     cols.append(c)
-data_to_print['Variable'] = cols
-data_to_print.set_index(data_to_print['Variable'])
-data_to_print.to_excel('test123.xlsx')
+    
+mask = np.isfinite(pvalues)
+_, pvalues_corrected[mask] = mt.fdrcorrection(pvalues[mask], alpha=0.05, method='indep', is_sorted=False)
 
+data_to_print['Variable'] = cols
+data_to_print['Pvalue_uncorrected'] = pvalues
+data_to_print['Pvalue_FDR_corrected'] = pvalues_corrected
+data_to_print.set_index(data_to_print['Variable'])
+data_to_print.to_excel('~/Desktop/tabellen_manuscript.xlsx')
 
 
 #### OLD STUFF DOWNSTAIRS
