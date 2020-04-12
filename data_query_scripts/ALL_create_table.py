@@ -313,4 +313,155 @@ for index,row in study_struct.iterrows():
                     print('  '+o+': (n=0)', file=open("output.txt", "a"))
         print('', file=open("output.txt", "a"))
  
+
+
+# %% GOOD vs. BAD OUTCOME after 3 weeks
+# basic selection: only use patients with > 50% data completion (otherwise we will state diseased patients as alive)
+#
+# Three options: (1) Discharged; outcome death or palliative care
+#                (2) All outcomes alive (also not discharged patients)
+#                (3) All outcomes alive (same as 2, but without patients without outcome)
+target_excel = os.path.join(config['exportresults']['figures_folder'],'output_'+str(format(datetime.today(),'%Y-%m-%d_%Hh%M'))+'.xlsx')
+writer = pd.ExcelWriter(target_excel, engine='xlsxwriter') #define path at top
+
+readme = 'This excel sheet contains analyzed ALL individual analyzed variables of castor.\nGeneral information on inclusion criteria and group selection in the tab general\nAnd after that every variable is located on a new tab.'
+readme = pd.DataFrame([x for x in readme.split('\n')])
+readme.to_excel(writer, sheet_name='README',index=False,header=None)
+      
+outcome_variable = study_struct[study_struct['Field Variable Name'] == 'Outcome']
+outcome_variable_options = optiongroups_struct[optiongroups_struct['Option Group Id'] == outcome_variable['Field Option Group'].to_list()[0]]
+
+outcome_death_options = ['Death','Palliative discharge']
+outcome_alive_options = ['Discharged to home','Transfer to nursing home','Transfer to rehabilitation unit','Hospitalization (ICU)','Hospitalization (ward / medium care)']
+outcome_unknown_options = ['Unknown','Transfer to other hospital','Discharged to home and re-admitted']
+
+if not len(outcome_variable_options) == len(outcome_death_options)+len(outcome_alive_options)+len(outcome_unknown_options):
+    raise NameError('ERROR NOT ALL OPTIONS USED')
+
+general = pd.DataFrame(['Total patients in database: ' + str(len(study_data_orig))])
+study_data = study_data_orig[study_data_orig['progress']>50]
+study_data.reset_index(inplace=True)
+general=general.append(['Total patients with >50% data filled in: ' + str(len(study_data))])
+
+outcomes = pd.DataFrame([None] * len(study_data))
+for o in ['death       ', 'alive       ', 'unknown     ']:
+    opt = outcome_variable_options['Option Value'][outcome_variable_options['Option Name'].isin(eval('outcome_'+o.strip()+'_options'))]
+    opt_present = study_data['Outcome'].isin(opt)
+    outcomes.loc[opt_present] = o.strip()
+    general=general.append(['Outcome '+o+': n='+str(sum(opt_present)) + ' (' + ', '.join(eval('outcome_'+o.strip()+'_options'))+')'])
+general=general.append(['Outcome not recorded: n='+str(sum(study_data['Outcome'].isna()))])
+
+outcomes.loc[study_data['Outcome'].isna().tolist()] = 'unknown'
+outcomes.loc[[o2 is None for o2 in outcomes[0]]] = 'unknown'
+
+# The following line is not usable as outcome measure, because these measurements are perforemd at admission
+# outcome_organ_failure = study_data['Extracorporeal_support_1'] == 1 or \ # ECMO SUPPORT study
+#                         study_data['RRT_dialysis_1'] or \ # KIDNEY FAILURE study
+#                         study_data['INR_1_1'] > 1.5 # liver failure study
+# to get these outcomes, data after 3 wks is required. only available for INR, so using that parameter only as surrogate for kidney failure.
+
+add_kidneyfailure = True # set to false to not add kidney failure to the death/palliative care group
+if add_kidneyfailure:
+    report_INR_data = reports_data[['Record Id','assessment_dt','INR_1']]
+    report_INR_data['INR_1'] = pd.to_numeric(report_INR_data['INR_1'],errors='coerce')
+    report_INR_data.dropna(inplace=True)
+    report_INR_data.reindex()
+    
+    study_data.insert(len(study_data.columns),'kidneyfailure_INR',True)
+    
+    for index,row in study_data.iterrows():
+        try:
+            check_after_this_dt = pd.to_datetime(row['admission_dt']) + timedelta(weeks=2)
+            report_INR_data_SEL = report_INR_data[report_INR_data['Record Id']==row['Record Id']]
+            usable_outcomes = report_INR_data_SEL[pd.to_datetime(report_INR_data_SEL['assessment_dt']) >= check_after_this_dt]
+            if len(usable_outcomes) > 0:
+                if np.nanmax(usable_outcomes['INR_1']) > 1.5:
+                    INR_15 = np.nanmax(usable_outcomes['INR_1']) > 1.5
+                else:
+                    INR_15 = False
+            else:
+                INR_15 = False
+            study_data['kidneyfailure_INR'].loc[index] = INR_15
+        except:
+            # print('error for '+ row['admission_dt'])
+            study_data['kidneyfailure_INR'].loc[index] = False
+        outcomes.loc[index] = 'death'
+    
+    print(str(sum(study_data['kidneyfailure_INR']))+' out of ' + str(len(study_data)) + ' patients with kidney failure at or after t=3 weeks.')
+    
+
+general=general.append([''])
+general=general.append(['Added \'not recorded\' group to \'unknown\' group:'])
+for o in outcomes[0].unique().tolist():
+    general=general.append(['Outcome '+o+': n='+str(sum([o2 == o for o2 in outcomes[0]]))])
+
+general.to_excel(writer, sheet_name='GENERAL',index=False,header=None)
+
+# loop over variablescl
+results = pd.DataFrame()
+for index,row in progressbar.progressbar(study_struct.iterrows(),prefix='Checking variables: ',max_value=len(study_struct)): 
+    # print(row['Field Label'] + ' - ' + row['Field Type'])
+    var = row['Field Variable Name']
+    tab = pd.DataFrame(['variable name '+var])
+    if var in study_data:
+        if row['Field Type'] == 'numeric':
+            tab=tab.append([var ,' (mean +/- SD):','[Castor form question: '+row['Field Label']+']'])
+        elif row['Field Type'] == 'radio' or row['Field Type'] == 'dropdown' or row['Field Type'] == 'checkbox':
+            options = optiongroups_struct[optiongroups_struct['Option Group Id']==row['Field Option Group']]
+            tab=tab.append([var + ' ('+', '.join([str(rowo['Option Value'])+':'+str(rowo['Option Name']) for _,rowo in options.iterrows()])+')'])
+        elif row['Field Type'] == 'date':
+            tab=tab.append([var + ' (aantal dagen tov admission date; only taken into account between 30-11-2020 and 1-4-2020; mean +/- SD'])
+        else:
+            tab=tab.append([var + ' (datatype: ' + row['Field Type'] + ')'])
+            time.sleep(3)
+            
+        if True:
+            for o in sorted(outcomes[0].unique().tolist()):
+                data = study_data[var][outcomes[0] == o]
+                data = data[[not d for d in data.isna()]]
+                data = data[[len(d)>0 for d in data]]
+                data = data[[not d.startswith('#') for d in data]]
+                if len(data)>0:
+                    if row['Field Type'] == 'numeric':
+                        data = [float(d) for d in data]
+                        tab=tab.append(['  ' + o + ' (n='+ str(len(data)) +'): ' \
+                              + str(round(np.mean(data),2)) + ' +/- ' + str(round(np.std(data),2))])
+                    elif row['Field Type'] == 'radio' or row['Field Type'] == 'dropdown' or row['Field Type'] == 'checkbox':
+                        text = '  ' + o + ' (n='+str(len(data))+'):'
+                        for val in [optvalue['Option Value'] for _,optvalue in options.iterrows()]:
+                            sel = [sum([d2 == val for d2 in d.split(';')]) for d in data]
+                            text += str(val)+':'+str(round(sum(sel)/len(sel)*100,1)) + '%, '
+                        tab=tab.append([text[:-2]])
+    
+                    elif row['Field Type'] == 'date':
+                        current_date = study_data[var][data.index]
+                        current_date = pd.to_datetime(current_date,errors='coerce')
+                        admission_date = study_data['admission_dt'][data.index]
+                        admission_date = pd.to_datetime(admission_date,errors='coerce')
+                        dropthese = [a < pd.to_datetime('2019-10-30',format='%Y-%m-%d') or c < pd.to_datetime('2019-10-30',format='%Y-%m-%d') or a > pd.to_datetime('2020-07-01',format='%Y-%m-%d') or c > pd.to_datetime('2020-07-01',format='%Y-%m-%d') for a,c in zip(admission_date,current_date)]
+                        tab=tab.append([' (n='+str(len(admission_date))+')'])
+    
+                        if admission_date is not None:
+                            delta = pd.DataFrame([d.days for d in (current_date - admission_date)])
+                            delta = delta[~delta[0].isin(['NaN', 'NaT','nan'])][0]
+                            tab=tab.append(['  ' + o +' (n='+ str(len(delta)) +'): ' \
+                                  + str(round(np.median(delta),2)) + ' +/- ' + str(round(np.std(delta),2))+' days' + ' (min: '+str(np.min(delta))+', max: '+str(np.max(delta))+')'])
+                        else: 
+                            tab=tab.append(['  ' + o +' (n=0) no valid dates found'])
+                    else:
+                        tab=tab.append(['  '+o+': not analyzed yet'])
+                else:
+                    tab=tab.append(['  '+o+': (n=0)'])
+    var_short = var[0:31] # shorten variable name as excel cannot handle > 32 characters in sheetnames...
+    if var_short in [s for s in writer.sheets]:
+        raise NameError('already exists: '+var_short)
+    tab.to_excel(writer, sheet_name=var_short,index=False,header=None)
+
+print('writing excel file...')
+writer.save() # save excel file
+print('excel file was saved to : '+target_excel)
+
+
+
+
  
