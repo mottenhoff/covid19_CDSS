@@ -139,7 +139,8 @@ def calculate_outcomes_12_d21(data, data_struct):
     
     # 1:'Levend ontslagen en niet heropgenomen',
     outcome_1 = data[get_outcome_columns([1, 5, 6])].sum(axis=1) >= 1
-    
+    # outcome_1 = data.loc[:, get_outcome_columns([1, 5, 6])].any(axis=1)
+
     # 4:'Levend dag 21 maar nog in het ziekenhuis',
     outcome_4 = data[get_outcome_columns([2,3])].sum(axis=1) >= 1
     
@@ -273,7 +274,6 @@ def calculate_outcomes_12_d21(data, data_struct):
     return df_outcomes, used_columns
 
 
-
 def select_baseline_data(data, var_groups):
     ''' Select data that is measured before ICU'''
     
@@ -367,6 +367,7 @@ def transform_time_features(data, data_struct):
 
     days_since_ICU_admission = (format_dt(data['assessment_dt']) - format_dt(data['Admission_dt_icu_1'])).dt.days
     days_since_ICU_discharge = (format_dt(data['assessment_dt']) - format_dt(data['Discharge_dt_icu_1'])).dt.days
+
     days_since_ICU_admission.loc[(days_since_ICU_admission<0) & (days_since_ICU_discharge>=0)] = None
     days_since_ICU_discharge.loc[(days_since_ICU_discharge<0)] = None
     days_since_MC_admission = (format_dt(data['assessment_dt']) - format_dt(data['Admission_dt_mc_1'])).dt.days
@@ -583,33 +584,7 @@ def explore_data(x, y):
     plt.matshow(corr)
 
 
-def feature_contribution(clf, x, y, plot_graph=False, plot_n_features=None,
-                            n_cv=2, method='predict_proba'):
 
-    plot_n_features = x.shape[1] if not plot_n_features else plot_n_features
-    y_hat = cross_val_predict(clf, x, y, cv=n_cv, method=method)
-    baseline_score = roc_auc_score(y, y_hat[:, 1])
-
-    importances = np.array([])
-    
-    for col in x.columns:
-        x_tmp = x.drop(col, axis=1)
-        y_hat = cross_val_predict(clf, x_tmp, y, cv=n_cv, method=method)
-        score = roc_auc_score(y, y_hat[:, 1])
-        importances = np.append(importances, baseline_score-score)
-
-    if plot_graph:
-        idc = np.argsort(importances)
-        columns = x.columns[idc]
-        fig, ax = plt.subplots(1, 1)
-        ax.plot(importances[idc[-plot_n_features:]])
-        ax.axhline(0, color='k', linewidth=.5)
-        ax.set_xticks(np.arange(x.shape[1]))
-        ax.set_xticklabels(columns[-plot_n_features:], rotation=90, fontdict={'fontsize': 6})
-        ax.set_xlabel('Features')
-        ax.set_ylabel('Difference with baseline')
-
-    return importances
 
 
     
