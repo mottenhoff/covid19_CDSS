@@ -215,7 +215,7 @@ def calculate_outcomes_12_d21(data, data_struct):
                                     outcome_icu_never)
 
     # 6:'Levend dag 21 maar nog in het ziekenhuis - op IC geweest
-    df_outcomes[6] = np.logical_and(np.outcome_4,
+    df_outcomes[6] = np.logical_and(outcome_4,
                                     outcome_icu_ever)
 
     # 7:'Levend dag 21 maar nog in het ziekenhuis - nog op IC',
