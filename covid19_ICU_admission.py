@@ -11,7 +11,7 @@ import os
 import sys
 path_to_classifiers = r'./Classifiers/'
 # path_to_settings = r'./' # TODO: add settings
-sys.path.insert(0, path_to_classifiers)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__),path_to_classifiers))
 
 # 3th party libs
 import matplotlib.pyplot as plt
@@ -54,7 +54,7 @@ from logreg import train_logistic_regression
 is_in_columns = lambda var_list, data: [v for v in var_list if v in data.columns]
 
 def load_data_api(path_credentials):
-    
+
     # Try loading objects from disk file; delete saveddata.pkl to force reload data
     try:
         with open(os.path.join(path_credentials,'saveddata.pkl'),'rb') as f:  # Python 3: open(..., 'rb')
@@ -75,7 +75,7 @@ def load_data_api(path_credentials):
     # Remove test records
     df_study = df_study.loc[df_study['Record Id'].astype(int) > 11000, :]
 
-    var_columns = ['Form Type', 'Form Collection Name', 'Form Name', 'Field Variable Name', 
+    var_columns = ['Form Type', 'Form Collection Name', 'Form Name', 'Field Variable Name',
                    'Field Label', 'Field Type', 'Option Name', 'Option Value']
     data_struct = get_all_field_information(path_credentials)
     data_struct = data_struct.loc[:, var_columns]
@@ -86,7 +86,7 @@ def load_data_api(path_credentials):
 def load_data(path_to_creds, save=False):
 
     df_study, df_report, data_struct = load_data_api(path_to_creds)
-        
+
     # Remove all the cardiology variables for now
     study_cols_to_drop = data_struct.loc[data_struct['Form Collection Name']=='CARDIO (OPTIONAL)', 'Field Variable Name']
     report_cols_to_drop = data_struct.loc[data_struct['Form Collection Name'].isin([]), 'Field Variable Name']
@@ -108,14 +108,14 @@ def load_data(path_to_creds, save=False):
 
     return data, data_struct, var_groups
 
-    
+
 
 def preprocess(data, data_struct, save=False):
     ''' Processed the data per datatype.'''
 
     # Fix single errors
     data = fix_single_errors(data)
-    
+
      # Transform variables
     data, data_struct = transform_binary_features(data, data_struct)
     data = transform_categorical_features(data, data_struct)
@@ -123,12 +123,12 @@ def preprocess(data, data_struct, save=False):
     data = transform_time_features(data, data_struct)
     data = transform_string_features(data, data_struct)
     data = transform_calculated_features(data, data_struct)
- 
+
     # Remove columns without any information
     data = select_data(data)
-    
+
     # Sort data chronologically
-    
+
     if save:
         data.to_excel('data_processed.xlsx')
 
@@ -141,7 +141,7 @@ def feature_selection(data, data_struct, var_groups, save=False):
     TODO: Check how the selected field here relate to the daily report features
     TODO: Check if there are variables only measured in the ICU
     TODO: Some form of feature selection?
-    ''' 
+    '''
 
     outcomes, used_columns = calculate_outcomes(data, data_struct)
     # outcomes, used_columns = calculate_outcomes_12_d21(data, data_struct)
@@ -152,7 +152,7 @@ def feature_selection(data, data_struct, var_groups, save=False):
 
     # Select only (selection of) reports
     data = data.groupby(by='Record Id', axis=0).last()
-    
+
     cols_to_exclude = [var_groups[group] for group in ['OUTCOME']][0] \
                     + used_columns \
                     + data.columns[(data.nunique()<=1)].to_list()
@@ -162,13 +162,13 @@ def feature_selection(data, data_struct, var_groups, save=False):
     # Select data for learning
     y = data['final_outcome']
     x = data.drop(['final_outcome', 'icu_within_7_days'], axis=1)
-    
+
     has_outcome = y.notna()
     y = y.loc[has_outcome]
     x = x.loc[has_outcome, :]
 
     # Currently: All variables at hospital admission, excluding daily assessments
-    categories = ['DEMOGRAPHICS', 'CO-MORBIDITIES', 'ONSET & ADMISSION', 
+    categories = ['DEMOGRAPHICS', 'CO-MORBIDITIES', 'ONSET & ADMISSION',
                   'SIGNS AND SYMPTOMS AT HOSPITAL ADMISSION',
                   'ADMISSION SIGNS AND SYMPTOMS', 'BLOOD ASSESSMENT ADMISSION',
                   'BLOOD GAS ADMISSION', 'PATHOGEN TESTING / RADIOLOGY']
@@ -179,7 +179,7 @@ def feature_selection(data, data_struct, var_groups, save=False):
     # Prepare for modelling
     x = x.replace(-1, None)
     x = x.dropna(how='all', axis=1)
-    x = x.fillna(0) # TODO: Make smarter handling of missing data 
+    x = x.fillna(0) # TODO: Make smarter handling of missing data
 
     # HACK: UNCOMMENT FOR ALL DATA
     unhandled_columns = ['delivery_date', "EMPTY_COLUMN_NAME", "med_name_specific", "med_stop",
@@ -190,7 +190,7 @@ def feature_selection(data, data_struct, var_groups, save=False):
     print('{} columns left for feature engineering and modelling'.format(data.columns.size))
 
     return x, y
-    # exclude = ['Bleeding_sites', 'OTHER_intervention_1', 'same_id', 'facility_transfer', 
+    # exclude = ['Bleeding_sites', 'OTHER_intervention_1', 'same_id', 'facility_transfer',
     #            'Add_Daily_CRF_1', 'ICU_Medium_Care_admission_1', 'Specify_Route_1', 'Corticosteroid_type_1',
     #            'whole_admission_yes_no', 'whole_admission_yes_no_1', 'facility_transfer_cat_1',
     #            'facility_transfer_cat_2', 'facility_transfer_cat_3']
@@ -198,9 +198,9 @@ def feature_selection(data, data_struct, var_groups, save=False):
 
 
 def model_and_predict(x, y, model_fn, model_kwargs, test_size=0.2):
-    ''' NOTE: kwargs must be a dict. e.g.: {"select_features": True, 
+    ''' NOTE: kwargs must be a dict. e.g.: {"select_features": True,
                                             "plot_graph": False}
-    
+
         Select samples and fit model.
         Currently uses random sub-sampling validation (also called
             Monte Carlo cross-validation) with balanced class weight
@@ -223,7 +223,7 @@ def score_and_vizualize_prediction(model, test_x, test_y, y_hat, rep):
 
     if rep<5:
         # Confusion matrix
-        disp = plot_confusion_matrix(model, test_x, test_y, cmap=plt.cm.Blues) 
+        disp = plot_confusion_matrix(model, test_x, test_y, cmap=plt.cm.Blues)
         disp.ax_.set_title('rep={:d} // ROC AUC: {:.3f}'.format(rep, roc_auc))
 
     return roc_auc
@@ -264,7 +264,7 @@ if __name__ == "__main__":
 
     fig, ax = plot_model_results(aucs)
     if not select_features:
-        fig, ax = plot_model_weights(model_coefs, model_intercepts, test_x.columns, 
+        fig, ax = plot_model_weights(model_coefs, model_intercepts, test_x.columns,
                                      show_n_labels=25, normalize_coefs=False)
     plt.show()
     print('done')
