@@ -70,7 +70,7 @@ def load_data_api(path_credentials):
 
     var_columns = ['Form Type', 'Form Collection Name', 'Form Name', 'Field Variable Name', 
                    'Field Label', 'Field Type', 'Option Name', 'Option Value']
-    data_struct = get_all_field_information(path_creds)
+    data_struct = get_all_field_information(path_credentials)
     data_struct = data_struct.loc[:, var_columns]
 
     return df_study, df_report, data_struct
