@@ -138,7 +138,7 @@ def calculate_outcomes_12_d21(data, data_struct):
     # Discharged to home and re-admitted	10
 
     # 1:'Levend ontslagen en niet heropgenomen',
-    outcome_1 = data[get_outcome_columns([1, 5, 6])].sum(axis=1) >= 1
+    outcome_1 = data.loc[:, get_outcome_columns([1, 5, 6])].any(axis=1)
 
     # 4:'Levend dag 21 maar nog in het ziekenhuis',
     outcome_4 = data[get_outcome_columns([2,3])].sum(axis=1) >= 1
