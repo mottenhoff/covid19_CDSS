@@ -58,15 +58,15 @@ def summarize_values(values,summary_type=None):
         if summary_type is None or summary_type == 'n_percn_meansd_medianiqr':
             if len(v) > 0:
                 n = len(v) - np.nansum(v.isna())
-                #p = (len(v) - np.nansum(v.isna())) / total_len * 100
+                p = (len(v) - np.nansum(v.isna())) / total_len * 100
                 mean = np.nanmean(v)
                 std = np.nanstd(v)
                 median = np.nanmedian(v)
                 iqr1 = np.nanpercentile(v,25)
                 iqr3 = np.nanpercentile(v,75)
                 s[key] = [format('n = ' + str(n) + '\n' +
-#                                 str(round(p,1)) + '%\n' +
-                                 str(round(mean,1))   + ' (' + str(round(std,1)) + ')\n' +
+                                 str(round(p,1)) + '%\n' +
+                                 str(round(mean,1))   + ' ± ' + str(round(std,1)) + '\n' +
                                  str(round(median,1)) + ' (' + str(round(iqr1,1)) + '-' + str(round(iqr3,1)) + ')')]
             else:
                 s[key] = ['n/a']
@@ -75,8 +75,8 @@ def summarize_values(values,summary_type=None):
 def do_statistics(values, threshold=5e-2):
     testtype = None
     pvalue = None
-    data1 = np.isfinite(values['Dood'])
-    data2 = np.isfinite(values['Levend ontslagen en niet heropgenomen'])
+    data1 = np.isfinite(values['Dood - totaal'])
+    data2 = np.isfinite(values['Levend ontslagen en niet heropgenomen - totaal'])
     normalresult1 = ss.normaltest(data1)
     normalresult2 = ss.normaltest(data2)
     variance1 = np.nanvar(data1)

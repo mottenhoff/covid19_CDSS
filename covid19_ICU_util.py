@@ -107,8 +107,6 @@ def calculate_outcomes_12_d21(data, data_struct):
 
     get_outcome_columns = lambda x: ['{}_{}'.format(str_, i) for i in x for str_ in ['Outcome_cat']]
 
-    def logical_any_df(a,b):
-        []
     # Discharged to home	1
     # Transfer to nursing home	5
     # Transfer to rehabilitation unit	6
@@ -129,11 +127,11 @@ def calculate_outcomes_12_d21(data, data_struct):
     # 4:'Levend dag 21 maar nog in het ziekenhuis',
     outcome_4 = data[get_outcome_columns([2,3])].sum(axis=1) >= 1
     
-    # 10:'Dood'
-    outcome_10 = data[['Outcome_cat_7','Outcome_cat_8']].sum(axis=1) >= 1
+    # 8:'Dood'
+    outcome_8 = data[['Outcome_cat_7','Outcome_cat_8']].sum(axis=1) >= 1
     
-    # 14:'Alle patiënten zonder dag 21 outcome'
-    outcome_14 = np.logical_or(
+    # 11:'Alle patiënten zonder dag 21 outcome'
+    outcome_11 = np.logical_or(
         data[get_outcome_columns([4,9,10])].sum(axis=1) >= 1,
         data[get_outcome_columns([1,2,3,4,5,6,7,8,9,10])].sum(axis=1) == 0)
     
@@ -141,77 +139,85 @@ def calculate_outcomes_12_d21(data, data_struct):
     outcome_icu_any = data['days_at_icu'] > 0
     outcome_icu_daily = data['dept_cat_3'] == 1.0
     
-    outcome_icu_no = data['days_at_icu'] == 0
+    outcome_icu_never = np.logical_not(
+        np.logical_or(outcome_icu_any,
+                      outcome_icu_daily
+                      )
+        )
+                                    
     
     # beademd geweest op IC
-    outcome_ventilation_any = np.logical_or(
-        np.logical_or(
-            data['patient_interventions_cat_1'] == 1.0,
-            data['patient_interventions_cat_2'] == 1.0),
-        data['Invasive_ventilation_1'] == 1.0)
-    outcome_ventilation_daily = np.logical_or(
-            data['patient_interventions_cat_1'] == 1.0,
-            data['patient_interventions_cat_2'] == 1.0)
+    # outcome_ventilation_any = np.logical_or(
+    #     np.logical_or(
+    #         data['patient_interventions_cat_1'] == 1.0,
+    #         data['patient_interventions_cat_2'] == 1.0),
+    #     data['Invasive_ventilation_1'] == 1.0)
+    # outcome_ventilation_daily = np.logical_or(
+    #         data['patient_interventions_cat_1'] == 1.0,
+    #         data['patient_interventions_cat_2'] == 1.0)
 
     # orgaanfalen lever, nier
-    outcome_organfailure_any = np.logical_or(
-        np.logical_or(
-            np.logical_or(
-                np.logical_or(
-                    np.logical_or(
-                        data['patient_interventions_cat_3'] == 1.0,
-                        data['patient_interventions_cat_5'] == 1.0),
-                    data['Extracorporeal_support_1'] == 1.0),
-                data['Liver_dysfunction_1_1'] == 1.0),
-            data['INR_1_1'].astype('float') > 1.5),
-        data['Acute_renal_injury_Acute_renal_failure_1_1'] == 1.0)
+    # outcome_organfailure_any = np.logical_or(
+    #     np.logical_or(
+    #         np.logical_or(
+    #             np.logical_or(
+    #                 np.logical_or(
+    #                     data['patient_interventions_cat_3'] == 1.0,
+    #                     data['patient_interventions_cat_5'] == 1.0),
+    #                 data['Extracorporeal_support_1'] == 1.0),
+    #             data['Liver_dysfunction_1_1'] == 1.0),
+    #         data['INR_1_1'].astype('float') > 1.5),
+    #     data['Acute_renal_injury_Acute_renal_failure_1_1'] == 1.0)
 
-    df_outcomes = pd.DataFrame([[False]*13]*len(data))
-    # 1:'Levend ontslagen en niet heropgenomen',
-    df_outcomes[0] = outcome_1 
+    df_outcomes = pd.DataFrame([[False]*12]*len(data))
     
-    # 2:'Levend ontslagen en niet heropgenomen - waarvan opgenomen geweest op IC',
-    df_outcomes[1] = np.logical_and(outcome_1, np.logical_or(outcome_icu_any, outcome_icu_daily))
-    
-    # 3:'Levend ontslagen en niet heropgenomen - waarvan beademd',
-    df_outcomes[2] = np.logical_and(outcome_1, outcome_ventilation_any)
-    
-    
-    # 4:'Levend dag 21 maar nog in het ziekenhuis',
-    df_outcomes[3] = outcome_4
-    
-    # 5:'Levend dag 21 maar nog in het ziekenhuis - waarvan opgenomen geweest op IC',
-    df_outcomes[4] = np.logical_and(outcome_4, np.logical_or(outcome_icu_any, outcome_icu_daily))
-    
-    # 6:'Levend dag 21 maar nog in het ziekenhuis - Levend en nog op IC',
-    df_outcomes[5] = np.logical_and(outcome_4, outcome_icu_daily)
+    # 0:'Totaal'
+    df_outcomes[0] = [True]*len(data)
 
-    # 7:'Levend dag 21 maar nog in het ziekenhuis - waarvan beademd geweest',
-    df_outcomes[6] = np.logical_and(outcome_4, outcome_ventilation_any)
-    
-    # 8:'Levend dag 21 maar nog in het ziekenhuis - waarvan nog beademd',
-    df_outcomes[7] = np.logical_and(outcome_4, outcome_ventilation_daily)
-    
-    # 9:'Levend dag 21 maar nog in het ziekenhuis - waarvan ander orgaanfalen gehad (lever / nier)',
-    df_outcomes[8] = np.logical_and(outcome_4, outcome_organfailure_any)
-    
 
-    # 10:'Dood'
-    df_outcomes[9] = outcome_10
+    # 1:'Levend ontslagen en niet heropgenomen - totaal',
+    df_outcomes[1] = outcome_1
     
-    # 11:'Dood op dag 21 - geen IC opname',
-    df_outcomes[10] = np.logical_and(outcome_10, outcome_icu_no)
+    # 2:'Levend ontslagen en niet heropgenomen - waarvan niet opgenomen geweest op IC',
+    df_outcomes[2] = np.logical_and(outcome_1, 
+                                    outcome_icu_never)
     
-    # 12:'Dood op dag 21 - dood op IC',
-    df_outcomes[11] = np.logical_and(outcome_10, outcome_icu_daily)
-    
-    # 13:'Dood op dag 21 - zonder dag 21 outcome',
-    df_outcomes[12] = np.logical_and(outcome_10, outcome_14)
-    
-    
-    # 14:'Alle patiënten zonder dag 21 outcome'
-    df_outcomes[13] = outcome_14
+    # 3:'Levend ontslagen en niet heropgenomen - waarvan opgenomen geweest op IC',
+    df_outcomes[3] = np.logical_and(outcome_1, 
+                                    outcome_icu_never)
 
+
+    # 4:'Levend dag 21 maar nog in het ziekenhuis - totaal',
+    df_outcomes[4] = outcome_4
+
+    # 5:'Levend dag 21 maar nog in het ziekenhuis - niet op IC geweest',
+    df_outcomes[5] = np.logical_and(outcome_4, 
+                                    outcome_icu_never)
+
+    # 6:'Levend dag 21 maar nog in het ziekenhuis - op IC geweest',
+    df_outcomes[6] = np.logical_and(outcome_4, 
+                                    np.logical_or(outcome_icu_any, 
+                                                  outcome_icu_daily))
+
+
+    # 7:'Levend dag 21 maar nog in het ziekenhuis - nog op IC',
+    df_outcomes[7] = np.logical_and(outcome_4, 
+                                    outcome_icu_daily)
+
+    # 8:'Dood - totaal',
+    df_outcomes[8] = outcome_8
+
+    # 9:'Dood op dag 21 - niet op IC geweest',
+    df_outcomes[9] = np.logical_and(outcome_8, outcome_icu_never)
+
+    # 10:'Dood op dag 21 - op IC geweest',
+    df_outcomes[10] = np.logical_and(outcome_8, 
+                                     np.logical_or(outcome_icu_any, 
+                                                  outcome_icu_daily))
+
+    # 11:'Onbekend (alle patiënten zonder outcome)'}
+    df_outcomes[11] = outcome_11
+    
 
     # OUTCOME 1 ==> Outcome good or bad
     # data['has_severe_complications'] = 0    
@@ -234,20 +240,18 @@ def calculate_outcomes_12_d21(data, data_struct):
     # used_columns = positive_columns + negative_columns + unknown_columns + \
     #                 icu_columns + ['Extracorporeal_support_1', 'Liver_dysfunction_1_1', 'INR_1_1']
 
-    df_outcomes.rename(columns={0:'Levend ontslagen en niet heropgenomen',
-                                1:'Levend ontslagen en niet heropgenomen - waarvan opgenomen geweest op IC',
-                                2:'Levend ontslagen en niet heropgenomen - waarvan beademd',
-                                3:'Levend dag 21 maar nog in het ziekenhuis - waarvan niet opgenomen geweest op IC',
-                                4:'Levend dag 21 maar nog in het ziekenhuis - waarvan opgenomen geweest op IC',
-                                5:'Levend dag 21 maar nog in het ziekenhuis - Levend en nog op IC',
-                                6:'Levend dag 21 maar nog in het ziekenhuis - waarvan beademd geweest',
-                                7:'Levend dag 21 maar nog in het ziekenhuis - waarvan nog beademd',
-                                8:'Levend dag 21 maar nog in het ziekenhuis - waarvan ander orgaanfalen gehad (lever / nier)',
-                                9:'Dood',
-                                10:'Dood op dag 21 - geen IC opname',
-                                11:'Dood op dag 21 - dood op IC',
-                                12:'Dood op dag 21 - zonder dag 21 outcome',
-                                13:'Alle patiënten zonder dag 21 outcome'}, inplace=True)
+    df_outcomes.rename(columns={0:'Totaal',
+                                1:'Levend ontslagen en niet heropgenomen - totaal',
+                                2:'Levend ontslagen en niet heropgenomen - waarvan niet opgenomen geweest op IC',
+                                3:'Levend ontslagen en niet heropgenomen - waarvan opgenomen geweest op IC',
+                                4:'Levend dag 21 maar nog in het ziekenhuis - totaal',
+                                5:'Levend dag 21 maar nog in het ziekenhuis - niet op IC geweest',
+                                6:'Levend dag 21 maar nog in het ziekenhuis - op IC geweest',
+                                7:'Levend dag 21 maar nog in het ziekenhuis - nog op IC',
+                                8:'Dood - totaal',
+                                9:'Dood op dag 21 - niet op IC geweest',
+                                10:'Dood op dag 21 - op IC geweest',
+                                11:'Onbekend (alle patiënten zonder outcome)'}, inplace=True)
     return df_outcomes, used_columns
 
 
