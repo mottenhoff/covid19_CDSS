@@ -146,3 +146,4 @@ covid19_variables.xlsx
 *.xlsx
 *.xls
 *.png
+.vscode/

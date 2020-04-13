@@ -4,19 +4,22 @@
 
 Please do not use without permission
 '''
+# Builtin libs
 import configparser
 import pickle
 import os
+import sys
+path_to_classifiers = r'./Classifiers/'
+# path_to_settings = r'./' # TODO: add settings
+sys.path.insert(0, path_to_classifiers)
 
+# 3th party libs
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from sklearn.decomposition import PCA
 from sklearn.model_selection import train_test_split
-from sklearn.model_selection import cross_val_predict
 from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import LeaveOneOut
-from sklearn.linear_model import LogisticRegression
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier
@@ -26,10 +29,10 @@ from sklearn.metrics import confusion_matrix
 from sklearn.metrics import plot_confusion_matrix
 from sklearn.metrics import roc_auc_score
 
+# Local Libs
 from covid19_import import import_data_by_record
 from covid19_ICU_util import get_all_field_information
 from covid19_ICU_util import fix_single_errors
-from covid19_ICU_util import calculate_outcomes
 from covid19_ICU_util import transform_binary_features
 from covid19_ICU_util import transform_categorical_features
 from covid19_ICU_util import transform_numeric_features
@@ -37,12 +40,16 @@ from covid19_ICU_util import transform_time_features
 from covid19_ICU_util import transform_string_features
 from covid19_ICU_util import transform_calculated_features
 from covid19_ICU_util import select_data
+from covid19_ICU_util import calculate_outcomes
+from covid19_ICU_util import calculate_outcomes_12_d21
 from covid19_ICU_util import select_baseline_data
 from covid19_ICU_util import select_categories
 from covid19_ICU_util import plot_model_results
 from covid19_ICU_util import plot_model_weights
 from covid19_ICU_util import explore_data
-from covid19_ICU_util import feature_contribution
+
+# classifiers
+from logreg import train_logistic_regression
 
 is_in_columns = lambda var_list, data: [v for v in var_list if v in data.columns]
 
@@ -137,6 +144,7 @@ def feature_selection(data, data_struct, var_groups, save=False):
     ''' 
 
     outcomes, used_columns = calculate_outcomes(data, data_struct)
+    # outcomes, used_columns = calculate_outcomes_12_d21(data, data_struct)
     data = pd.concat([data, outcomes], axis=1)
 
     if save:
@@ -187,28 +195,13 @@ def feature_selection(data, data_struct, var_groups, save=False):
     #            'whole_admission_yes_no', 'whole_admission_yes_no_1', 'facility_transfer_cat_1',
     #            'facility_transfer_cat_2', 'facility_transfer_cat_3']
 
-def add_engineered_features(data, pca=None):
-    ''' Generate and add features'''
-    # TODO: Normalize/scale numeric features (also to 0 to 1?)
 
-    # Dimensional transformation
-    n_components = 10
-    data = data.reset_index(drop=True)
-    if not pca:
-        pca = PCA(n_components=n_components)
-        pca = pca.fit(data)
+
+def model_and_predict(x, y, model_fn, model_kwargs, test_size=0.2):
+    ''' NOTE: kwargs must be a dict. e.g.: {"select_features": True, 
+                                            "plot_graph": False}
     
-    princ_comps = pd.DataFrame(pca.transform(data))
-    princ_comps.columns = ['pc_{:d}'.format(i) for i in range(n_components)]
-
-    # Add features
-    data = pd.concat([data, princ_comps], axis=1)
-
-    return data, pca 
-
-def model_and_predict(x, y, test_size=0.2, val_size=0.2, 
-                      select_features=False, n_best_features=10, plot_graph=False):
-    ''' Select samples and fit model.
+        Select samples and fit model.
         Currently uses random sub-sampling validation (also called
             Monte Carlo cross-validation) with balanced class weight
                 (meaning test has the same Y-class distribution as
@@ -217,26 +210,8 @@ def model_and_predict(x, y, test_size=0.2, val_size=0.2,
     # Train/test-split
     train_x, test_x, train_y, test_y = train_test_split(x, y, test_size=test_size, stratify=y) # stratify == simila y distribution in both sets
 
-    # Add engineered features:
-    train_x, pca = add_engineered_features(train_x)
-    test_x, pca = add_engineered_features(test_x, pca)
-
-    # Initialize Classifier
-    clf = LogisticRegression(solver='lbfgs', penalty='l2', #class_weight='balanced', 
-                             max_iter=200, random_state=0) # small dataset: solver='lbfgs'. multiclass: solver='lbgfs'
-    # clf = LinearDiscriminantAnalysis(solver='eigen', shrinkage='auto')
-    # clf = LinearDiscriminantAnalysis(solver='svd')
-    
-    # Model and feature selection
-    if select_features:
-        importances = feature_contribution(clf, train_x, train_y, plot_graph=plot_graph)
-        n_best = np.argsort(importances)[-n_best_features:]
-        train_x = train_x.iloc[:, n_best]
-        test_x = test_x.iloc[:, n_best]
-
-   
-    clf.fit(train_x, train_y)  # Model
-    test_y_hat = clf.predict_proba(test_x) # Predict
+    clf, train_x, test_x,\
+        train_y, test_y, test_y_hat= model_fn(train_x, test_x, train_y, test_y, **model_kwargs)
 
     return clf, train_x, train_y, test_x, test_y, test_y_hat
 
@@ -274,13 +249,13 @@ if __name__ == "__main__":
     model_intercepts = []
     repetitions = 100
     select_features = False
+
+    model_fn = train_logistic_regression
+    model_kwargs = {}
     for i in range(repetitions):
         print('Current rep: {}'.format(i))
         model, train_x, train_y, test_x, \
-            test_y, test_y_hat = model_and_predict(x, y, test_size=0.2, 
-                                                   select_features=select_features,
-                                                   n_best_features=10,
-                                                   plot_graph=True if i==0 else False)
+            test_y, test_y_hat = model_and_predict(x, y, model_fn, model_kwargs, test_size=0.2)
         auc = score_and_vizualize_prediction(model, test_x, test_y, test_y_hat, i)
 
         aucs.append(auc)

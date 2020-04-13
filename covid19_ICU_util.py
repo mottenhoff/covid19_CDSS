@@ -274,7 +274,6 @@ def calculate_outcomes_12_d21(data, data_struct):
     return df_outcomes, used_columns
 
 
-
 def select_baseline_data(data, var_groups):
     ''' Select data that is measured before ICU'''
 
@@ -368,6 +367,7 @@ def transform_time_features(data, data_struct):
 
     days_since_ICU_admission = (format_dt(data['assessment_dt']) - format_dt(data['Admission_dt_icu_1'])).dt.days
     days_since_ICU_discharge = (format_dt(data['assessment_dt']) - format_dt(data['Discharge_dt_icu_1'])).dt.days
+
     days_since_ICU_admission.loc[(days_since_ICU_admission<0) & (days_since_ICU_discharge>=0)] = None
     days_since_ICU_discharge.loc[(days_since_ICU_discharge<0)] = None
     days_since_MC_admission = (format_dt(data['assessment_dt']) - format_dt(data['Admission_dt_mc_1'])).dt.days
@@ -584,12 +584,6 @@ def explore_data(x, y):
     plt.matshow(corr)
 
 
-def feature_contribution(clf, x, y, plot_graph=False, plot_n_features=None,
-                            n_cv=2, method='predict_proba'):
-
-    plot_n_features = x.shape[1] if not plot_n_features else plot_n_features
-    y_hat = cross_val_predict(clf, x, y, cv=n_cv, method=method)
-    baseline_score = roc_auc_score(y, y_hat[:, 1])
 
     importances = np.array([])
 
@@ -611,7 +605,5 @@ def feature_contribution(clf, x, y, plot_graph=False, plot_n_features=None,
         ax.set_ylabel('Difference with baseline')
 
     return importances
-
-
 
 
