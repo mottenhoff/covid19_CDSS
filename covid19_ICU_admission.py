@@ -46,7 +46,7 @@ from covid19_ICU_util import feature_contribution
 
 is_in_columns = lambda var_list, data: [v for v in var_list if v in data.columns]
 
-def load_data_api(path_credentials):
+def load_data_api(config):
     
     # Try loading objects from disk file; delete saveddata.pkl to force reload data
     try:
@@ -55,7 +55,7 @@ def load_data_api(path_credentials):
         print('Loading data from PC... delete saveddata.pkl to force reload data from Castor')
     except:
         print('Loading data from PC failed, reloading from Castor server.')
-        df_study, df_structure, df_report, df_report_structure, df_optiongroup_structure = import_data_by_record(path_credentials)
+        df_study, df_structure, df_report, df_report_structure, df_optiongroup_structure = import_data_by_record(config['CastorCredentials']['local_private_path'])
         with open(str(os.path.join(config['CastorCredentials']['local_private_path'],'saveddata.pkl')), 'wb') as f:  # Python 3: open(..., 'wb')
             pickle.dump([df_study, df_structure, df_report, df_report_structure, df_optiongroup_structure], f)
 
@@ -70,15 +70,15 @@ def load_data_api(path_credentials):
 
     var_columns = ['Form Type', 'Form Collection Name', 'Form Name', 'Field Variable Name', 
                    'Field Label', 'Field Type', 'Option Name', 'Option Value']
-    data_struct = get_all_field_information(path_creds)
+    data_struct = get_all_field_information(config['CastorCredentials']['local_private_path'])
     data_struct = data_struct.loc[:, var_columns]
 
     return df_study, df_report, data_struct
 
 
-def load_data(path_to_creds, save=False):
+def load_data(config, save=False):
 
-    df_study, df_report, data_struct = load_data_api(path_to_creds)
+    df_study, df_report, data_struct = load_data_api(config)
         
     # Remove all the cardiology variables for now
     study_cols_to_drop = data_struct.loc[data_struct['Form Collection Name']=='CARDIO (OPTIONAL)', 'Field Variable Name']
@@ -263,7 +263,7 @@ if __name__ == "__main__":
     # Saves intermediate
     save = False # REMEMBER TO SAVE AS FEW A POSSIBLE FOR PRIVACY REASONS
 
-    data, data_struct, var_groups = load_data(path_creds, save=save)
+    data, data_struct, var_groups = load_data(config, save=save)
     data, data_struct = preprocess(data, data_struct, save=save)
     x, y = feature_selection(data, data_struct, var_groups, save=save)
 

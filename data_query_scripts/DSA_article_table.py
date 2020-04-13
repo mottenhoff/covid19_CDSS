@@ -25,7 +25,7 @@ config.read('../user_settings.ini') # create this once using and never upload
 
 path_creds = config['CastorCredentials']['local_private_path']
 
-data, data_struct, var_groups = load_data(path_creds)
+data, data_struct, var_groups = load_data(path_creds,config=config)
 
 data, data_struct = preprocess(data, data_struct)
 
