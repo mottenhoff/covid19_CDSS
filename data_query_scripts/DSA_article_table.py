@@ -31,6 +31,9 @@ data, data_struct = preprocess(data, data_struct)
 
 outcomes, used_columns = calculate_outcomes_12_d21(data, data_struct)
 data = pd.concat([data, outcomes], axis=1)
+
+# FIXME: THIS MIGHT NOT GIVE THE LATEST RECORD FOR EACH PATIENT?
+#data = data.sort_values(by=['Record Id','days_since_icu_admission'],ascending=False,inplace=False)
 data = data.groupby(by='Record Id', axis=0).last()
 
 outcomes = data[outcomes.columns]
@@ -62,13 +65,64 @@ def get_values(data,c):
         values[outcome] = data[c][data[outcome]]
     return values
 
-def summarize_values(values,summary_type=None):
+def summarize_values(values,summary_type=None,threshold=5e-2):
     s = {}
     total_len = np.nansum([len(values[x]) for x in values])
     for key in values:
         s[key] = ''
         v = values[key]
-        if summary_type is None or summary_type == 'n_percn_meansd_medianiqr':
+        if summary_type == 1.0: # numeric
+            data1 = values['Dood - totaal'][~values['Dood - totaal'].isna()]
+            data2 = values['Levend ontslagen en niet heropgenomen - totaal'][~values['Levend ontslagen en niet heropgenomen - totaal'].isna()]
+            normalresult1 = ss.normaltest(data1)
+            normalresult2 = ss.normaltest(data2)
+            if normalresult1.pvalue < threshold or normalresult2.pvalue < threshold:
+                # not normal: use median
+                if len(v) - np.nansum(v.isna()) > 0:
+                    n = len(v) - np.nansum(v.isna())
+                    median = np.nanmedian(v)
+                    iqr1 = np.nanpercentile(v,25)
+                    iqr3 = np.nanpercentile(v,75)
+                    s[key] = [format(str(round(median,1)) + ' (' +
+                                     str(round(iqr1,1)) + '-' +
+                                     str(round(iqr3,1)) + ')\n '+
+                                     '(n=' + str(n) + ')')]
+            else:
+                # normal: use mean
+                if len(v) - np.nansum(v.isna()) > 0:
+                    n = len(v) - np.nansum(v.isna())
+                    p = (len(v) - np.nansum(v.isna())) / total_len * 100
+                    mean = np.nanmean(v)
+                    std = np.nanstd(v)
+                    s[key] = [format(str(round(mean,1))   + ' ± ' + str(round(std,1)) + '\n' +
+                                 '(n=' + str(n) + ')')]
+        elif summary_type == 2.0: # binary
+                n = len(v) - np.nansum(v.isna()) # total n available for this variable
+                p = sum(v==1) / n * 100 # percentage True
+                if n == 0:
+                    p = 0
+                s[key] = [format(str(round(p,1)) + '%\n' +
+                                 'n = ' + str(n))]
+        elif summary_type == 3.0: # binary
+                    n = len(v) - np.nansum(v.isna())
+                    median = np.nanmedian(v)
+                    iqr1 = np.nanpercentile(v,25)
+                    iqr3 = np.nanpercentile(v,75)
+                    s[key] = [format(str(round(median,1)) + ' (' +
+                                     str(round(iqr1,1)) + '-' +
+                                     str(round(iqr3,1)) + ')\n '+
+                                     '(n=' + str(n) + ')')]
+        elif summary_type == 4.0:
+            n = len(v) - np.nansum(v.isna())
+            median = np.nanmedian(v)
+            iqr1 = np.nanpercentile(v,25)
+            iqr3 = np.nanpercentile(v,75)
+            s[key] = [format(str(round(median,1)) + ' (' +
+                             str(round(iqr1,1)) + '-'+
+                             str(round(iqr3,1)) + ')\n '+
+                             '(n=' + str(n) + ')')]
+
+        elif summary_type is None or summary_type == 'n_percn_meansd_medianiqr':
             if len(v) - np.nansum(v.isna()) > 0:
                 n = len(v) - np.nansum(v.isna())
                 p = (len(v) - np.nansum(v.isna())) / total_len * 100
@@ -126,9 +180,9 @@ def do_statistics(values, threshold=5e-2,variable_type=None):
     data2 = values['Levend ontslagen en niet heropgenomen - totaal'][~values['Levend ontslagen en niet heropgenomen - totaal'].isna()]
 
 # only test if n >= 10 in both groups
-    minimal_n_for_testing = 10
+    minimal_n_for_testing = 20
     if len(data1)-sum(data1.isna()) < minimal_n_for_testing and len(data2)-sum(data2.isna()) < minimal_n_for_testing:
-        testtype = 'n < 10, no test performed.'
+        testtype = 'n < 20, no test performed.'
         return testtype, pvalue
 
     normalresult1 = ss.normaltest(data1)
@@ -254,16 +308,27 @@ def create_table_for_variables_outcomes(df_variable_columns):
                 if type(data[c][0]) == str:
                     data[c] = data[c].replace({'1':True,'2':False,'3':True,
                                                '4':np.nan})
+            elif c == 'CT_thorax_performed':
+                data[c] = data[c].replace({'1':True,'2':True,'3':False,
+                                           '4':np.nan})
             elif c == 'corads_admission':
                 if type(data[c][0]) == str:
                     data[c] = data[c].replace({'0':np.nan,'':np.nan,'1':1,'2':2,
                                                '3':3,'4':4,'5':5})
             elif vartype.values[0] == 2.0:
                 # binary data
+                try:
+                    data[c] = data[c].replace({'1':1,'2':2,'3':np.nan,'':np.nan})
+                except:
+                    1
                 data[c] = np.float64(data[c])
 
-            elif vartype.values[0] == 3.0:
-                data[c][data[c] == ''] = 'NaN'
+            elif vartype.values[0] == 3.0 or vartype.values[0] == 4.0:
+                try:
+                    data[c] = data[c].replace({'1':1,'2':2,'3':3,'4':4,'5':5,\
+                                           '6':6,'7':7,'8':8,'':np.nan})
+                except:
+                    1
                 data[c] = np.float64(data[c])
 
         except Exception as exception:
@@ -273,12 +338,16 @@ def create_table_for_variables_outcomes(df_variable_columns):
         try:
             values = get_values(data,c)
         except Exception as exception:
+            values = None
             print(c+' get_values failed:' + str(exception))
 
         try:
             # run test based on variable type
-            s = summarize_values(values)
+            s = summarize_values(values,summary_type=vartype.values[0])
         except Exception as exception:
+            s = {}
+            for d in outcomes:
+                s[d] = ['n/a']
             print(c+' summarize_values failed:' + str(exception))
 
         try:
@@ -313,7 +382,7 @@ def create_table_for_variables_outcomes(df_variable_columns):
     data_to_print['Castor questions'] = cols_q
     data_to_print['Pvalue_uncorrected'] = pvalues
     data_to_print['Pvalue_FDR_corrected'] = pvalues_corrected
-    data_to_print.set_index(data_to_print['Variable'],inplace=True)
+    data_to_print.sort_values(by='Pvalue_FDR_corrected',ascending=True,inplace=True)
 
     if any(~(np.isfinite(pvalues_corrected))):
         print('\n\n\nFAILED STATISTICS: ')
@@ -325,16 +394,49 @@ excel_file = '/Users/wouterpotters/Desktop/tabellen_manuscript.xlsx'
 excel_file_source_variables ='~/Desktop/tabellen_manuscript_inclusions.xlsx'
 writer = pd.ExcelWriter(excel_file, engine='xlsxwriter')
 
-for variable_type in ['vergelijking baseline',
+for variable_type in ['sowieso',
+                      'vergelijking baseline',
                       'vergelijking presentatie',
                       'vergelijking opname']:
     df_variable_columns = get_variable_names_to_analyze_and_variable_type(
         excel_file=excel_file_source_variables,
         variable_type=variable_type)
-    table =create_table_for_variables_outcomes(df_variable_columns)
+    table = create_table_for_variables_outcomes(df_variable_columns)
+
+    row_df = pd.DataFrame([[str(s)+' ('+str(round(s/outcomes.sum().values[0]*100,1))+'%)' for s in outcomes.sum().values]])
+    row_df.columns = table.columns[0:12]
+
+    table = pd.concat([row_df, table],ignore_index=True)
+    table.set_index(table['Variable'],inplace=True)
+
+    #print('\t'.join([str(s)+' ('+str(round(s/outcomes.sum().values[0]*100,1))+'%)' for s in outcomes.sum().values]))
 
     # Write each dataframe to a different worksheet.
     table.to_excel(writer, sheet_name=variable_type)
 
+    # Get the xlsxwriter workbook and worksheet objects.
+    workbook  = writer.book
+    worksheet = writer.sheets[variable_type]
+
+    # Add some cell formats.
+    format_wrapped = workbook.add_format({'text_wrap': True})
+    format_wrapped.set_align('center')
+    format_wrapped.set_align('vcenter')
+
+    # Setting the format but not setting the column width.
+    worksheet.set_column('A:B', None, format)
+
+    numeric_format = workbook.add_format({'num_format': '#,##0.000'})
+
+    # Set the column width and format.
+    worksheet.set_column('Q:R', 6, numeric_format)
+
+    # Set the  column width.
+    worksheet.set_column('A:O', 16, None)
+    worksheet.set_column('P:P', 20, None)
+
+    worksheet.set_column('A:Z', None, format_wrapped)
+
 # Close the Pandas Excel writer and output the Excel file.
 writer.save()
+print('excel file saved')

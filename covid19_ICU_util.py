@@ -153,14 +153,14 @@ def calculate_outcomes_12_d21(data, data_struct):
 
     # opgenomen geweest op IC
     outcome_icu_any = data['days_at_icu'] > 0
-    outcome_icu_daily = data['dept_cat_3'] == 1.0
+    outcome_icu_now = data['dept_cat_3'] == 1.0
 
     outcome_icu_ever = np.logical_or(outcome_icu_any,
-                                     outcome_icu_daily)
+                                     outcome_icu_now)
 
     outcome_icu_never = np.logical_not(
         np.logical_or(outcome_icu_any,
-                      outcome_icu_daily
+                      outcome_icu_now
                       )
         )
 
@@ -207,7 +207,6 @@ def calculate_outcomes_12_d21(data, data_struct):
     df_outcomes[3] = np.logical_and(outcome_1,
                                     outcome_icu_ever)
 
-
     # 4:'Levend dag 21 maar nog in het ziekenhuis - totaal',
     df_outcomes[4] = outcome_4
 
@@ -215,14 +214,13 @@ def calculate_outcomes_12_d21(data, data_struct):
     df_outcomes[5] = np.logical_and(outcome_4,
                                     outcome_icu_never)
 
-    # 6:'Levend dag 21 maar nog in het ziekenhuis - op IC geweest',
-    df_outcomes[6] = np.logical_and(outcome_4,
-                                    outcome_icu_ever)
-
+    # 6:'Levend dag 21 maar nog in het ziekenhuis - op IC geweest
+    df_outcomes[6] = np.logical_and(np.logical_and(outcome_4,
+                                                   outcome_icu_ever))
 
     # 7:'Levend dag 21 maar nog in het ziekenhuis - nog op IC',
     df_outcomes[7] = np.logical_and(outcome_4,
-                                    outcome_icu_daily)
+                                    outcome_icu_now)
 
     # 8:'Dood - totaal',
     df_outcomes[8] = outcome_8
