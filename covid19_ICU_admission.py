@@ -145,15 +145,9 @@ def feature_selection(data, data_struct, var_groups, save=False):
     # Select only (selection of) reports
     data = data.groupby(by='Record Id', axis=0).last()
     
-    # SELECT VARIABLES HERE
-    # Possble groups (as named in castor). Excluding cardio variables)
-    # ['DEMOGRAPHICS', 'TREATMENTS during admission', 'MEDICATIONS DURING ADMISSION', 'OUTCOME', 
-    #  'Complications', 'CO-MORBIDITIES', 'ONSET & ADMISSION', 'SIGNS AND SYMPTOMS AT HOSPITAL ADMISSION', 
-    #  'ADMISSION SIGNS AND SYMPTOMS', 'BLOOD ASSESSMENT ADMISSION', 'BLOOD GAS ADMISSION', 
-    #  'PATHOGEN TESTING / RADIOLOGY', 'DAILY ASSESSMENT FORM', 'Respiratory assessment', 'Blood assessment']
     cols_to_exclude = [var_groups[group] for group in ['OUTCOME']][0] \
-                      + used_columns \
-                      + data.columns[(data.nunique()<=1)].to_list()
+                    + used_columns \
+                    + data.columns[(data.nunique()<=1)].to_list()
     data = data.drop(is_in_columns(cols_to_exclude, data), axis=1)
 
     # TODO: OUTPUT PROCESSED DATA HERE

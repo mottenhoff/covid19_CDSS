@@ -54,17 +54,33 @@ def remove_invalid_data(data, cols):
 
     return data
 
-def count_occurrences(col):
+def count_occurrences(col, record_ids, reset_count=False, start_count_at=1):
     # Make counter of occurences in binary column
     # NOTE: Make sure to supply sorted array
-    new_col = pd.Series(None, index=col.index)
-    ids = col*(np.diff(np.r_[0, col])==1).cumsum()
-    counts = np.bincount(ids) # Get Length per period
-    for i in ids.unique():
-        if i==0:
-            continue
-        new_col.loc[ids==i] = np.arange(1, counts[i]+1)
+    # TODO: Optimize (maybe use df.groupby?)
+    new_cols = []
+    for record in record_ids.unique():
 
+        # Get data slice
+        is_current_record = record_ids == record
+        col_slice = col[is_current_record]
+
+        # Create mapping of series of consecutive days at department
+        ids = col_slice*(np.diff(np.r_[0, col_slice])==1).cumsum()
+        counts = np.bincount(ids) # Get Length per series
+
+        # Count the days
+        new_col = pd.Series(None, index=col_slice.index)        
+        if reset_count:
+            unique_ids = ids.unique()
+            for i in unique_ids[unique_ids != 0]:
+                new_col[ids==i] = np.arange(start_count_at, counts[i]+start_count_at)
+        else:
+            new_col[col_slice!=0] = np.arange(start_count_at, counts[1:].sum()+start_count_at)
+        
+        new_cols += [new_col]
+
+    new_col = pd.concat(new_cols, axis=0)
     return new_col
 
 
@@ -157,6 +173,7 @@ def calculate_outcomes_12_d21(data, data_struct):
     #         data['patient_interventions_cat_2'] == 1.0)
 
     # orgaanfalen lever, nier
+
     # outcome_organfailure_any = np.logical_or(
     #     np.logical_or(
     #         np.logical_or(
@@ -168,6 +185,7 @@ def calculate_outcomes_12_d21(data, data_struct):
     #             data['Liver_dysfunction_1_1'] == 1.0),
     #         data['INR_1_1'].astype('float') > 1.5),
     #     data['Acute_renal_injury_Acute_renal_failure_1_1'] == 1.0)
+
 
     df_outcomes = pd.DataFrame([[False]*12]*len(data))
     
@@ -368,11 +386,13 @@ def transform_time_features(data, data_struct):
                              'days_until_outcome_6wk', 'days_since_icu_admission', 'days_since_icu_discharge',
                              'days_since_mc_admission', 'days_since_mc_discharge']
     data = pd.concat([data, df_time_feats], axis=1)
-    data = data.sort_values(by=['Record Id', 'days_since_admission_current_hosp'], axis=0)
+
+    data = data.sort_values(by=['Record Id', 'days_since_admission_current_hosp'], axis=0) \
+               .reset_index(drop=True)
     
-    data['days_at_ward'] = count_occurrences(data['dept_cat_1'])
-    data['days_at_mc'] = count_occurrences(data['dept_cat_2'])
-    data['days_at_icu'] = count_occurrences(data['dept_cat_3'])
+    data['days_at_ward'] = count_occurrences(data['dept_cat_1'], data['Record Id'], reset_count=False, start_count_at=1)
+    data['days_at_mc'] = count_occurrences(data['dept_cat_2'], data['Record Id'], reset_count=False, start_count_at=1)
+    data['days_at_icu'] = count_occurrences(data['dept_cat_3'], data['Record Id'], reset_count=False, start_count_at=1)
 
     cols_to_drop = [col for col in data.columns if col in date_cols]
     data = data.drop(cols_to_drop, axis=1)
