@@ -288,16 +288,18 @@ def create_table_for_variables_outcomes(df_variable_columns):
                 data[c][data[c] == ''] = 'NaN'
                 data[c] = np.float64(data[c])
             elif c == 'Smoking':
-                if type(data[c][0]) == str:
-                    data[c] = data[c].replace({'1':True,'2':False,'3':True,
-                                               '4':np.nan})
+                data['Smoking_active'] = data[c].replace({'1':1,'2':2,'3':2,
+                                                          '4':np.nan})
+                data['Smoking_active_and_past'] = data[c].replace({'1':1,'2':2,'3':1,
+                                                                   '4':np.nan})
+                data[c].drop()
             elif c == 'CT_thorax_performed':
-                data[c] = data[c].replace({'1':True,'2':True,'3':False,
+                data[c] = data[c].replace({'1':1,'2':1,'3':2,
                                            '4':np.nan})
             elif c == 'corads_admission':
                 if type(data[c][0]) == str:
-                    data[c] = data[c].replace({'0':np.nan,'':np.nan,'1':1.,'2':2.,
-                                               '3':3.,'4':4.,'5':5.})
+                    data[c] = data[c].replace({'0':np.nan,'':np.nan,'1':1,'2':2,
+                                               '3':3,'4':4,'5':5})
             elif vartype.values[0] == 2.0:
                 # binary data
                 try:
@@ -363,8 +365,8 @@ def create_table_for_variables_outcomes(df_variable_columns):
 
     data_to_print['Variable'] = cols
     data_to_print['Castor questions'] = cols_q
-    data_to_print['Pvalue_uncorrected'] = pvalues
-    data_to_print['Pvalue_FDR_corrected'] = pvalues_corrected
+    data_to_print['Pvalue_uncorrected'] = [round(p,3) for p in pvalues]
+    data_to_print['Pvalue_FDR_corrected'] = [round(p,3) for p in pvalues_corrected]
     data_to_print.sort_values(by='Pvalue_FDR_corrected',ascending=True,inplace=True)
 
     if any(~(np.isfinite(pvalues_corrected))):
@@ -380,8 +382,9 @@ config.read('../user_settings.ini') # create this once using and never upload
 
 path_creds = config['CastorCredentials']['local_private_path']
 
-data, data_struct = load_data(path_creds)
-data, data_struct = preprocess(data, data_struct)
+if 'data_raw' not in locals():
+    data_raw, data_struct_raw = load_data(path_creds)
+data, data_struct = preprocess(data_raw, data_struct_raw)
 
 outcomes, used_columns = calculate_outcomes_12_d21(data, data_struct)
 data = pd.concat([data, outcomes], axis=1)
@@ -436,6 +439,11 @@ for variable_type in ['sowieso',
     worksheet.set_column('P:P', 20, None)
 
     worksheet.set_column('A:Z', None, format_wrapped)
+
+    # hide columns
+    format_hide = workbook.add_format({'hidden': True})
+    worksheet.set_column('N:Q',None,format_hide)
+
 
 # Close the Pandas Excel writer and output the Excel file.
 writer.save()
