@@ -38,7 +38,7 @@ data = data.groupby(by='Record Id', axis=0).last()
 
 outcomes = data[outcomes.columns]
 
-# %%
+# %
 def get_variable_names_to_analyze_and_variable_type(
         excel_file,
         variable_type=None):
@@ -58,14 +58,13 @@ def get_variable_names_to_analyze_and_variable_type(
     return excel_data[['Form Type','Form Collection Name','Form Name',
                        'Field Variable Name','Field Label','type variabele']][mask]
 
-
 def get_values(data,c):
     values = {}
     for outcome in outcomes:
         values[outcome] = data[c][data[outcome]]
     return values
 
-def summarize_values(values,summary_type=None,threshold=5e-2):
+def summarize_values(values,summary_type=None,threshold=5e-2,decimal_count=2):
     s = {}
     total_len = np.nansum([len(values[x]) for x in values])
     for key in values:
@@ -83,9 +82,9 @@ def summarize_values(values,summary_type=None,threshold=5e-2):
                     median = np.nanmedian(v)
                     iqr1 = np.nanpercentile(v,25)
                     iqr3 = np.nanpercentile(v,75)
-                    s[key] = [format(str(round(median,1)) + ' (' +
-                                     str(round(iqr1,1)) + '-' +
-                                     str(round(iqr3,1)) + ')\n '+
+                    s[key] = [format(str(round(median,decimal_count)) + ' (' +
+                                     str(round(iqr1,decimal_count)) + '-' +
+                                     str(round(iqr3,decimal_count)) + ')\n '+
                                      '(n=' + str(n) + ')')]
             else:
                 # normal: use mean
@@ -94,32 +93,33 @@ def summarize_values(values,summary_type=None,threshold=5e-2):
                     p = (len(v) - np.nansum(v.isna())) / total_len * 100
                     mean = np.nanmean(v)
                     std = np.nanstd(v)
-                    s[key] = [format(str(round(mean,1))   + ' ± ' + str(round(std,1)) + '\n' +
+                    s[key] = [format(str(round(mean,decimal_count))   + ' ± '
+                                     + str(round(std,decimal_count)) + '\n' +
                                  '(n=' + str(n) + ')')]
         elif summary_type == 2.0: # binary
                 n = len(v) - np.nansum(v.isna()) # total n available for this variable
                 p = sum(v==1) / n * 100 # percentage True
                 if n == 0:
                     p = 0
-                s[key] = [format(str(round(p,1)) + '%\n' +
+                s[key] = [format(str(round(p,decimal_count)) + '%\n' +
                                  'n = ' + str(n))]
         elif summary_type == 3.0: # binary
                     n = len(v) - np.nansum(v.isna())
                     median = np.nanmedian(v)
                     iqr1 = np.nanpercentile(v,25)
                     iqr3 = np.nanpercentile(v,75)
-                    s[key] = [format(str(round(median,1)) + ' (' +
-                                     str(round(iqr1,1)) + '-' +
-                                     str(round(iqr3,1)) + ')\n '+
+                    s[key] = [format(str(round(median,decimal_count)) + ' (' +
+                                     str(round(iqr1,decimal_count)) + '-' +
+                                     str(round(iqr3,decimal_count)) + ')\n '+
                                      '(n=' + str(n) + ')')]
         elif summary_type == 4.0:
             n = len(v) - np.nansum(v.isna())
             median = np.nanmedian(v)
             iqr1 = np.nanpercentile(v,25)
             iqr3 = np.nanpercentile(v,75)
-            s[key] = [format(str(round(median,1)) + ' (' +
-                             str(round(iqr1,1)) + '-'+
-                             str(round(iqr3,1)) + ')\n '+
+            s[key] = [format(str(round(median,decimal_count)) + ' (' +
+                             str(round(iqr1,decimal_count)) + '-'+
+                             str(round(iqr3,decimal_count)) + ')\n '+
                              '(n=' + str(n) + ')')]
 
         elif summary_type is None or summary_type == 'n_percn_meansd_medianiqr':
@@ -132,14 +132,14 @@ def summarize_values(values,summary_type=None,threshold=5e-2):
                 iqr1 = np.nanpercentile(v,25)
                 iqr3 = np.nanpercentile(v,75)
                 s[key] = [format('n = ' + str(n) + '\n' +
-                                 str(round(p,1)) + '%\n' +
-                                 str(round(mean,1))   + ' ± ' + str(round(std,1)) + '\n' +
-                                 str(round(median,1)) + ' (' + str(round(iqr1,1)) + '-' + str(round(iqr3,1)) + ')')]
+                                 str(round(p,decimal_count)) + '%\n' +
+                                 str(round(mean,decimal_count))   + ' ± ' + str(round(std,decimal_count)) + '\n' +
+                                 str(round(median,decimal_count)) + ' (' + str(round(iqr1,decimal_count)) + '-' + str(round(iqr3,decimal_count)) + ')')]
             elif len(v) - np.nansum(v.isna()) == 0:
                 n = len(v) - np.nansum(v.isna())
                 p = (len(v) - np.nansum(v.isna())) / total_len * 100
                 s[key] = [format('n = ' + str(n) + '\n' +
-                          str(round(p,1)) + '%')]
+                          str(round(p,decimal_count)) + '%')]
             else:
                 s[key] = ['n/a']
     return s
@@ -313,8 +313,8 @@ def create_table_for_variables_outcomes(df_variable_columns):
                                            '4':np.nan})
             elif c == 'corads_admission':
                 if type(data[c][0]) == str:
-                    data[c] = data[c].replace({'0':np.nan,'':np.nan,'1':1,'2':2,
-                                               '3':3,'4':4,'5':5})
+                    data[c] = data[c].replace({'0':np.nan,'':np.nan,'1':1.,'2':2.,
+                                               '3':3.,'4':4.,'5':5.})
             elif vartype.values[0] == 2.0:
                 # binary data
                 try:
