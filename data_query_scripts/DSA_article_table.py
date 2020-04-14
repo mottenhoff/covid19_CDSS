@@ -14,6 +14,8 @@ import pandas as pd
 import numpy as np
 import statsmodels.stats.multitest as mt
 from scipy import stats as ss
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), './../'))
 
 site.addsitedir('./../') # add directory to path to enable import of covid19*
 from covid19_ICU_admission import load_data, preprocess
@@ -24,16 +26,14 @@ config = configparser.ConfigParser()
 config.read('../user_settings.ini') # create this once using and never upload
 
 path_creds = config['CastorCredentials']['local_private_path']
+path_creds = './castor_api_creds/'
 
-data, data_struct, var_groups = load_data(path_creds)
-
+data, data_struct = load_data(path_creds)
 data, data_struct = preprocess(data, data_struct)
 
 outcomes, used_columns = calculate_outcomes_12_d21(data, data_struct)
 data = pd.concat([data, outcomes], axis=1)
 
-# FIXME: THIS MIGHT NOT GIVE THE LATEST RECORD FOR EACH PATIENT?
-#data = data.sort_values(by=['Record Id','days_since_icu_admission'],ascending=False,inplace=False)
 data = data.groupby(by='Record Id', axis=0).last()
 
 outcomes = data[outcomes.columns]

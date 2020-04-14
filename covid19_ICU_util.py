@@ -117,8 +117,20 @@ def calculate_outcomes(data, data_struct):
     return outcomes, used_columns
 
 def calculate_outcomes_12_d21(data, data_struct):
-
     get_outcome_columns = lambda x: ['{}_{}'.format(str_, i) for i in x for str_ in ['Outcome_cat']]
+
+    
+    
+    # FIXME: Fix in fix_single_errors()
+    outcols = [col for col in data.columns if 'Outcome' in col]
+    data.loc[data['Outcome']=='', 'Outcome'] = None
+    data.loc[data['Outcome_6wk']=='', 'Outcome_6wk'] = None
+    for col in outcols:
+        data[col] = pd.to_numeric(data[col])
+
+     # FIXME: Fix this error in transform_categories()
+    data.loc[data['Outcome']==10, 'Outcome_cat_1'] = 0
+    ## TEMP
 
     # Discharged to home	1
     # Transfer to nursing home	5
@@ -134,33 +146,29 @@ def calculate_outcomes_12_d21(data, data_struct):
     # Unknown	9
     # Discharged to home and re-admitted	10
 
+
+    # NOTE: Quickfix, normaly there shouldn't be any aggregation in this function imo
     # 1:'Levend ontslagen en niet heropgenomen',
     outcome_1 = data.loc[:, get_outcome_columns([1, 5, 6])].any(axis=1)
 
     # 4:'Levend dag 21 maar nog in het ziekenhuis',
-    outcome_4 = data[get_outcome_columns([2,3])].sum(axis=1) >= 1
+    outcome_4 = data.loc[:, get_outcome_columns([2,3])].any(axis=1)
 
     # 8:'Dood'
-    outcome_8 = data[['Outcome_cat_7','Outcome_cat_8']].sum(axis=1) >= 1
+    outcome_8 = data.loc[:, ['Outcome_cat_7','Outcome_cat_8']].any(axis=1)
 
     # 11:'Alle patiënten zonder dag 21 outcome'
-    outcome_11 = np.logical_or(
-        data[get_outcome_columns([4,9,10])].sum(axis=1) >= 1,
-        data[get_outcome_columns([1,2,3,4,5,6,7,8,9,10])].sum(axis=1) == 0)
+    has_unknown_outcome = data[get_outcome_columns([4,9,10])].any(axis=1)
+    has_no_outcome = ~data[get_outcome_columns([1,2,3,4,5,6,7,8,9,10])].any(axis=1)
+    outcome_11 = has_unknown_outcome | has_no_outcome
 
-    # opgenomen geweest op IC
+
     outcome_icu_any = data['days_at_icu'] > 0
+    outcome_icu_any = outcome_icu_any.groupby(by=data['Record Id']).transform(lambda x: 1 if x.any() else 0)
     outcome_icu_now = data['dept_cat_3'] == 1.0
-
-    outcome_icu_ever = np.logical_or(outcome_icu_any,
-                                     outcome_icu_now)
-
-    outcome_icu_never = np.logical_not(
-        np.logical_or(outcome_icu_any,
-                      outcome_icu_now
-                      )
-        )
-
+    outcome_icu_now = outcome_icu_now.groupby(by=data['Record Id']).transform(lambda x: 1 if x.iloc[-1]==True else 0) # Technically doesn't matter if later aggregation is .last() anyway, but this is more secure
+    outcome_icu_ever = outcome_icu_any | outcome_icu_now
+    outcome_icu_never = ~outcome_icu_ever
 
     # beademd geweest op IC
     # outcome_ventilation_any = np.logical_or(
@@ -186,51 +194,43 @@ def calculate_outcomes_12_d21(data, data_struct):
     #         data['INR_1_1'].astype('float') > 1.5),
     #     data['Acute_renal_injury_Acute_renal_failure_1_1'] == 1.0)
 
-
-    df_outcomes = pd.DataFrame([[False]*12]*len(data))
+    df_outcomes = pd.DataFrame([[False]*12]*len(data), index=data.index)
 
     # 0:'Totaal'
-    df_outcomes[0] = [True]*len(data)
-
+    df_outcomes.loc[:, 0] = True
 
     # 1:'Levend ontslagen en niet heropgenomen - totaal',
-    df_outcomes[1] = outcome_1
+    df_outcomes.loc[:, 1] = outcome_1
 
     # 2:'Levend ontslagen en niet heropgenomen - waarvan niet opgenomen geweest op IC',
-    df_outcomes[2] = np.logical_and(outcome_1,
-                                    outcome_icu_never)
+    df_outcomes.loc[:, 2] = outcome_1 & outcome_icu_never
 
     # 3:'Levend ontslagen en niet heropgenomen - waarvan opgenomen geweest op IC',
-    df_outcomes[3] = np.logical_and(outcome_1,
-                                    outcome_icu_ever)
+    df_outcomes.loc[:, 3] = outcome_1 & outcome_icu_ever
 
     # 4:'Levend dag 21 maar nog in het ziekenhuis - totaal',
-    df_outcomes[4] = outcome_4
+    df_outcomes.loc[:, 4] = outcome_4
 
     # 5:'Levend dag 21 maar nog in het ziekenhuis - niet op IC geweest',
-    df_outcomes[5] = np.logical_and(outcome_4,
-                                    outcome_icu_never)
+    df_outcomes.loc[:, 5] = outcome_4 & outcome_icu_never
 
     # 6:'Levend dag 21 maar nog in het ziekenhuis - op IC geweest
-    df_outcomes[6] = np.logical_and(outcome_4,
-                                    outcome_icu_ever)
+    df_outcomes.loc[:, 6] = outcome_4 & outcome_icu_ever
 
     # 7:'Levend dag 21 maar nog in het ziekenhuis - nog op IC',
-    df_outcomes[7] = np.logical_and(outcome_4,
-                                    outcome_icu_now)
+    df_outcomes.loc[:, 7] = outcome_4 & outcome_icu_now
 
     # 8:'Dood - totaal',
-    df_outcomes[8] = outcome_8
+    df_outcomes.loc[:,8] = outcome_8
 
     # 9:'Dood op dag 21 - niet op IC geweest',
-    df_outcomes[9] = np.logical_and(outcome_8, outcome_icu_never)
+    df_outcomes.loc[:, 9] = outcome_8 & outcome_icu_never
 
     # 10:'Dood op dag 21 - op IC geweest',
-    df_outcomes[10] = np.logical_and(outcome_8,
-                                     outcome_icu_ever)
+    df_outcomes.loc[:, 10] = outcome_8 & outcome_icu_ever
 
     # 11:'Onbekend (alle patiënten zonder outcome)'}
-    df_outcomes[11] = outcome_11
+    df_outcomes.loc[:, 11] = outcome_11
 
 
     # OUTCOME 1 ==> Outcome good or bad
@@ -261,11 +261,12 @@ def calculate_outcomes_12_d21(data, data_struct):
                                 4:'Levend dag 21 maar nog in het ziekenhuis - totaal',
                                 5:'Levend dag 21 maar nog in het ziekenhuis - niet op IC geweest',
                                 6:'Levend dag 21 maar nog in het ziekenhuis - op IC geweest',
-                                7:'Levend dag 21 maar nog in het ziekenhuis - nog op IC',
+                                7:'Levend dag 21 maar nog in het ziekenhuis - waarvan nu nog op IC',
                                 8:'Dood - totaal',
                                 9:'Dood op dag 21 - niet op IC geweest',
                                 10:'Dood op dag 21 - op IC geweest',
                                 11:'Onbekend (alle patiënten zonder outcome)'}, inplace=True)
+    
     return df_outcomes, used_columns
 
 
@@ -369,13 +370,14 @@ def transform_categorical_features(data, data_struct):
         dummies = pd.DataFrame(0, index=data.index, columns=dummy_column_names)
         # Insert the data
         for cat in unique_categories:
+            # TODO fix that 1 is in cat 10 (OUTCOME!)
             data[col] = data[col].fillna('') # Can't handle nans, will be deleted anyway
             dummies.loc[data[col].str.contains(cat), get_name(col, cat)] = 1
 
         dummies_list += [dummies]
 
     data = pd.concat([data] + dummies_list, axis=1)
-    data = data.drop(category_columns, axis=1)
+    # data = data.drop(category_columns, axis=1)
     return data, data_struct
 
 def transform_numeric_features(data, data_struct):
@@ -407,6 +409,7 @@ def transform_time_features(data, data_struct):
     '''
     TODO: Check difference hosp_admission and Outcome_dt
     TODO: Use assessment_dt (datetime of daily report assessment)
+    TODO: Select time variables dynamically and update them in data_struct
     '''
     date_cols = ['Enrolment_date',	        # First patient presentation at (any) hospital AND report date (?)
                  'age',	                    # Date of birth 
@@ -473,7 +476,7 @@ def transform_time_features(data, data_struct):
     data['days_at_mc'] = count_occurrences(data['dept_cat_2'], data['Record Id'], reset_count=False, start_count_at=1)
     data['days_at_icu'] = count_occurrences(data['dept_cat_3'], data['Record Id'], reset_count=False, start_count_at=1)
 
-    cols_to_drop = [col for col in data.columns if col in date_cols]
+    cols_to_drop = [col for col in data.columns if col in date_cols] # TODO: Select dynamically
     data = data.drop(cols_to_drop, axis=1)
 
     # Add the new variables to the struct dataframe, so that they can be selected later on
