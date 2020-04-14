@@ -8,7 +8,7 @@ Created on Fri Apr 10 14:01:40 2020
 
 import configparser
 import pickle
-import os 
+import os
 import site
 import pandas as pd
 import numpy as np
@@ -31,32 +31,99 @@ data, data_struct = preprocess(data, data_struct)
 
 outcomes, used_columns = calculate_outcomes_12_d21(data, data_struct)
 data = pd.concat([data, outcomes], axis=1)
+
+# FIXME: THIS MIGHT NOT GIVE THE LATEST RECORD FOR EACH PATIENT?
+#data = data.sort_values(by=['Record Id','days_since_icu_admission'],ascending=False,inplace=False)
 data = data.groupby(by='Record Id', axis=0).last()
 
 outcomes = data[outcomes.columns]
 
 # %%
+def get_variable_names_to_analyze_and_variable_type(
+        excel_file,
+        variable_type=None):
+    # loads castor export file created with ALL_castor2excel_variables.py
+    # appended with 5 extra columns with the names:
+    #    1.sowieso
+    #    2.vergelijking baseline
+    #    3.vergelijking presentatie
+    #    4.vergelijking opname
+    #    5.type variabele
+    excel_data = pd.read_excel(excel_file,sheet_name='AdmissionVariables',
+                               header=0)
+    mask = excel_data['sowieso'] == 1
+    if variable_type is not None:
+        mask = np.logical_or(mask,excel_data[variable_type]==1)
+
+    return excel_data[['Form Type','Form Collection Name','Form Name',
+                       'Field Variable Name','Field Label','type variabele']][mask]
+
 
 def get_values(data,c):
     values = {}
     for outcome in outcomes:
         values[outcome] = data[c][data[outcome]]
     return values
-        
-def get_values(data,c):
-    values = {}
-    for outcome in outcomes:
-        values[outcome] = data[c][data[outcome]]
-    return values
 
-def summarize_values(values,summary_type=None):
+def summarize_values(values,summary_type=None,threshold=5e-2):
     s = {}
     total_len = np.nansum([len(values[x]) for x in values])
     for key in values:
         s[key] = ''
         v = values[key]
-        if summary_type is None or summary_type == 'n_percn_meansd_medianiqr':
-            if len(v) > 0:
+        if summary_type == 1.0: # numeric
+            data1 = values['Dood - totaal'][~values['Dood - totaal'].isna()]
+            data2 = values['Levend ontslagen en niet heropgenomen - totaal'][~values['Levend ontslagen en niet heropgenomen - totaal'].isna()]
+            normalresult1 = ss.normaltest(data1)
+            normalresult2 = ss.normaltest(data2)
+            if normalresult1.pvalue < threshold or normalresult2.pvalue < threshold:
+                # not normal: use median
+                if len(v) - np.nansum(v.isna()) > 0:
+                    n = len(v) - np.nansum(v.isna())
+                    median = np.nanmedian(v)
+                    iqr1 = np.nanpercentile(v,25)
+                    iqr3 = np.nanpercentile(v,75)
+                    s[key] = [format(str(round(median,1)) + ' (' +
+                                     str(round(iqr1,1)) + '-' +
+                                     str(round(iqr3,1)) + ')\n '+
+                                     '(n=' + str(n) + ')')]
+            else:
+                # normal: use mean
+                if len(v) - np.nansum(v.isna()) > 0:
+                    n = len(v) - np.nansum(v.isna())
+                    p = (len(v) - np.nansum(v.isna())) / total_len * 100
+                    mean = np.nanmean(v)
+                    std = np.nanstd(v)
+                    s[key] = [format(str(round(mean,1))   + ' ± ' + str(round(std,1)) + '\n' +
+                                 '(n=' + str(n) + ')')]
+        elif summary_type == 2.0: # binary
+                n = len(v) - np.nansum(v.isna()) # total n available for this variable
+                p = sum(v==1) / n * 100 # percentage True
+                if n == 0:
+                    p = 0
+                s[key] = [format(str(round(p,1)) + '%\n' +
+                                 'n = ' + str(n))]
+        elif summary_type == 3.0: # binary
+                    n = len(v) - np.nansum(v.isna())
+                    median = np.nanmedian(v)
+                    iqr1 = np.nanpercentile(v,25)
+                    iqr3 = np.nanpercentile(v,75)
+                    s[key] = [format(str(round(median,1)) + ' (' +
+                                     str(round(iqr1,1)) + '-' +
+                                     str(round(iqr3,1)) + ')\n '+
+                                     '(n=' + str(n) + ')')]
+        elif summary_type == 4.0:
+            n = len(v) - np.nansum(v.isna())
+            median = np.nanmedian(v)
+            iqr1 = np.nanpercentile(v,25)
+            iqr3 = np.nanpercentile(v,75)
+            s[key] = [format(str(round(median,1)) + ' (' +
+                             str(round(iqr1,1)) + '-'+
+                             str(round(iqr3,1)) + ')\n '+
+                             '(n=' + str(n) + ')')]
+
+        elif summary_type is None or summary_type == 'n_percn_meansd_medianiqr':
+            if len(v) - np.nansum(v.isna()) > 0:
                 n = len(v) - np.nansum(v.isna())
                 p = (len(v) - np.nansum(v.isna())) / total_len * 100
                 mean = np.nanmean(v)
@@ -68,25 +135,59 @@ def summarize_values(values,summary_type=None):
                                  str(round(p,1)) + '%\n' +
                                  str(round(mean,1))   + ' ± ' + str(round(std,1)) + '\n' +
                                  str(round(median,1)) + ' (' + str(round(iqr1,1)) + '-' + str(round(iqr3,1)) + ')')]
+            elif len(v) - np.nansum(v.isna()) == 0:
+                n = len(v) - np.nansum(v.isna())
+                p = (len(v) - np.nansum(v.isna())) / total_len * 100
+                s[key] = [format('n = ' + str(n) + '\n' +
+                          str(round(p,1)) + '%')]
             else:
                 s[key] = ['n/a']
     return s
 
-def do_statistics(values, threshold=5e-2):
+def calculate_chisquare_from_2_arrays(data1,data2):
+    if type(data1) is not pd.Series:
+        raise NameError('pandas Series expected')
+    data1 = data1.to_list()
+    data2 = data2.to_list()
+    newdata = pd.DataFrame()
+    newdata['Alive'] = [False]*len(data1) + [True]*len(data1)
+    data12 = data1.append(data2).reset_index()
+    newdata['Variable_answer'] = data12[0]
+
+    f_exp = [float(sum([v==f for f in data1])+0) for v in np.unique(np.append(data1.to_list(), data2.to_list()))]
+
+    # REQUIREMENT: at least 80% of the expected frequencies exceed 5
+    req1 = sum([f > 5 for f in f_exp]) >= np.ceil(len(f_exp)*0.8)
+    # REQUIREMENT: all the expected frequencies exceed 1.
+    req2 = sum([f > 0 for f in f_exp]) == len(f_exp)
+
+    if np.logical_and(req1,req2):
+        f_obs = [float(sum([v==f for f in data2])+0) for v in np.unique(np.append(data1.to_list(), data2.to_list()))]
+        f_exp_norm_to_2 = [f/sum(f_exp)*sum(f_obs) for f in f_exp]
+
+        t = ss.mstats.chisquare(f_obs, f_exp = f_exp_norm_to_2)
+    else:
+        t = None # chi square not possible
+
+    return t
+
+def do_statistics(values, threshold=5e-2,variable_type=None):
+    # variable_type can be 1,2,3,4 (numeric, binary, nominal/ordinal, nominal_multiple_options)
+
     testtype = None
-    pvalue = None
-    data1 = np.isfinite(values['Dood - totaal'])
-    data2 = np.isfinite(values['Levend ontslagen en niet heropgenomen - totaal'])
+    pvalue = np.nan
+    data1 = values['Dood - totaal'][~values['Dood - totaal'].isna()]
+    data2 = values['Levend ontslagen en niet heropgenomen - totaal'][~values['Levend ontslagen en niet heropgenomen - totaal'].isna()]
+
+# only test if n >= 10 in both groups
+    minimal_n_for_testing = 20
+    if len(data1)-sum(data1.isna()) < minimal_n_for_testing and len(data2)-sum(data2.isna()) < minimal_n_for_testing:
+        testtype = 'n < 20, no test performed.'
+        return testtype, pvalue
+
     normalresult1 = ss.normaltest(data1)
     normalresult2 = ss.normaltest(data2)
-    variance1 = np.nanvar(data1)
-    variance2 = np.nanvar(data2)
-    
-    # only test if n >= 10 in both groups
-    minimal_n_for_testing = 10
-    if len(data1)-sum(data1.isna()) < minimal_n_for_testing and len(data2)-sum(data2.isna()) < minimal_n_for_testing:
-        testtype = 'n < 10, no test performed.'
-    
+
     if type(data1[0]) == np.float64 or type(data1[0]) == float:
         if normalresult1.pvalue < threshold or normalresult2.pvalue < threshold:
             # does not come from normal distribution
@@ -95,6 +196,8 @@ def do_statistics(values, threshold=5e-2):
             minimal_n_for_testing = 20
             if len(data1)-sum(data1.isna()) < minimal_n_for_testing and len(data2)-sum(data2.isna()) < minimal_n_for_testing:
                 testtype = 'n < 20, Mann Whitney U test not possible.'
+            elif len(np.unique(np.append(data1.to_list(), data2.to_list()))) == 1:
+                testtype = 'all values are identical, Mann Whitney U test not possible.'
             else:
                 t = ss.mannwhitneyu(data1,data2)
                 pvalue = t.pvalue
@@ -107,17 +210,17 @@ def do_statistics(values, threshold=5e-2):
                 # variantie niet gelijk
                 t = ss.ttest_ind(data1,data2,equal_var=False)
                 testtype += ', ongelijke variantie (bartlett)'
-            else: 
+            else:
                 # variantie wel gelijk
                 t = ss.ttest_ind(data1,data2,equal_var=False)
                 testtype += ', gelijke variantie (bartlett)'
             pvalue = t.pvalue
-            
+
     elif type(data1[0]) == np.int64 or type(data1[0]) == int or type(data1[0]) == bool or type(data1[0]) == np.bool or type(data1[0]) == np.bool_:
         if len(np.unique(np.append(data1.to_list(), data2.to_list()))) > 3:
-            # niet binair - wel nominaal of ordinaal, misschien continu? 
+            # niet binair - wel nominaal of ordinaal, misschien continu?
             # toch een T-test?
-            
+
             # eerst de TTOETS
             if normalresult1.pvalue < threshold or normalresult2.pvalue < threshold:
                 # does not come from normal distribution
@@ -130,7 +233,7 @@ def do_statistics(values, threshold=5e-2):
                     t = ss.mannwhitneyu([sum([v==f for f in data1]) for v in np.unique(np.append(data1.to_list(), data2.to_list()))],
                                         [sum([v==f for f in data2]) for v in np.unique(np.append(data1.to_list(), data2.to_list()))])
                     pvalue = t.pvalue
-                    
+
             else:
                 # normal distribution hypothesis cannot be rejected
                 testtype = 'ongepaarde t-test' # null hypothesis of equal averages
@@ -139,471 +242,201 @@ def do_statistics(values, threshold=5e-2):
                     # variantie niet gelijk
                     t = ss.ttest_ind(data1,data2,equal_var=False)
                     testtype += ', ongelijke variantie (bartlett)'
-                else: 
+                else:
                     # variantie wel gelijk
                     t = ss.ttest_ind(data1,data2,equal_var=False)
                     testtype += ', gelijke variantie (bartlett)'
                 pvalue = t.pvalue
-            
+
         elif len(np.unique(np.append(data1.to_list(), data2.to_list()))) == 2:
             # fisher exact test
             testtype = 'fisher exact test'
             freq1 = [sum([v==f for f in data1])+0 for v in np.unique(np.append(data1.to_list(), data2.to_list()))]
             freq2 = [sum([v==f for f in data2])+0 for v in np.unique(np.append(data1.to_list(), data2.to_list()))]
             oddsratio, pvalue = ss.fisher_exact([freq1,freq2])
-            
+
         elif len(np.unique(np.append(data1.to_list(), data2.to_list()))) <= 3:
             # CHIKWADRAAT TEST
             # H0: The distribution of the outcome is independent of the groups
             # comparison freqs: H0 = true
-            testtype = 'chi2 test'
-            freq1 = [sum([v==f for f in data1])+0 for v in np.unique(np.append(data1.to_list(), data2.to_list()))]
-            freq2 = [sum([v==f for f in data2])+0 for v in np.unique(np.append(data1.to_list(), data2.to_list()))]
-            try:
-                t = ss.chisquare(freq1,f_exp=data2)
-                pvalue = t.pvalue
-            except:
-                testtype += ' failed (probably zeros in the frequency data)'
-    
+            answeroptions = np.unique(np.append(data1.to_list(), data2.to_list()))
+            if len(answeroptions) == 1:
+                testtype = 'none (only 1 answeroption used in the data (' + str(answeroptions[0]) + '))'
+            else:
+                testtype = 'chi2 test'
+                t = ss.calculate_chisquare_from_2_arrays(data1, data2)
+                if t is None:
+                    testtype += ', failed (not enough data for chi2 proportion comparison)'
+                    pvalue = np.nan
+                else:
+                    pvalue = t.pvalue
+
     else:
         print(data1)
         raise NameError('Data type not found: ' + str(type(data1[0])))
-            
+
     return testtype, pvalue #, pvalue_corrected
-    
-    
-data_to_print = None
-cols = []
-pvalues = []
-for c in data.columns:
-    # CLEAN DATA - should be moved to *admission.py or *util.py
-    if c == 'EMPTY_COLUMN_NAME' or c in outcomes.columns.to_list() \
-        or c in ['discharge_live_3wk','delivery_date','Cardiac_compl','FH_other',
-                 'discharge_otherfacility','med_name_specific']:
-        continue
-    elif type(data[c][0]) == str or (sum(np.logical_not(data[c].isna())) > 0 and type(data[c][np.logical_not(data[c].isna())][0]) == str):
-        # variables that are set to a string type
-        continue 
-    elif c == 'LDHvalue':
-        data[c] = np.float64(data[c])
-    elif c == 'Smoking':
-        # set to yes if smoking now or earlier
-        data[c] = np.logical_or(data[c] == 1, data[c] == 3)
-    elif c == 'Cardiac_arrest_1':
-        data[c] = data[c] == '1' # 1 yes, 2 no
-    else:
-        type(data[c][0])
 
-    # get values
-    values = get_values(data,c)
-    
-    # run test based on variable type
-    if type(data[c][0]) == np.float64 or type(data[c][0]) == float:
-        s = summarize_values(values)
-    elif type(data[c][0]) == np.int64:
-        s = summarize_values(values)
-    elif type(data[c][0]) == np.bool_:
-        s = summarize_values(values)
-    else:
-        s = summarize_values(values)
-    
-    testused, pvalue = do_statistics(values,threshold=5e-2)
-    pvalues = np.append(pvalues, pvalue)
-    
-    try:
-        s['statistiek'] = format(testused+' (p='+str(round(pvalue,3))+')')
-    except:
+def create_table_for_variables_outcomes(df_variable_columns):
+    data_to_print = None
+    cols = []
+    cols_q = []
+    pvalues = []
+
+    # to compare all items:
+    # for c1 in data.columns.to_list():
+    for c1 in df_variable_columns['Field Variable Name'].to_list():
+        vartype = df_variable_columns['type variabele'][df_variable_columns['Field Variable Name']==c1]
+
+        # CLEAN DATA - should be moved to *admission.py or *util.py
+        # some variable names changed in the opstprocessing
+        if c1 == 'age':
+            c = 'age_yrs'
+        elif c1 == 'gender':
+            data['gender_male'] = data['gender_cat_1']
+            c = 'gender_male'
+
+        else:
+            c = c1
+
+
         try:
-            s['statistiek'] = format(testused+' (p not calculated)')
-        except:
-            s['statistiek'] = 'None'
-    
-    if data_to_print is None:
-        data_to_print = pd.DataFrame.from_dict(s)
-    else:
-        data_to_print = data_to_print.append(pd.DataFrame.from_dict(s))
-    cols.append(c)
-    
-mask = np.isfinite(pvalues)
-_, pvalues_corrected[mask] = mt.fdrcorrection(pvalues[mask], alpha=0.05, method='indep', is_sorted=False)
-
-data_to_print['Variable'] = cols
-data_to_print['Pvalue_uncorrected'] = pvalues
-data_to_print['Pvalue_FDR_corrected'] = pvalues_corrected
-data_to_print.set_index(data_to_print['Variable'])
-data_to_print.to_excel('~/Desktop/tabellen_manuscript.xlsx')
-
-
-#### OLD STUFF DOWNSTAIRS
-# # %% table creation
-# def outcome_printer(data,variable,operation,percentage=False,
-#                     percentage_count=False,immunecompr=False,
-#                     agerange=False,chroniccount=None):
-#     result = []
-#     for outcome in outcomes:
-#         sel = data[outcome].to_list()
-#         print(variable)
-#         if percentage:
-#             if sum(sel) > 0:
-#                 result += [str(round(sum(data[variable][sel]>0) / len(data[variable][sel])*100,1)) + '%']
-#             else:
-#                 result += [str(round(0,1)) + '%']
-#         elif percentage_count:
-#             result += [str(round(sum(sel) / len(data[variable])*100,1)) + '%']
-#         elif agerange:
-#             inagerange = [eval('d' + operation[0]) and eval('d' + operation[1]) for d in data[variable][sel]]
-#             if sum(sel) == 0:
-#                 result += [str(sum(inagerange)) + ' (' + str(round(0,1)) + '%)']
-#             else:
-#                 result += [str(sum(inagerange)) + ' (' + str(round(sum(inagerange) / sum(sel)*100,1)) + '%)']
-#         elif chroniccount is not None:
-#             data_chronic = data[['cnd','mneoplasm','chd','immune_sup','aids_hiv','obesity','diabetes_complications','diabetes_without_complications','rheuma_disorder','autoimm_disorder_1','Dementia','organ_transplant_1','ccd','hypertension','cpd','asthma','ckd','live_disease','mld']][sel]
-#             if chroniccount == 3: 
-#                 data_chronic_sum = sum([int(c) >= chroniccount for c in data_chronic.sum(axis=1).to_list()])
-#             else:
-#                 data_chronic_sum = sum([int(c) == chroniccount for c in data_chronic.sum(axis=1).to_list()])
-#             if sum(sel) > 0:
-#                 result += [str(data_chronic_sum)+' (' + str(round(data_chronic_sum/sum(sel)*100,1)) +'%)']
-#             else:
-#                 result += [str(data_chronic_sum)+' (' + str(round(0,1)) +'%)']
-#         elif immunecompr:
-#             data_immumecompr = data[['immune_sup','aids_hiv','autoimm_disorder_1','organ_transplant_1']][sel]
-#             data_immumecompr_any = sum([int(c) > 0 for c in data_immumecompr.sum(axis=1).to_list()])
-#             if sum(sel) > 0:
-#                 result += [str(data_immumecompr_any)+' (' + str(round(data_immumecompr_any/sum(sel)*100,1)) +'%)']
-#             else:
-#                 result += [str(data_immumecompr_any)+' (' + str(round(0,1)) +'%)']
-#         else:
-#             if operation == 'true':
-#                 result += [str(round(eval('np.nansum(data[\''+variable+'\'][sel]==1)'),1)) + ' (' + str(eval('round(np.nansum(data[\''+variable+'\'][sel]==1)/sum(sel)*100,1)')) + '%)']
-#             elif operation == 'false':
-#                 result += [str(round(eval('np.nansum(data[\''+variable+'\'][sel]==0)'),1)) + ' (' + str(eval('round(np.nansum(data[\''+variable+'\'][sel]==0)/sum(sel)*100,1)')) + '%)']
-#             elif operation == 'meansd':
-#                 result += [str(round(eval('np.nanmean([float(p) for p in data[\''+variable+'\'][sel]])'),1)) +\
-#                             '±' + str(round(eval('np.nanstd([float(p) for p in data[\''+variable+'\'][sel]])'),1))]
-#             elif operation == 'meansdmedianiqr':
-#                 result += [str(round(eval('np.nanmean([float(p) for p in data[\''+variable+'\'][sel]])'),1)) +\
-#                             '±' + str(round(eval('np.nanstd([float(p) for p in data[\''+variable+'\'][sel]])'),1))+\
-#                             '\r' + str(round(eval('np.nanmedian([float(p) for p in data[\''+variable+'\'][sel]])'),1))+\
-#                             ' (' + str(round(np.nanpercentile([float(p) for p in data[variable][sel]], 25),1)) + \
-#                             '-'  + str(round(np.nanpercentile([float(p) for p in data[variable][sel]], 75),1)) + ')' +\
-#                             '\r n=' + str(sum(sel)-sum(data[variable][sel].isna()))]
-#             elif operation == 'medianiqr_corads':
-#                 corads_ = [0]*len(data['corads_admission_cat_5'][sel])
-#                 for ii in [1,2,3,4,5]:
-#                     corads_ = [c+d*ii for [c,d] in zip(corads_,data['corads_admission_cat_'+str(ii)][sel].to_list())]
-#                 corads = [c for c in corads_ if c > 0]
-#                 result += [str(round(np.nanmedian([float(p) for p in corads]),1)) + \
-#                             ' (' + str(round(np.nanpercentile([float(p) for p in corads], 25),1)) + \
-#                                 '-'    + str(round(np.nanpercentile([float(p) for p in corads], 75),1)) + ')']
-#             elif operation == 'list':
-#                 if type(eval(variable)) == int:
-#                     if sum(sel) > 0:
-#                         result += [str(eval(variable)) + ' (' + str(round(eval(variable)/sum(sel)*100,1)) + '%)']
-#                     else:
-#                         result += [str(eval(variable)) + ' (' + str(round(0,1)) + '%)']
-#                 else:
-#                     result += [eval(variable)]
-                
-#             else:
-#                 result += [round(eval(operation+'(data[\''+variable+'\'][sel])'),1)]
-#     df = pd.DataFrame([result])
-#     return df
-
-# #table = pd.DataFrame(columns=['Outcome measures:','Totaal','Overleden+Pall+ICUorganfail','Levend','(nog) onbekend'])
-# table = pd.concat([pd.DataFrame([['Aantal:']]), outcome_printer(data,'age_yrs','len')],axis=1)
-# table = pd.concat([table, pd.concat([pd.DataFrame([['Aantal (%):']]), outcome_printer(data,'age_yrs','sum',percentage_count=True)],axis=1)])
-
-# table = pd.concat([table, pd.concat([pd.DataFrame([['Man (%):']]), outcome_printer(data,'gender_cat_1','sum',percentage=True)],axis=1)])
-# table = pd.concat([table, pd.concat([pd.DataFrame([['Vrouw (%):']]), outcome_printer(data,'gender_cat_2','sum',percentage=True)],axis=1)])
-
-# table = pd.concat([table, pd.concat([pd.DataFrame([['Age < 40 (%):']]), outcome_printer(data,'age_yrs',['<40','<40'],agerange=True)],axis=1)])
-# table = pd.concat([table, pd.concat([pd.DataFrame([['Age >= 40 < 50 (%):']]), outcome_printer(data,'age_yrs',['<50','>=40'],agerange=True)],axis=1)])
-# table = pd.concat([table, pd.concat([pd.DataFrame([['Age >= 50 < 60(%):']]), outcome_printer(data,'age_yrs',['<60','>=50'],agerange=True)],axis=1)])
-# table = pd.concat([table, pd.concat([pd.DataFrame([['Age >= 60 < 70(%):']]), outcome_printer(data,'age_yrs',['<70','>=60'],agerange=True)],axis=1)])
-# table = pd.concat([table, pd.concat([pd.DataFrame([['Age >= 70 < 80(%):']]), outcome_printer(data,'age_yrs',['<80','>=70'],agerange=True)],axis=1)])
-# table = pd.concat([table, pd.concat([pd.DataFrame([['Age >= 80 (%):']]), outcome_printer(data,'age_yrs',['>=80','>=80'],agerange=True)],axis=1)])
-# table = pd.concat([table, pd.concat([pd.DataFrame([['Age mean:']]), outcome_printer(data,'age_yrs','meansd')],axis=1)])
-
-# table = pd.concat([table, pd.concat([pd.DataFrame([['BMI > 30:']]), outcome_printer(data,'obesity','true')],axis=1)])
-# table = pd.concat([table, pd.concat([pd.DataFrame([['BMI < 30:']]), outcome_printer(data,'obesity','false')],axis=1)])
-
-# # 'Voorgeschiedenis ':'',
-# table = pd.concat([table, pd.concat([pd.DataFrame([['Geen chronische aandoening:']]), outcome_printer(data,[],'chronic',chroniccount=0)],axis=1)])
-# table = pd.concat([table, pd.concat([pd.DataFrame([['1 chronische aandoening:']]), outcome_printer(data,[],'chronic',chroniccount=1)],axis=1)])
-# table = pd.concat([table, pd.concat([pd.DataFrame([['2 chronische aandoeningen:']]), outcome_printer(data,[],'chronic',chroniccount=2)],axis=1)])
-# table = pd.concat([table, pd.concat([pd.DataFrame([['> 3 chronische aandoeningen:']]), outcome_printer(data,[],'chronic',chroniccount=3)],axis=1)])
+            if vartype.values[0] == 1.0:
+                data[c][data[c] == ''] = 'NaN'
+                data[c] = np.float64(data[c])
+            elif c == 'Smoking':
+                if type(data[c][0]) == str:
+                    data[c] = data[c].replace({'1':True,'2':False,'3':True,
+                                               '4':np.nan})
+            elif c == 'CT_thorax_performed':
+                data[c] = data[c].replace({'1':True,'2':True,'3':False,
+                                           '4':np.nan})
+            elif c == 'corads_admission':
+                if type(data[c][0]) == str:
+                    data[c] = data[c].replace({'0':np.nan,'':np.nan,'1':1,'2':2,
+                                               '3':3,'4':4,'5':5})
+            elif vartype.values[0] == 2.0:
+                # binary data
+                try:
+                    data[c] = data[c].replace({'1':1,'2':2,'3':np.nan,'':np.nan})
+                except:
+                    1
+                data[c] = np.float64(data[c])
+
+            elif vartype.values[0] == 3.0 or vartype.values[0] == 4.0:
+                try:
+                    data[c] = data[c].replace({'1':1,'2':2,'3':3,'4':4,'5':5,\
+                                           '6':6,'7':7,'8':8,'':np.nan})
+                except:
+                    1
+                data[c] = np.float64(data[c])
+
+        except Exception as exception:
+            print(c+' conversion failed:' + str(exception))
+
+        # get values
+        try:
+            values = get_values(data,c)
+        except Exception as exception:
+            values = None
+            print(c+' get_values failed:' + str(exception))
+
+        try:
+            # run test based on variable type
+            s = summarize_values(values,summary_type=vartype.values[0])
+        except Exception as exception:
+            s = {}
+            for d in outcomes:
+                s[d] = ['n/a']
+            print(c+' summarize_values failed:' + str(exception))
+
+        try:
+            testused, pvalue = do_statistics(values,threshold=5e-2)
+
+            try:
+                s['statistiek'] = format(testused+' (p='+str(round(pvalue,3))+')')
+            except:
+                try:
+                    s['statistiek'] = format(testused+' (p not calculated)')
+                except:
+                    s['statistiek'] = testused #'None'
+        except Exception as exception:
+            testused = 'failed'
+            pvalue = np.nan
+            print(c+' statistiek failed:' + str(exception))
+
+        pvalues = np.append(pvalues, pvalue)
+
+        if data_to_print is None:
+            data_to_print = pd.DataFrame.from_dict(s)
+        else:
+            data_to_print = data_to_print.append(pd.DataFrame.from_dict(s))
+        cols.append(c)
+        cols_q.append(df_variable_columns['Field Label'][df_variable_columns['Field Variable Name'] == c1].to_list()[0])
+
+    mask = np.isfinite(pvalues)
+    pvalues_corrected = pvalues * np.nan
+    t, pvalues_corrected[mask] = mt.fdrcorrection(pvalues[mask], alpha=0.05, method='indep', is_sorted=False)
+
+    data_to_print['Variable'] = cols
+    data_to_print['Castor questions'] = cols_q
+    data_to_print['Pvalue_uncorrected'] = pvalues
+    data_to_print['Pvalue_FDR_corrected'] = pvalues_corrected
+    data_to_print.sort_values(by='Pvalue_FDR_corrected',ascending=True,inplace=True)
+
+    if any(~(np.isfinite(pvalues_corrected))):
+        print('\n\n\nFAILED STATISTICS: ')
+        print(', '.join(data_to_print['Variable'][~(np.isfinite(pvalues_corrected))].to_list()))
+    return data_to_print
+
+# % THE ACTUAL CALCULATION
+excel_file = '/Users/wouterpotters/Desktop/tabellen_manuscript.xlsx'
+excel_file_source_variables ='~/Desktop/tabellen_manuscript_inclusions.xlsx'
+writer = pd.ExcelWriter(excel_file, engine='xlsxwriter')
+
+for variable_type in ['sowieso',
+                      'vergelijking baseline',
+                      'vergelijking presentatie',
+                      'vergelijking opname']:
+    df_variable_columns = get_variable_names_to_analyze_and_variable_type(
+        excel_file=excel_file_source_variables,
+        variable_type=variable_type)
+    table = create_table_for_variables_outcomes(df_variable_columns)
 
-# table = pd.concat([table, pd.concat([pd.DataFrame([['Diabetes zonder complicaties:']]), outcome_printer(data,'diabetes_without_complications','true')],axis=1)])
-# table = pd.concat([table, pd.concat([pd.DataFrame([['Diabetes met complicaties:']]), outcome_printer(data,'diabetes_complications','true')],axis=1)])
+    row_df = pd.DataFrame([[str(s)+' ('+str(round(s/outcomes.sum().values[0]*100,1))+'%)' for s in outcomes.sum().values]])
+    row_df.columns = table.columns[0:12]
 
-# # 'Immuun-gecompromitteerd ':'',Immunosuppressive medication
-# table = pd.concat([table, pd.concat([pd.DataFrame([['Immuungecompromitteerd:']]), outcome_printer(data,[],'',immunecompr=True)],axis=1)])
+    table = pd.concat([row_df, table],ignore_index=True)
+    table.set_index(table['Variable'],inplace=True)
 
-# table = pd.concat([table, pd.concat([pd.DataFrame([['Roken (of eerder gerookt):']]), outcome_printer(data,'sum(np.logical_or(data[\'Smoking\'][sel]==\'1\',data[\'Smoking\'][sel]==\'3\'))','list')],axis=1)])
+    #print('\t'.join([str(s)+' ('+str(round(s/outcomes.sum().values[0]*100,1))+'%)' for s in outcomes.sum().values]))
 
-# # 'Presentatie ':'',
-# table = pd.concat([table, pd.concat([pd.DataFrame([['Temperatuur:']]), outcome_printer(data,'Temperature','meansd')],axis=1)])
-# table = pd.concat([table, pd.concat([pd.DataFrame([['Saturation (SaO2):']]), outcome_printer(data,'SaO2_1','meansd')],axis=1)])
-# table = pd.concat([table, pd.concat([pd.DataFrame([['Pols:']]), outcome_printer(data,'HtR','meansd')],axis=1)])
+    # Write each dataframe to a different worksheet.
+    table.to_excel(writer, sheet_name=variable_type)
 
-# # 'Aanvullend onderzoek ':'',
-# table = pd.concat([table, pd.concat([pd.DataFrame([['CORADS (1,2,3,4,5):'   ]]), outcome_printer(data,'[sum(data[\'corads_admission_cat_1\'][sel]), sum(data[\'corads_admission_cat_2\'][sel]), sum(data[\'corads_admission_cat_3\'][sel]), sum(data[\'corads_admission_cat_4\'][sel]), sum(data[\'corads_admission_cat_5\'][sel])]','list')],axis=1)])
-# table = pd.concat([table, pd.concat([pd.DataFrame([['CORADS (median (IQR)):']]), outcome_printer(data,'','medianiqr_corads')],axis=1)])
-
-
-# table = pd.concat([table, pd.concat([pd.DataFrame([['CRP:']]), outcome_printer(data,'crp_1_1','meansd')],axis=1)])
-# table = pd.concat([table, pd.concat([pd.DataFrame([['Lymfocyten:']]), outcome_printer(data,'Lymphocyte_1_1','meansd')],axis=1)])
-# table = pd.concat([table, pd.concat([pd.DataFrame([['LDH:']]), outcome_printer(data,'LDH','meansd')],axis=1)])
-# table = pd.concat([table, pd.concat([pd.DataFrame([['PCR +:']]), outcome_printer(data,'pcr_pos','true')],axis=1)])
-
-# table = pd.concat([table, pd.concat([pd.DataFrame([['IC of MC opname:']]), outcome_printer(data,'ICU_Medium_Care_admission_1','true')],axis=1)])
-# table = pd.concat([table, pd.concat([pd.DataFrame([['Gemiddelde ligduur IC:']]), outcome_printer(data,'days_at_icu','meansdmedianiqr')],axis=1)])
-# table = pd.concat([table, pd.concat([pd.DataFrame([['Gemiddelde ligduur ward:']]), outcome_printer(data,'days_at_ward','meansdmedianiqr')],axis=1)])
-# table = pd.concat([table, pd.concat([pd.DataFrame([['Gemiddelde totale ligduur:']]), outcome_printer(data,'days_since_admission_first_hosp','meansdmedianiqr')],axis=1)])
-
-
-# table.rename(columns={0:'Levend ontslagen en niet heropgenomen',
-#                                 1:'Levend ontslagen en niet heropgenomen - waarvan opgenomen geweest op IC',
-#                                 2:'Levend ontslagen en niet heropgenomen - waarvan beademd',
-#                                 3:'Levend dag 21 maar nog in het ziekenhuis - waarvan niet opgenomen geweest op IC',
-#                                 4:'Levend dag 21 maar nog in het ziekenhuis - waarvan opgenomen geweest op IC',
-#                                 5:'Levend dag 21 maar nog in het ziekenhuis - Levend en nog op IC',
-#                                 6:'Levend dag 21 maar nog in het ziekenhuis - waarvan beademd geweest',
-#                                 7:'Levend dag 21 maar nog in het ziekenhuis - waarvan nog beademd',
-#                                 8:'Levend dag 21 maar nog in het ziekenhuis - waarvan ander orgaanfalen gehad (lever / nier)',
-#                                 9:'Dood',
-#                                 10:'Dood op dag 21 - geen IC opname',
-#                                 11:'Dood op dag 21 - dood op IC',
-#                                 12:'Dood op dag 21 - zonder dag 21 outcome',
-#                                 13:'Alle patiënten zonder dag 21 outcome'}, inplace=True)
-# print(table.to_string(index=False))
-
-# # Create a Pandas Excel writer using XlsxWriter as the engine.
-# writer = pd.ExcelWriter('/Users/wouterpotters/Desktop/test.xlsx', engine='xlsxwriter')
-
-# # Write each dataframe to a different worksheet.
-# table.to_excel(writer, sheet_name='table1')
-
-# # Close the Pandas Excel writer and output the Excel file.
-# writer.save()
-
-
-# # %% voorgeschiedenis tabel
-
-# table2 = pd.concat([pd.DataFrame([['Aantal:']]), outcome_printer(data,'final_outcome','len')],axis=1)
-
-
-# data_comorbs = data[['cnd','mneoplasm','chd','immune_sup','aids_hiv','obesity','diabetes_complications','diabetes_without_complications','rheuma_disorder','autoimm_disorder_1','Dementia','organ_transplant_1','ccd','hypertension','cpd','asthma','ckd','live_disease','mld','Cachexia','Smoking','alcohol']]
-# float_smoking = np.logical_or(data_comorbs['Smoking'] == '3', data_comorbs['Smoking'] == '1').astype(float)
-# data_comorbs = data_comorbs.assign(Smoking=float_smoking)
-# data_comorbs = data_comorbs.apply(pd.to_numeric)
-
-# result = []
-# for outcome in ['totaal','overledenPalliative_dischICU_with_organfailure','levend','unknown']:
-#     if outcome == 'totaal':
-#         sel = [True for d in data.iterrows()]
-#     elif outcome == 'overledenPalliative_dischICU_with_organfailure':
-#         sel = (data['final_outcome'] == 0).to_list()
-#     elif outcome == 'levend':
-#         sel = (data['final_outcome'] == 1).to_list()
-#     elif outcome == 'unknown':
-#         sel = data['final_outcome'].isna().to_list()
-
-#     sums = (data_comorbs[sel].sum(axis=0)).sort_values(ascending=False)
-#     result += [print(name+' (n='+str(n)+')') for name,n in sums[0:5].iteritems()]
-
-# #pd.concat([table, pd.concat([pd.DataFrame([['IC of MC opname:']]), 
-
-# table2.rename(columns={0:'Totaal',
-#                       1:'Overleden+Pall+ICUorganfail',
-#                       2:'Levend',
-#                       3:'(nog) onbekend'}, inplace=True)
-
-# print(table2.to_string(index=False))
-
-# # Create a Pandas Excel writer using XlsxWriter as the engine.
-# writer = pd.ExcelWriter('/Users/wouterpotters/Desktop/test.xlsx', engine='xlsxwriter')
-
-# # Write each dataframe to a different worksheet.
-# table.to_excel(writer, sheet_name='table1')
-# table2.to_excel(writer, sheet_name='table2')
-# #table3.to_excel(writer, sheet_name='table3')
-
-# # Close the Pandas Excel writer and output the Excel file.
-# writer.save()
-
-
-# %% DEFINIEER NIEUWE OUTCOMES nav slack discussie dd 11 april 2020
-
-
-# #### %%%% OLD VERSION BELOW
-# # # %% table creation
-# # def outcome_printer(data,variable,operation,percentage=False,
-# #                     percentage_count=False,immunecompr=False,
-# #                     agerange=False,chroniccount=None):
-# #     result = []
-# #     for outcome in ['totaal','overledenPalliative_dischICU_with_organfailure','levend','unknown']:
-# #         if outcome == 'totaal':
-# #             sel = [True for d in data.iterrows()]
-# #         elif outcome == 'overledenPalliative_dischICU_with_organfailure':
-# #             sel = (data['final_outcome'] == 0).to_list()
-# #         elif outcome == 'levend':
-# #             sel = (data['final_outcome'] == 1).to_list()
-# #         elif outcome == 'unknown':
-# #             sel = data['final_outcome'].isna().to_list()
-
-# #         if percentage:
-# #             result += [str(round(sum(data[variable][sel]) / len(data[variable][sel])*100,1)) + '%']
-# #         elif percentage_count:
-# #             result += [str(round(sum(sel) / len(data[variable])*100,1)) + '%']
-# #         elif agerange:
-# #             inagerange = [eval('d' + operation[0]) and eval('d' + operation[1]) for d in data[variable][sel]]
-# #             result += [str(sum(inagerange)) + ' (' + str(round(sum(inagerange) / sum(sel)*100,1)) + '%)']
-# #         elif chroniccount is not None:
-# #             data_chronic = data[['cnd','mneoplasm','chd','immune_sup','aids_hiv','obesity','diabetes_complications','diabetes_without_complications','rheuma_disorder','autoimm_disorder_1','Dementia','organ_transplant_1','ccd','hypertension','cpd','asthma','ckd','live_disease','mld']][sel]
-# #             if chroniccount == 3: 
-# #                 data_chronic_sum = sum([int(c) >= chroniccount for c in data_chronic.sum(axis=1).to_list()])
-# #             else:
-# #                 data_chronic_sum = sum([int(c) == chroniccount for c in data_chronic.sum(axis=1).to_list()])
-# #             result += [str(data_chronic_sum)+' (' + str(round(data_chronic_sum/sum(sel)*100,1)) +'%)']
-# #         elif immunecompr:
-# #             data_immumecompr = data[['immune_sup','aids_hiv','autoimm_disorder_1','organ_transplant_1']][sel]
-# #             data_immumecompr_any = sum([int(c) > 0 for c in data_immumecompr.sum(axis=1).to_list()])
-# #             result += [str(data_immumecompr_any)+' (' + str(round(data_immumecompr_any/sum(sel)*100,1)) +'%)']
-# #         else:
-# #             if operation == 'true':
-# #                 result += [str(round(eval('np.nansum(data[\''+variable+'\'][sel]==1)'),1)) + ' (' + str(eval('round(np.nansum(data[\''+variable+'\'][sel]==1)/sum(sel)*100,1)')) + '%)']
-# #             elif operation == 'false':
-# #                 result += [str(round(eval('np.nansum(data[\''+variable+'\'][sel]==0)'),1)) + ' (' + str(eval('round(np.nansum(data[\''+variable+'\'][sel]==0)/sum(sel)*100,1)')) + '%)']
-# #             elif operation == 'meansd':
-# #                 result += [str(round(eval('np.nanmean([float(p) for p in data[\''+variable+'\'][sel]])'),1)) +\
-# #                            '±' + str(round(eval('np.nanstd([float(p) for p in data[\''+variable+'\'][sel]])'),1))]
-# #             elif operation == 'meansdmedianiqr':
-# #                 result += [str(round(eval('np.nanmean([float(p) for p in data[\''+variable+'\'][sel]])'),1)) +\
-# #                            '±' + str(round(eval('np.nanstd([float(p) for p in data[\''+variable+'\'][sel]])'),1))+\
-# #                            '\r' + str(round(eval('np.nanmedian([float(p) for p in data[\''+variable+'\'][sel]])'),1))+\
-# #                            ' (' + str(round(np.nanpercentile([float(p) for p in data[variable][sel]], 25),1)) + \
-# #                            '-'  + str(round(np.nanpercentile([float(p) for p in data[variable][sel]], 75),1)) + ')' +\
-# #                            '\r n=' + str(sum(sel)-sum(data[variable][sel].isna()))]
-# #             elif operation == 'medianiqr_corads':
-# #                 corads_ = [0]*len(data['corads_admission_cat_5'][sel])
-# #                 for ii in [1,2,3,4,5]:
-# #                     corads_ = [c+d*ii for [c,d] in zip(corads_,data['corads_admission_cat_'+str(ii)][sel].to_list())]
-# #                 corads = [c for c in corads_ if c > 0]
-# #                 result += [str(round(np.nanmedian([float(p) for p in corads]),1)) + \
-# #                            ' (' + str(round(np.nanpercentile([float(p) for p in corads], 25),1)) + \
-# #                                '-'    + str(round(np.nanpercentile([float(p) for p in corads], 75),1)) + ')']
-# #             elif operation == 'list':
-# #                 if type(eval(variable)) == int:
-# #                     result += [str(eval(variable)) + ' (' + str(round(eval(variable)/sum(sel)*100,1)) + '%)']
-# #                 else:
-# #                     result += [eval(variable)]
-                
-# #             else:
-# #                 result += [round(eval(operation+'(data[\''+variable+'\'][sel])'),1)]
-# #     df = pd.DataFrame([result])
-# #     return df
-
-# # #table = pd.DataFrame(columns=['Outcome measures:','Totaal','Overleden+Pall+ICUorganfail','Levend','(nog) onbekend'])
-# # table = pd.concat([pd.DataFrame([['Aantal:']]), outcome_printer(data,'final_outcome','len')],axis=1)
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['Aantal (%):']]), outcome_printer(data,'final_outcome','sum',percentage_count=True)],axis=1)])
-
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['Man (%):']]), outcome_printer(data,'gender_cat_1','sum',percentage=True)],axis=1)])
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['Vrouw (%):']]), outcome_printer(data,'gender_cat_2','sum',percentage=True)],axis=1)])
-
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['Age < 40 (%):']]), outcome_printer(data,'age_yrs',['<40','<40'],agerange=True)],axis=1)])
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['Age >= 40 < 50 (%):']]), outcome_printer(data,'age_yrs',['<50','>=40'],agerange=True)],axis=1)])
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['Age >= 50 < 60(%):']]), outcome_printer(data,'age_yrs',['<60','>=50'],agerange=True)],axis=1)])
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['Age >= 60 < 70(%):']]), outcome_printer(data,'age_yrs',['<70','>=60'],agerange=True)],axis=1)])
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['Age >= 70 < 80(%):']]), outcome_printer(data,'age_yrs',['<80','>=70'],agerange=True)],axis=1)])
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['Age >= 80 (%):']]), outcome_printer(data,'age_yrs',['>=80','>=80'],agerange=True)],axis=1)])
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['Age mean:']]), outcome_printer(data,'age_yrs','meansd')],axis=1)])
-
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['BMI > 30:']]), outcome_printer(data,'obesity','true')],axis=1)])
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['BMI < 30:']]), outcome_printer(data,'obesity','false')],axis=1)])
-
-# # # 'Voorgeschiedenis ':'',
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['Geen chronische aandoening:']]), outcome_printer(data,[],'chronic',chroniccount=0)],axis=1)])
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['1 chronische aandoening:']]), outcome_printer(data,[],'chronic',chroniccount=1)],axis=1)])
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['2 chronische aandoeningen:']]), outcome_printer(data,[],'chronic',chroniccount=2)],axis=1)])
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['> 3 chronische aandoeningen:']]), outcome_printer(data,[],'chronic',chroniccount=3)],axis=1)])
-
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['Diabetes zonder complicaties:']]), outcome_printer(data,'diabetes_without_complications','true')],axis=1)])
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['Diabetes met complicaties:']]), outcome_printer(data,'diabetes_complications','true')],axis=1)])
-
-# # # 'Immuun-gecompromitteerd ':'',Immunosuppressive medication
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['Immuungecompromitteerd:']]), outcome_printer(data,[],'',immunecompr=True)],axis=1)])
-
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['Roken (of eerder gerookt):']]), outcome_printer(data,'sum(np.logical_or(data[\'Smoking\'][sel]==\'1\',data[\'Smoking\'][sel]==\'3\'))','list')],axis=1)])
-
-# # # 'Presentatie ':'',
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['Temperatuur:']]), outcome_printer(data,'Temperature','meansd')],axis=1)])
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['Saturation (SaO2):']]), outcome_printer(data,'SaO2_1','meansd')],axis=1)])
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['Pols:']]), outcome_printer(data,'HtR','meansd')],axis=1)])
-
-# # # 'Aanvullend onderzoek ':'',
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['CORADS (1,2,3,4,5):'   ]]), outcome_printer(data,'[sum(data[\'corads_admission_cat_1\'][sel]), sum(data[\'corads_admission_cat_2\'][sel]), sum(data[\'corads_admission_cat_3\'][sel]), sum(data[\'corads_admission_cat_4\'][sel]), sum(data[\'corads_admission_cat_5\'][sel])]','list')],axis=1)])
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['CORADS (median (IQR)):']]), outcome_printer(data,'','medianiqr_corads')],axis=1)])
-
-
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['CRP:']]), outcome_printer(data,'crp_1_1','meansd')],axis=1)])
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['Lymfocyten:']]), outcome_printer(data,'Lymphocyte_1_1','meansd')],axis=1)])
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['LDH:']]), outcome_printer(data,'LDH','meansd')],axis=1)])
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['PCR +:']]), outcome_printer(data,'pcr_pos','true')],axis=1)])
-
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['IC of MC opname:']]), outcome_printer(data,'ICU_Medium_Care_admission_1','true')],axis=1)])
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['Gemiddelde ligduur IC:']]), outcome_printer(data,'days_at_icu','meansdmedianiqr')],axis=1)])
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['Gemiddelde ligduur ward:']]), outcome_printer(data,'days_at_ward','meansdmedianiqr')],axis=1)])
-# # table = pd.concat([table, pd.concat([pd.DataFrame([['Gemiddelde totale ligduur:']]), outcome_printer(data,'days_since_admission_first_hosp','meansdmedianiqr')],axis=1)])
-
-
-# # table.rename(columns={0:'Totaal',
-# #                       1:'Overleden+Pall+ICUorganfail',
-# #                       2:'Levend',
-# #                       3:'(nog) onbekend'}, inplace=True)
-# # print(table.to_string(index=False))
-
-# # # %% voorgeschiedenis tabel
-
-# # table2 = pd.concat([pd.DataFrame([['Aantal:']]), outcome_printer(data,'final_outcome','len')],axis=1)
-
-
-# # data_comorbs = data[['cnd','mneoplasm','chd','immune_sup','aids_hiv','obesity','diabetes_complications','diabetes_without_complications','rheuma_disorder','autoimm_disorder_1','Dementia','organ_transplant_1','ccd','hypertension','cpd','asthma','ckd','live_disease','mld','Cachexia','Smoking','alcohol']]
-# # float_smoking = np.logical_or(data_comorbs['Smoking'] == '3', data_comorbs['Smoking'] == '1').astype(float)
-# # data_comorbs = data_comorbs.assign(Smoking=float_smoking)
-# # data_comorbs = data_comorbs.apply(pd.to_numeric)
-
-# # result = []
-# # for outcome in ['totaal','overledenPalliative_dischICU_with_organfailure','levend','unknown']:
-# #     if outcome == 'totaal':
-# #         sel = [True for d in data.iterrows()]
-# #     elif outcome == 'overledenPalliative_dischICU_with_organfailure':
-# #         sel = (data['final_outcome'] == 0).to_list()
-# #     elif outcome == 'levend':
-# #         sel = (data['final_outcome'] == 1).to_list()
-# #     elif outcome == 'unknown':
-# #         sel = data['final_outcome'].isna().to_list()
-
-# #     sums = (data_comorbs[sel].sum(axis=0)).sort_values(ascending=False)
-# #     result += [print(name+' (n='+str(n)+')') for name,n in sums[0:5].iteritems()]
-
-# # #pd.concat([table, pd.concat([pd.DataFrame([['IC of MC opname:']]), 
-
-# # table2.rename(columns={0:'Totaal',
-# #                       1:'Overleden+Pall+ICUorganfail',
-# #                       2:'Levend',
-# #                       3:'(nog) onbekend'}, inplace=True)
-
-# # print(table2.to_string(index=False))
-
-# # # Create a Pandas Excel writer using XlsxWriter as the engine.
-# # writer = pd.ExcelWriter('/Users/wouterpotters/Desktop/test.xlsx', engine='xlsxwriter')
-
-# # # Write each dataframe to a different worksheet.
-# # table.to_excel(writer, sheet_name='table1')
-# # table2.to_excel(writer, sheet_name='table2')
-# # #table3.to_excel(writer, sheet_name='table3')
-
-# # # Close the Pandas Excel writer and output the Excel file.
-# # writer.save()
+    # Get the xlsxwriter workbook and worksheet objects.
+    workbook  = writer.book
+    worksheet = writer.sheets[variable_type]
+
+    # Add some cell formats.
+    format_wrapped = workbook.add_format({'text_wrap': True})
+    format_wrapped.set_align('center')
+    format_wrapped.set_align('vcenter')
+
+    # Setting the format but not setting the column width.
+    worksheet.set_column('A:B', None, format)
+
+    numeric_format = workbook.add_format({'num_format': '#,##0.000'})
+
+    # Set the column width and format.
+    worksheet.set_column('Q:R', 6, numeric_format)
+
+    # Set the  column width.
+    worksheet.set_column('A:O', 16, None)
+    worksheet.set_column('P:P', 20, None)
+
+    worksheet.set_column('A:Z', None, format_wrapped)
+
+# Close the Pandas Excel writer and output the Excel file.
+writer.save()
+print('excel file saved')

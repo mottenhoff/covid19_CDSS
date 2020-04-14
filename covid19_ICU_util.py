@@ -8,17 +8,17 @@ from sklearn.metrics import roc_auc_score
 from covid19_import import import_study_report_structure
 from unit_lookup import get_unit_lookup_dict
 
-IS_MEASURED_COLUMNS = ['baby_ARI', 'Haemoglobin_1', 'WBC_3', 'Lymphocyte_2', 'Neutrophil_1', 'Platelets_1', 'APT_APTR_2', 
+IS_MEASURED_COLUMNS = ['baby_ARI', 'Haemoglobin_1', 'WBC_3', 'Lymphocyte_2', 'Neutrophil_1', 'Platelets_1', 'APT_APTR_2',
                        'INR_2', 'ALT_SGPT_2', 'Total_Bilirubin_3', 'AST_SGOT_2', 'Glucose_1', 'Blood_Urea_Nitrogen_1',
                        'Lactate_3', 'Creatinine_1', 'Sodium_2', 'Potassium_2', 'CRP_1', 'Albumin_admision_1', 'CKina',
                        'LDHadmi', 'bloed_gas', 'oxygentherapy_1', 'pao2_yes_no', 'Same_blood_gas_PaO2_PCO2_1', 'ph__1',
-                       'Chest_X_Ray_2', 'Add_Daily_CRF_1', 'Antiviral_agent_1', 'Corticosteroid_1', 
+                       'Chest_X_Ray_2', 'Add_Daily_CRF_1',
                         # Report
-                       'oxygentherapy', 'pao2_yes_no_1', 'sa02_yes_no', 'Same_blood_gas_PaO2_PCO2', 'ph_', 'HCO3', 'Base_excess', 
-                       'EMV_yes_no', 'resprat_yes_no_1', 'heartrate_yes_no_2', 'Systolic_bp', 'diastolic_bp', 
+                       'oxygentherapy', 'pao2_yes_no_1', 'sa02_yes_no', 'Same_blood_gas_PaO2_PCO2', 'ph_', 'HCO3', 'Base_excess',
+                       'EMV_yes_no', 'resprat_yes_no_1', 'heartrate_yes_no_2', 'Systolic_bp', 'diastolic_bp',
                        'mean_arterial_bp', 'temperature_yes_no_3', 'temperature_yes_no_4', 'patient_interventions_yes_no', 'blood_assessment_yes_no',
-                       'Haemoglobin', 'WBC', 'Lymphocyte', 'Neutrophil', 'Platelets', 'APT_APTR', 'INR', 'ALT_SGPT', 
-                       'Total_Bilirubin', 'AST_SGOT', 'Glucose', 'Blood_Urea_Nitrogen', 'Lactate', 'Creatinine', 
+                       'Haemoglobin', 'WBC', 'Lymphocyte', 'Neutrophil', 'Platelets', 'APT_APTR', 'INR', 'ALT_SGPT',
+                       'Total_Bilirubin', 'AST_SGOT', 'Glucose', 'Blood_Urea_Nitrogen', 'Lactate', 'Creatinine',
                        'Sodium', 'Potassium', 'CRP', 'Albumin', 'CKin', 'LDH_daily', 'Chest_X_Ray', 'CTperf', 'd_dimer_yes_no']
 
 format_dt = lambda col: pd.to_datetime(col, format='%d-%m-%Y', errors='coerce').astype('datetime64[ns]')
@@ -26,11 +26,11 @@ is_in_columns = lambda var_list, data: [v for v in var_list if v in data.columns
 
 def get_all_field_information(path_to_creds):
     study_struct, reports_struct, optiongroups_struct = import_study_report_structure(path_to_creds)
-    answeroptions = pd.pivot_table(optiongroups_struct, index='Option Group Id', values=['Option Name','Option Value'], 
+    answeroptions = pd.pivot_table(optiongroups_struct, index='Option Group Id', values=['Option Name','Option Value'],
                                         aggfunc=lambda x:list(x))
-    study_struct_withoptions = pd.merge(study_struct, answeroptions, how='left', 
+    study_struct_withoptions = pd.merge(study_struct, answeroptions, how='left',
                                             left_on='Field Option Group', right_on='Option Group Id')
-    reports_struct_withoptions = pd.merge(reports_struct, answeroptions, how='left', 
+    reports_struct_withoptions = pd.merge(reports_struct, answeroptions, how='left',
                                              left_on='Field Option Group', right_on='Option Group Id')
 
     data_struct = pd.concat([study_struct_withoptions, reports_struct_withoptions], axis=0)
@@ -47,7 +47,7 @@ def remove_invalid_data(data, cols):
     # later changed, but some of these entries are still
     # in the data and thus have to be removed.
 
-    resp_cols = [col for col in cols['Respiratory assessment'] if col in data.columns] 
+    resp_cols = [col for col in cols['Respiratory assessment'] if col in data.columns]
     blood_cols = [col for col in cols['Blood assessment'] if col in data.columns]
     data.loc[data['whole_admission_yes_no'] == 1, resp_cols] = None
     data.loc[data['whole_admission_yes_no_1'] == 1, blood_cols] = None
@@ -70,14 +70,14 @@ def count_occurrences(col, record_ids, reset_count=False, start_count_at=1):
         counts = np.bincount(ids) # Get Length per series
 
         # Count the days
-        new_col = pd.Series(None, index=col_slice.index)        
+        new_col = pd.Series(None, index=col_slice.index)
         if reset_count:
             unique_ids = ids.unique()
             for i in unique_ids[unique_ids != 0]:
                 new_col[ids==i] = np.arange(start_count_at, counts[i]+start_count_at)
         else:
             new_col[col_slice!=0] = np.arange(start_count_at, counts[1:].sum()+start_count_at)
-        
+
         new_cols += [new_col]
 
     new_col = pd.concat(new_cols, axis=0)
@@ -87,18 +87,18 @@ def count_occurrences(col, record_ids, reset_count=False, start_count_at=1):
 def calculate_outcomes(data, data_struct):
 
     # OUTCOME 1 ==> Outcome good or bad
-    data['has_severe_complications'] = 0    
+    data['has_severe_complications'] = 0
     data.loc[(data['Extracorporeal_support_1']==1) | (data['Liver_dysfunction_1_1']==1) |
                 (data['INR_1_1'].astype('float') > 1.5), 'has_severe_complications'] = 1
 
     get_outcome_columns = lambda x: ['{}_{}'.format(str_, i) for i in x for str_ in ['Outcome_cat', 'Outcome_6wk_cat']]
-    positive_columns = is_in_columns(get_outcome_columns([1, 2, 5, 6]), data) 
+    positive_columns = is_in_columns(get_outcome_columns([1, 2, 5, 6]), data)
     negative_columns = is_in_columns(get_outcome_columns([7, 8]), data)
     unknown_columns = is_in_columns(get_outcome_columns([4, 9, 10]), data)
     icu_columns = is_in_columns(get_outcome_columns([3]), data)
 
     final_outcome = pd.Series(None, index=data.index, name='final_outcome')
-    final_outcome.loc[(data.loc[:, positive_columns].any(axis=1)) | 
+    final_outcome.loc[(data.loc[:, positive_columns].any(axis=1)) |
                         ((data['has_severe_complications']==0) & (data.loc[:, icu_columns].any(axis=1)))] = 1
     final_outcome.loc[data.loc[:, negative_columns].any(axis=1) |
                         ((data['has_severe_complications']==0) & (data.loc[:, icu_columns].any(axis=1)))] = 0
@@ -109,9 +109,9 @@ def calculate_outcomes(data, data_struct):
     # Outcome 2 ==> ICU admission at n days
     n_days = 7
     icu_within_n_days = pd.Series(None, index=data.index, name='icu_within_{}_days'.format(n_days))
-    icu_within_n_days.loc[(data['days_since_admission_current_hosp'] >= n_days) & 
+    icu_within_n_days.loc[(data['days_since_admission_current_hosp'] >= n_days) &
                             ((data['days_at_icu']>=1) | (data['days_since_icu_admission']>=1))] = 0
-    icu_within_n_days.loc[(data['days_since_admission_current_hosp'] < n_days) & 
+    icu_within_n_days.loc[(data['days_since_admission_current_hosp'] < n_days) &
                             ((data['days_at_icu']<1) | (data['days_since_icu_admission']<1))] = 1
 
     used_columns += ['days_since_admission_current_hosp', 'days_at_icu', 'days_since_icu_admission']
@@ -126,43 +126,45 @@ def calculate_outcomes_12_d21(data, data_struct):
     # Discharged to home	1
     # Transfer to nursing home	5
     # Transfer to rehabilitation unit	6
-    
+
     # Hospitalization (ward / medium care)	2
     # Hospitalization (ICU)	3
-    
+
     # Palliative discharge	7
     # Death	8
-    
+
     # Transfer to other hospital	4
     # Unknown	9
     # Discharged to home and re-admitted	10
-    
+
     # 1:'Levend ontslagen en niet heropgenomen',
-    outcome_1 = data[get_outcome_columns([1, 5, 6])].sum(axis=1) >= 1
-    # outcome_1 = data.loc[:, get_outcome_columns([1, 5, 6])].any(axis=1)
+    outcome_1 = data.loc[:, get_outcome_columns([1, 5, 6])].any(axis=1)
 
     # 4:'Levend dag 21 maar nog in het ziekenhuis',
     outcome_4 = data[get_outcome_columns([2,3])].sum(axis=1) >= 1
-    
+
     # 8:'Dood'
     outcome_8 = data[['Outcome_cat_7','Outcome_cat_8']].sum(axis=1) >= 1
-    
+
     # 11:'Alle patiënten zonder dag 21 outcome'
     outcome_11 = np.logical_or(
         data[get_outcome_columns([4,9,10])].sum(axis=1) >= 1,
         data[get_outcome_columns([1,2,3,4,5,6,7,8,9,10])].sum(axis=1) == 0)
-    
+
     # opgenomen geweest op IC
     outcome_icu_any = data['days_at_icu'] > 0
-    outcome_icu_daily = data['dept_cat_3'] == 1.0
-    
+    outcome_icu_now = data['dept_cat_3'] == 1.0
+
+    outcome_icu_ever = np.logical_or(outcome_icu_any,
+                                     outcome_icu_now)
+
     outcome_icu_never = np.logical_not(
         np.logical_or(outcome_icu_any,
-                      outcome_icu_daily
+                      outcome_icu_now
                       )
         )
-                                    
-    
+
+
     # beademd geweest op IC
     # outcome_ventilation_any = np.logical_or(
     #     np.logical_or(
@@ -189,39 +191,36 @@ def calculate_outcomes_12_d21(data, data_struct):
 
 
     df_outcomes = pd.DataFrame([[False]*12]*len(data))
-    
+
     # 0:'Totaal'
     df_outcomes[0] = [True]*len(data)
 
 
     # 1:'Levend ontslagen en niet heropgenomen - totaal',
     df_outcomes[1] = outcome_1
-    
+
     # 2:'Levend ontslagen en niet heropgenomen - waarvan niet opgenomen geweest op IC',
-    df_outcomes[2] = np.logical_and(outcome_1, 
-                                    outcome_icu_never)
-    
-    # 3:'Levend ontslagen en niet heropgenomen - waarvan opgenomen geweest op IC',
-    df_outcomes[3] = np.logical_and(outcome_1, 
+    df_outcomes[2] = np.logical_and(outcome_1,
                                     outcome_icu_never)
 
+    # 3:'Levend ontslagen en niet heropgenomen - waarvan opgenomen geweest op IC',
+    df_outcomes[3] = np.logical_and(outcome_1,
+                                    outcome_icu_ever)
 
     # 4:'Levend dag 21 maar nog in het ziekenhuis - totaal',
     df_outcomes[4] = outcome_4
 
     # 5:'Levend dag 21 maar nog in het ziekenhuis - niet op IC geweest',
-    df_outcomes[5] = np.logical_and(outcome_4, 
+    df_outcomes[5] = np.logical_and(outcome_4,
                                     outcome_icu_never)
 
-    # 6:'Levend dag 21 maar nog in het ziekenhuis - op IC geweest',
-    df_outcomes[6] = np.logical_and(outcome_4, 
-                                    np.logical_or(outcome_icu_any, 
-                                                  outcome_icu_daily))
-
+    # 6:'Levend dag 21 maar nog in het ziekenhuis - op IC geweest
+    df_outcomes[6] = np.logical_and(outcome_4,
+                                    outcome_icu_ever)
 
     # 7:'Levend dag 21 maar nog in het ziekenhuis - nog op IC',
-    df_outcomes[7] = np.logical_and(outcome_4, 
-                                    outcome_icu_daily)
+    df_outcomes[7] = np.logical_and(outcome_4,
+                                    outcome_icu_now)
 
     # 8:'Dood - totaal',
     df_outcomes[8] = outcome_8
@@ -230,27 +229,26 @@ def calculate_outcomes_12_d21(data, data_struct):
     df_outcomes[9] = np.logical_and(outcome_8, outcome_icu_never)
 
     # 10:'Dood op dag 21 - op IC geweest',
-    df_outcomes[10] = np.logical_and(outcome_8, 
-                                     np.logical_or(outcome_icu_any, 
-                                                  outcome_icu_daily))
+    df_outcomes[10] = np.logical_and(outcome_8,
+                                     outcome_icu_ever)
 
     # 11:'Onbekend (alle patiënten zonder outcome)'}
     df_outcomes[11] = outcome_11
-    
+
 
     # OUTCOME 1 ==> Outcome good or bad
-    # data['has_severe_complications'] = 0    
+    # data['has_severe_complications'] = 0
     # data.loc[(data['Extracorporeal_support_1']==1) | (data['Liver_dysfunction_1_1']==1) |
     #             (data['INR_1_1'].astype('float') > 1.5), 'has_severe_complications'] = 1
 
     # get_outcome_columns = lambda x: ['{}_{}'.format(str_, i) for i in x for str_ in ['Outcome_cat', 'Outcome_6wk_cat']]
-    # positive_columns = is_in_columns(get_outcome_columns([1, 2, 5, 6]), data) 
+    # positive_columns = is_in_columns(get_outcome_columns([1, 2, 5, 6]), data)
     # negative_columns = is_in_columns(get_outcome_columns([7, 8]), data)
     # unknown_columns = is_in_columns(get_outcome_columns([4, 9, 10]), data)
     # icu_columns = is_in_columns(get_outcome_columns([3]), data)
 
     # final_outcome = pd.Series(None, index=data.index, name='final_outcome')
-    # final_outcome.loc[(data.loc[:, positive_columns].any(axis=1)) | 
+    # final_outcome.loc[(data.loc[:, positive_columns].any(axis=1)) |
     #                     ((data['has_severe_complications']==0) & (data.loc[:, icu_columns].any(axis=1)))] = 1
     # final_outcome.loc[data.loc[:, negative_columns].any(axis=1) |
     #                     ((data['has_severe_complications']==0) & (data.loc[:, icu_columns].any(axis=1)))] = 0
@@ -276,9 +274,9 @@ def calculate_outcomes_12_d21(data, data_struct):
 
 def select_baseline_data(data, var_groups):
     ''' Select data that is measured before ICU'''
-    
-    baseline_groups = ['DEMOGRAPHICS', 'CO-MORBIDITIES', 'ONSET & ADMISSION', 
-                       'SIGNS AND SYMPTOMS AT HOSPITAL ADMISSION', 
+
+    baseline_groups = ['DEMOGRAPHICS', 'CO-MORBIDITIES', 'ONSET & ADMISSION',
+                       'SIGNS AND SYMPTOMS AT HOSPITAL ADMISSION',
                        'ADMISSION SIGNS AND SYMPTOMS', 'BLOOD ASSESSMENT ADMISSION',
                        'BLOOD GAS ADMISSION', 'PATHOGEN TESTING / RADIOLOGY',
                        'Respiratory assessment', 'Blood assessment']
@@ -287,7 +285,7 @@ def select_baseline_data(data, var_groups):
         cols_baseline += var_groups[group]
     cols_baseline = is_in_columns(cols_baseline, data)
 
-    return data[cols_baseline] 
+    return data[cols_baseline]
 
 def select_categories(categories, var_groups):
     columns = []
@@ -333,7 +331,7 @@ def transform_binary_features(data, data_struct):
     radio_fields = data_struct.loc[data_struct['Field Type'] == 'radio', 'Field Variable Name'].to_list()
 
     # Find all answers with Yes No and re-value them
-    if_yes_no = lambda x: 1 if type(x)==list and ("Yes" in x and "No" in x) else 0 
+    if_yes_no = lambda x: 1 if type(x)==list and ("Yes" in x and "No" in x) else 0
     is_yes_no = data_struct['Option Name'].apply(if_yes_no)==1
     vars_yes_no = is_in_columns(data_struct.loc[is_yes_no, 'Field Variable Name'].to_list(), data)
     data.loc[:, vars_yes_no] = data.loc[:, vars_yes_no].fillna(3).astype(int).applymap(lambda x: dict_yes_no.get(x))
@@ -381,7 +379,7 @@ def transform_categorical_features(data, data_struct):
     category_columns = is_in_columns(cat_struct['Field Variable Name'], data)
 
     get_name = lambda c, v: '{:s}_cat_{:s}'.format(col, str(v))
-    
+
     dummies_list = []
     for col in category_columns:
         # Get all unique categories in the column
@@ -389,7 +387,7 @@ def transform_categorical_features(data, data_struct):
         unique_categories = [cat for cat in unique_categories if cat.lower() not in ['nan', 'none']]
         if not any(unique_categories):
             continue
-        
+
         # TODO: Make column names to actual name instead of numeric answer
         dummy_column_names = [get_name(col, v) for v in unique_categories if v.lower() not in ['nan', 'none']]
         # Create new dataframe with the dummies
@@ -400,20 +398,20 @@ def transform_categorical_features(data, data_struct):
             dummies.loc[data[col].str.contains(cat), get_name(col, cat)] = 1
 
         dummies_list += [dummies]
-    
+
     data = pd.concat([data] + dummies_list, axis=1)
-    data = data.drop(category_columns, axis=1)
+    # data = data.drop(category_columns, axis=1)
     return data, data_struct
 
 def transform_numeric_features(data, data_struct):
-    # Calculates all variables to the same unit, 
+    # Calculates all variables to the same unit,
     #   according to a handmade mapping in unit_lookup.py
     unit_dict, var_numeric = get_unit_lookup_dict()
 
     numeric_columns = is_in_columns(var_numeric.keys(), data)
     wbc_value_study = 'WBC_2_1' #= 'units_lymph', 'units_neutro'
     wbc_value_report = 'WBC_2' #= 'lymph_units_1', 'neutro_units_2'
-    
+
     for col in numeric_columns:
         unit_col = var_numeric[col]
         data[unit_col] = data[unit_col].fillna(-1).astype(int).apply(lambda x: unit_dict[unit_col].get(x))
@@ -523,7 +521,7 @@ def transform_string_features(data, data_struct):
 
     struct_string = data_struct.loc[data_struct['Field Type']=='string', :]
     string_cols = [col for col in data.columns if col in struct_string['Field Variable Name'].to_list()]
-    
+
     get_n_medicine = lambda x: len([v for v in x.split(',') if len(v) > 15])
     data['uses_n_medicine'] = data['med_specify'].fillna('').apply(get_n_medicine)
 
@@ -597,8 +595,25 @@ def explore_data(x, y):
 
 
 
+    importances = np.array([])
+
+    for col in x.columns:
+        x_tmp = x.drop(col, axis=1)
+        y_hat = cross_val_predict(clf, x_tmp, y, cv=n_cv, method=method)
+        score = roc_auc_score(y, y_hat[:, 1])
+        importances = np.append(importances, baseline_score-score)
+
+    if plot_graph:
+        idc = np.argsort(importances)
+        columns = x.columns[idc]
+        fig, ax = plt.subplots(1, 1)
+        ax.plot(importances[idc[-plot_n_features:]])
+        ax.axhline(0, color='k', linewidth=.5)
+        ax.set_xticks(np.arange(x.shape[1]))
+        ax.set_xticklabels(columns[-plot_n_features:], rotation=90, fontdict={'fontsize': 6})
+        ax.set_xlabel('Features')
+        ax.set_ylabel('Difference with baseline')
+
+    return importances
 
 
-    
-
-    
