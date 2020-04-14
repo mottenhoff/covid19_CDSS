@@ -47,10 +47,7 @@ def remove_invalid_data(data, cols):
     # later changed, but some of these entries are still
     # in the data and thus have to be removed.
 
-    resp_cols = [col for col in cols['Respiratory assessment'] if col in data.columns]
-    blood_cols = [col for col in cols['Blood assessment'] if col in data.columns]
-    data.loc[data['whole_admission_yes_no'] == 1, resp_cols] = None
-    data.loc[data['whole_admission_yes_no_1'] == 1, blood_cols] = None
+
 
     return data
 
@@ -272,28 +269,6 @@ def calculate_outcomes_12_d21(data, data_struct):
     return df_outcomes, used_columns
 
 
-def select_baseline_data(data, var_groups):
-    ''' Select data that is measured before ICU'''
-
-    baseline_groups = ['DEMOGRAPHICS', 'CO-MORBIDITIES', 'ONSET & ADMISSION',
-                       'SIGNS AND SYMPTOMS AT HOSPITAL ADMISSION',
-                       'ADMISSION SIGNS AND SYMPTOMS', 'BLOOD ASSESSMENT ADMISSION',
-                       'BLOOD GAS ADMISSION', 'PATHOGEN TESTING / RADIOLOGY',
-                       'Respiratory assessment', 'Blood assessment']
-    cols_baseline = []
-    for group in baseline_groups:
-        cols_baseline += var_groups[group]
-    cols_baseline = is_in_columns(cols_baseline, data)
-
-    return data[cols_baseline]
-
-def select_categories(categories, var_groups):
-    columns = []
-    for group in categories:
-        columns += var_groups[group]
-    return columns
-
-
 def fix_single_errors(data):
     # TODO: Consider moving this after merge study & report
 
@@ -400,7 +375,7 @@ def transform_categorical_features(data, data_struct):
         dummies_list += [dummies]
 
     data = pd.concat([data] + dummies_list, axis=1)
-    # data = data.drop(category_columns, axis=1)
+    data = data.drop(category_columns, axis=1)
     return data, data_struct
 
 def transform_numeric_features(data, data_struct):
@@ -471,7 +446,7 @@ def transform_time_features(data, data_struct):
     days_since_ICU_admission = (format_dt(data['assessment_dt']) - format_dt(data['Admission_dt_icu_1'])).dt.days
     days_since_ICU_discharge = (format_dt(data['assessment_dt']) - format_dt(data['Discharge_dt_icu_1'])).dt.days
 
-    days_since_ICU_admission.loc[(days_since_ICU_admission<0) & (days_since_ICU_discharge>=0)] = None
+    days_since_ICU_admission.loc[(days_since_ICU_admission<0) & (days_since_ICU_discharge>=0)] = None ## As_type(int) to prevent copy warning?
     days_since_ICU_discharge.loc[(days_since_ICU_discharge<0)] = None
     days_since_MC_admission = (format_dt(data['assessment_dt']) - format_dt(data['Admission_dt_mc_1'])).dt.days
     days_since_MC_discharge = (format_dt(data['assessment_dt']) - format_dt(data['Admission_dt_mc_1'])).dt.days
@@ -543,10 +518,36 @@ def transform_calculated_features(data, data_struct):
     data = data.drop(cols_to_drop, axis=1)
     return data, data_struct
 
-def select_data(data):
+def select_data(data, data_struct):
     cols_to_keep = [col for col in data.columns if col not in IS_MEASURED_COLUMNS]
     data = data.loc[:, cols_to_keep]
-    return data
+
+    # TODO: Add this
+    # resp_cols = [col for col in cols['Respiratory assessment'] if col in data.columns]
+    # blood_cols = [col for col in cols['Blood assessment'] if col in data.columns]
+    # data.loc[data['whole_admission_yes_no'] == 1, resp_cols] = None
+    # data.loc[data['whole_admission_yes_no_1'] == 1, blood_cols] = None
+
+    return data, data_struct
+
+def get_variables(data, data_struct, variables_to_include_dict):
+    # Get all variables
+    variables_to_include = []
+    for k, v in variables_to_include_dict.items():
+        variables_to_include += data_struct.loc[data_struct[k].isin(v), 'Field Variable Name'].to_list()
+    variables_to_include = list(np.unique(variables_to_include)) # get unique values and check if in data.columns
+
+    # Retrieve the corresponding categorical 1-hot encoded column names
+    category_vars = data_struct.loc[data_struct['Field Type']=='category', 'Field Variable Name'].to_list()
+    variables_to_include += [c for var in variables_to_include for c in data.columns if (var in category_vars) and (var in c)]
+    
+    variables_to_include += ['Record Id']
+    variables_to_include = is_in_columns(variables_to_include, data)
+    return data.loc[:, variables_to_include]
+
+def remove_columns_wo_information(data, data_struct):
+    pass
+
 
 def plot_model_results(aucs):
     fig, ax = plt.subplots(1, 1)
@@ -592,28 +593,5 @@ def explore_data(x, y):
     data = pd.concat([x, y], axis=1)
     corr = data.corr(method='spearman')
     plt.matshow(corr)
-
-
-
-    importances = np.array([])
-
-    for col in x.columns:
-        x_tmp = x.drop(col, axis=1)
-        y_hat = cross_val_predict(clf, x_tmp, y, cv=n_cv, method=method)
-        score = roc_auc_score(y, y_hat[:, 1])
-        importances = np.append(importances, baseline_score-score)
-
-    if plot_graph:
-        idc = np.argsort(importances)
-        columns = x.columns[idc]
-        fig, ax = plt.subplots(1, 1)
-        ax.plot(importances[idc[-plot_n_features:]])
-        ax.axhline(0, color='k', linewidth=.5)
-        ax.set_xticks(np.arange(x.shape[1]))
-        ax.set_xticklabels(columns[-plot_n_features:], rotation=90, fontdict={'fontsize': 6})
-        ax.set_xlabel('Features')
-        ax.set_ylabel('Difference with baseline')
-
-    return importances
 
 
