@@ -119,8 +119,8 @@ def calculate_outcomes(data, data_struct):
 def calculate_outcomes_12_d21(data, data_struct):
     get_outcome_columns = lambda x: ['{}_{}'.format(str_, i) for i in x for str_ in ['Outcome_cat']]
 
-    
-    
+
+
     # FIXME: Fix in fix_single_errors()
     outcols = [col for col in data.columns if 'Outcome' in col]
     data.loc[data['Outcome']=='', 'Outcome'] = None
@@ -266,7 +266,7 @@ def calculate_outcomes_12_d21(data, data_struct):
                                 9:'Dood op dag 21 - niet op IC geweest',
                                 10:'Dood op dag 21 - op IC geweest',
                                 11:'Onbekend (alle patiënten zonder outcome)'}, inplace=True)
-    
+
     return df_outcomes, used_columns
 
 
@@ -302,6 +302,7 @@ def transform_binary_features(data, data_struct):
     value_na = None
     dict_yes_no = {0:0, 1:1, 2:0, 3:value_na}
     dict_yp = {0:0, 1:1, 2:.5, 3:0, 4:value_na} # [1, 2, 3, 4 ] --> [1, .5, 0, -1]
+    dict_yu = {9999:value_na, 5555:value_na, -1:value_na} # only change unknown to nan
     dict_smoke = {0:0,1:1, 2:0, 3:.5, 4:value_na} # [Yes, no, stopped_smoking] --> [1, 0, .5]
 
     radio_fields = data_struct.loc[data_struct['Field Type'] == 'radio', 'Field Variable Name'].to_list()
@@ -317,6 +318,17 @@ def transform_binary_features(data, data_struct):
     is_yes_probable = data_struct['Option Name'].apply(if_yes_probable) == 1
     vars_yes_probable = is_in_columns(data_struct.loc[is_yes_probable, 'Field Variable Name'].to_list(), data)
     data.loc[:, vars_yes_probable] = data.loc[:, vars_yes_probable].fillna(4).astype(int).applymap(lambda x: dict_yp.get(x))
+
+    # Find all answers with Unknown (cardiac variables)
+    if_unknown = lambda x: 1 if type(x)==list and ("Unknown" in x or "unknown" in x) else 0
+    is_unknown = data_struct['Option Name'].apply(if_unknown) == 1
+    is_radio_dropdown = [(d in ['dropdown','radio']) for d in data_struct['Field Type'].to_list()]
+    # avoid deleting unknown from outcomes.
+    is_few_options = data_struct['Option Name'].apply(lambda x: len(x) if type(x)==list else 99) <= 3
+    is_unknown = is_radio_dropdown & is_unknown & is_few_options
+    vars_unknown = is_in_columns(data_struct.loc[is_unknown, 'Field Variable Name'].to_list(), data)
+    data.loc[:, vars_unknown] = data.loc[:, vars_unknown].fillna(-1).astype(int).applymap(lambda x: dict_yu.get(x))
+
 
     # Hand code some other variables
     other_radio_vars = ['Bacteria', 'Smoking', 'CT_thorax_performed', 'facility_transfer', 'culture']
@@ -342,14 +354,14 @@ def transform_binary_features(data, data_struct):
 
 
 def transform_categorical_features(data, data_struct):
-    ''' Create dummyvariables for category variables, 
-        removes empty variables and attaches column names 
+    ''' Create dummyvariables for category variables,
+        removes empty variables and attaches column names
     '''
 
     # # Get all information about category variables
     is_category = data_struct['Field Type'].isin(['category', 'checkbox', 'dropdown'])
     data_struct.loc[is_category, 'Field Type'] = 'category'
-    cat_struct = data_struct.loc[is_category, 
+    cat_struct = data_struct.loc[is_category,
                                 ['Field Variable Name', 'Option Name', 'Option Value']]
 
     category_columns = is_in_columns(cat_struct['Field Variable Name'], data)
@@ -358,6 +370,7 @@ def transform_categorical_features(data, data_struct):
 
     dummies_list = []
     for col in category_columns:
+        print(col)
         # Get all unique categories in the column
         unique_categories = pd.unique([cat for value in data[col].values for cat in str(value).split(';')])
         unique_categories = [cat for cat in unique_categories if cat.lower() not in ['nan', 'none']]
@@ -370,6 +383,7 @@ def transform_categorical_features(data, data_struct):
         dummies = pd.DataFrame(0, index=data.index, columns=dummy_column_names)
         # Insert the data
         for cat in unique_categories:
+            print(str(cat)+ '(' + str(unique_categories) +')')
             # TODO fix that 1 is in cat 10 (OUTCOME!)
             data[col] = data[col].fillna('') # Can't handle nans, will be deleted anyway
             dummies.loc[data[col].str.contains(cat), get_name(col, cat)] = 1
@@ -412,8 +426,8 @@ def transform_time_features(data, data_struct):
     TODO: Select time variables dynamically and update them in data_struct
     '''
     date_cols = ['Enrolment_date',	        # First patient presentation at (any) hospital AND report date (?)
-                 'age',	                    # Date of birth 
-                 'onset_dt',                # Disease onset 
+                 'age',	                    # Date of birth
+                 'onset_dt',                # Disease onset
                  'admission_dt',            # Admission date at current hospital
                  'time_admission',          # Admission time at current hospital
                  'admission_facility_dt',   # Admission date at the hospital of which the patient is tranferred from
@@ -431,12 +445,12 @@ def transform_time_features(data, data_struct):
 
     # Last known dt = max([outcome_dt, assessment_dt])
     # Days untreated = "earliest known hospital admission" - onset
-    # Days in hospital = last_known_date - "earliest known hospital admission" 
+    # Days in hospital = last_known_date - "earliest known hospital admission"
     # Days since onset = last_known_date - onset
     # Days latest_report since onset = assessment_dt - admission_dt
     # ReInotropes_duration = Inotropes_last - inotroped_first
     most_recent_date = format_dt(data['assessment_dt'])         #most_recent_date = max(format_dt(data['Outcome_dt']), format_dt(data['assessment_dt']))
-    
+
     age = (most_recent_date - format_dt(data['age'])).dt.days // 365
     days_since_onset = (most_recent_date - format_dt(data['onset_dt'])).dt.days
     days_in_current_hosp = (most_recent_date - format_dt(data['admission_dt'])).dt.days
@@ -459,19 +473,19 @@ def transform_time_features(data, data_struct):
     # TODO: Days until readmission
     # TODO: Days Inotropes
 
-    df_time_feats = pd.concat([age, days_since_onset, days_in_current_hosp, days_since_first_hosp, 
+    df_time_feats = pd.concat([age, days_since_onset, days_in_current_hosp, days_since_first_hosp,
                                days_untreated, days_until_outcome_3wk, days_until_outcome_6wk,
-                               days_since_ICU_admission, days_since_ICU_discharge, 
+                               days_since_ICU_admission, days_since_ICU_discharge,
                                days_since_MC_admission, days_since_MC_discharge], axis=1)
-    df_time_feats.columns = ['age_yrs', 'days_since_onset', 'days_since_admission_current_hosp', 
-                             'days_since_admission_first_hosp', 'days_untreated', 'days_until_outcome_3wk', 
+    df_time_feats.columns = ['age_yrs', 'days_since_onset', 'days_since_admission_current_hosp',
+                             'days_since_admission_first_hosp', 'days_untreated', 'days_until_outcome_3wk',
                              'days_until_outcome_6wk', 'days_since_icu_admission', 'days_since_icu_discharge',
                              'days_since_mc_admission', 'days_since_mc_discharge']
     data = pd.concat([data, df_time_feats], axis=1)
 
     data = data.sort_values(by=['Record Id', 'days_since_admission_current_hosp'], axis=0) \
                .reset_index(drop=True)
-    
+
     data['days_at_ward'] = count_occurrences(data['dept_cat_1'], data['Record Id'], reset_count=False, start_count_at=1)
     data['days_at_mc'] = count_occurrences(data['dept_cat_2'], data['Record Id'], reset_count=False, start_count_at=1)
     data['days_at_icu'] = count_occurrences(data['dept_cat_3'], data['Record Id'], reset_count=False, start_count_at=1)
@@ -481,7 +495,7 @@ def transform_time_features(data, data_struct):
 
     # Add the new variables to the struct dataframe, so that they can be selected later on
     new_vars = []
-    new_vars += [pd.Series(['Study', 'BASELINE', 'DEMOGRAPHICS', 'age_yrs', None, 'datetime', None, None])] 
+    new_vars += [pd.Series(['Study', 'BASELINE', 'DEMOGRAPHICS', 'age_yrs', None, 'datetime', None, None])]
     new_vars += [pd.Series(['Study', 'HOSPITAL ADMISSION', 'ONSET & ADMISSION', var, None, 'datetime', None, None]) \
                             for var in ['days_since_onset', 'days_since_admission_current_hosp', 'days_since_admission_first_hosp']]
     new_vars += [pd.Series(['Study', 'OUTCOME', 'OUTCOME', var, None, 'datetime', None, None]) \
@@ -506,7 +520,7 @@ def transform_string_features(data, data_struct):
     cols_to_drop = is_in_columns(string_cols + ['med_specify', 'other_drug_1'], data)
     data = data.drop(cols_to_drop, axis=1)
 
-    data_struct = data_struct.append(pd.Series(['Study', 'BASELINE', 'CO-MORBIDITIES', 
+    data_struct = data_struct.append(pd.Series(['Study', 'BASELINE', 'CO-MORBIDITIES',
                                                 'uses_n_medicine', None, 'numeric', None, None],
                                      index=data_struct.columns), ignore_index=True)
     return data, data_struct
@@ -543,7 +557,7 @@ def get_variables(data, data_struct, variables_to_include_dict):
     # Retrieve the corresponding categorical 1-hot encoded column names
     category_vars = data_struct.loc[data_struct['Field Type']=='category', 'Field Variable Name'].to_list()
     variables_to_include += [c for var in variables_to_include for c in data.columns if (var in category_vars) and (var in c)]
-    
+
     variables_to_include += ['Record Id']
     variables_to_include = is_in_columns(variables_to_include, data)
     return data.loc[:, variables_to_include]

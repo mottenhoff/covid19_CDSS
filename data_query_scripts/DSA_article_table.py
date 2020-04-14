@@ -391,7 +391,7 @@ data = data.groupby(by='Record Id', axis=0).last()
 outcomes = data[outcomes.columns]
 
 excel_file = os.path.join(config['CastorCredentials']['local_private_path'],'tabellen_manuscript.xlsx')
-excel_file_source_variables = os.path.join(config['CastorCredentials']['local_private_path'],'/tabellen_manuscript_inclusions.xlsx')
+excel_file_source_variables = os.path.join(config['CastorCredentials']['local_private_path'],'tabellen_manuscript_inclusions.xlsx')
 writer = pd.ExcelWriter(excel_file, engine='xlsxwriter')
 
 for variable_type in ['sowieso',

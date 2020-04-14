@@ -53,7 +53,7 @@ from logreg import train_logistic_regression
 is_in_columns = lambda var_list, data: [v for v in var_list if v in data.columns]
 
 def load_data_api(path_credentials):
-    
+
     # Try loading objects from disk file; delete saveddata.pkl to force reload data
     try:
         with open(os.path.join(path_credentials,'saveddata.pkl'),'rb') as f:  # Python 3: open(..., 'rb')
@@ -74,7 +74,7 @@ def load_data_api(path_credentials):
     # Remove test records
     df_study = df_study.loc[df_study['Record Id'].astype(int) > 11000, :]
 
-    var_columns = ['Form Type', 'Form Collection Name', 'Form Name', 'Field Variable Name', 
+    var_columns = ['Form Type', 'Form Collection Name', 'Form Name', 'Field Variable Name',
                    'Field Label', 'Field Type', 'Option Name', 'Option Value']
     data_struct = get_all_field_information(path_credentials)
     data_struct = data_struct.loc[:, var_columns]
@@ -85,13 +85,13 @@ def load_data_api(path_credentials):
 def load_data(path_to_creds, save=False):
 
     df_study, df_report, data_struct = load_data_api(path_to_creds)
-        
-    # Remove all the cardiology variables for now
-    study_cols_to_drop = data_struct.loc[data_struct['Form Collection Name']=='CARDIO (OPTIONAL)', 'Field Variable Name']
-    report_cols_to_drop = data_struct.loc[data_struct['Form Collection Name'].isin([]), 'Field Variable Name']
-    df_study = df_study.drop([col for col in study_cols_to_drop if col in df_study.columns], axis=1)
-    df_report = df_report.drop([col for col in report_cols_to_drop if col in df_report.columns], axis=1)
-    data_struct = data_struct.loc[~data_struct['Form Collection Name'].isin(['CARDIO (OPTIONAL)', 'Repolarization', 'Cardiovascular'])]
+
+    # disabled - Remove all the cardiology variables for now
+    # study_cols_to_drop = data_struct.loc[data_struct['Form Collection Name']=='CARDIO (OPTIONAL)', 'Field Variable Name']
+    # report_cols_to_drop = data_struct.loc[data_struct['Form Collection Name'].isin([]), 'Field Variable Name']
+    # df_study = df_study.drop([col for col in study_cols_to_drop if col in df_study.columns], axis=1)
+    # df_report = df_report.drop([col for col in report_cols_to_drop if col in df_report.columns], axis=1)
+    # data_struct = data_struct.loc[~data_struct['Form Collection Name'].isin(['CARDIO (OPTIONAL)', 'Repolarization', 'Cardiovascular'])]
 
     data = pd.merge(left=df_study, right=df_report, how='right', on='Record Id')
 
@@ -103,14 +103,14 @@ def load_data(path_to_creds, save=False):
 
     return data, data_struct
 
-    
+
 
 def preprocess(data, data_struct, save=False):
     ''' Processed the data per datatype.'''
 
     # Fix single errors
     data = fix_single_errors(data)
-    
+
      # Transform variables
     data, data_struct = transform_binary_features(data, data_struct)
     data, data_struct = transform_categorical_features(data, data_struct)
@@ -118,10 +118,10 @@ def preprocess(data, data_struct, save=False):
     data, data_struct = transform_time_features(data, data_struct)
     data, data_struct = transform_string_features(data, data_struct)
     data, data_struct = transform_calculated_features(data, data_struct)
- 
+
     # Remove columns without any information
     data, data_struct = select_data(data, data_struct)
-    
+
     # Sort data chronologically
     if save:
         data.to_excel('data_processed.xlsx')
@@ -129,14 +129,14 @@ def preprocess(data, data_struct, save=False):
     return data, data_struct
 
 
-def prepare_for_learning(data, data_struct, group_by_record=True, 
+def prepare_for_learning(data, data_struct, group_by_record=True,
                          use_outcome=None, additional_fn=None):
     # Get all outcomes
     outcomes, used_columns = calculate_outcomes(data, data_struct)
     data = pd.concat([data, outcomes], axis=1)
-    
+
     ##### Prepare for learning section #####
-    
+
     # Group per record id
     if group_by_record:
         data = data.groupby(by='Record Id', axis=0).last()
@@ -144,13 +144,13 @@ def prepare_for_learning(data, data_struct, group_by_record=True,
     # Split in x and y
     x = data.copy()
     y = data.loc[:, outcomes.columns].copy()
-    
+
     # Select variables to include in prediction
     variables_to_include_dict = {
             'Form Collection Name': [], # Variable groups
             'Form Name':            ['DEMOGRAPHICS', 'CO-MORBIDITIES'], # variable subgroups
             'Field Variable Name':  [] # single variables
-        } 
+        }
     x = get_variables(x, data_struct, variables_to_include_dict)
 
     # Select variables to exclude
@@ -169,8 +169,8 @@ def prepare_for_learning(data, data_struct, group_by_record=True,
 
     # Remove columns without information
     x = x.loc[:, x.nunique()>1] # Remove columns without information
-    
-    # Fill missing values with 0 (as far as I know 0==missing or no) 
+
+    # Fill missing values with 0 (as far as I know 0==missing or no)
     x = x.fillna(0)
 
 
@@ -183,9 +183,9 @@ def prepare_for_learning(data, data_struct, group_by_record=True,
 
 
 def model_and_predict(x, y, model_fn, model_kwargs, test_size=0.2):
-    ''' NOTE: kwargs must be a dict. e.g.: {"select_features": True, 
+    ''' NOTE: kwargs must be a dict. e.g.: {"select_features": True,
                                             "plot_graph": False}
-    
+
         Select samples and fit model.
         Currently uses random sub-sampling validation (also called
             Monte Carlo cross-validation) with balanced class weight
@@ -208,7 +208,7 @@ def score_and_vizualize_prediction(model, test_x, test_y, y_hat, rep):
 
     if rep<5:
         # Confusion matrix
-        disp = plot_confusion_matrix(model, test_x, test_y, cmap=plt.cm.Blues) 
+        disp = plot_confusion_matrix(model, test_x, test_y, cmap=plt.cm.Blues)
         disp.ax_.set_title('rep={:d} // ROC AUC: {:.3f}'.format(rep, roc_auc))
 
     return roc_auc
@@ -249,7 +249,7 @@ if __name__ == "__main__":
 
     fig, ax = plot_model_results(aucs)
     if not select_features:
-        fig, ax = plot_model_weights(model_coefs, model_intercepts, test_x.columns, 
+        fig, ax = plot_model_weights(model_coefs, model_intercepts, test_x.columns,
                                      show_n_labels=25, normalize_coefs=False)
     plt.show()
     print('done')
