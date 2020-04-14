@@ -21,23 +21,6 @@ site.addsitedir('./../') # add directory to path to enable import of covid19*
 from covid19_ICU_admission import load_data, preprocess
 from covid19_ICU_util import calculate_outcomes, calculate_outcomes_12_d21
 
-# % load data and preprocess
-config = configparser.ConfigParser()
-config.read('../user_settings.ini') # create this once using and never upload
-
-path_creds = config['CastorCredentials']['local_private_path']
-path_creds = './castor_api_creds/'
-
-data, data_struct = load_data(path_creds)
-data, data_struct = preprocess(data, data_struct)
-
-outcomes, used_columns = calculate_outcomes_12_d21(data, data_struct)
-data = pd.concat([data, outcomes], axis=1)
-
-data = data.groupby(by='Record Id', axis=0).last()
-
-outcomes = data[outcomes.columns]
-
 # %
 def get_variable_names_to_analyze_and_variable_type(
         excel_file,
@@ -390,8 +373,25 @@ def create_table_for_variables_outcomes(df_variable_columns):
     return data_to_print
 
 # % THE ACTUAL CALCULATION
-excel_file = '/Users/wouterpotters/Desktop/tabellen_manuscript.xlsx'
-excel_file_source_variables ='~/Desktop/tabellen_manuscript_inclusions.xlsx'
+
+# % load data and preprocess
+config = configparser.ConfigParser()
+config.read('../user_settings.ini') # create this once using and never upload
+
+path_creds = config['CastorCredentials']['local_private_path']
+
+data, data_struct = load_data(path_creds)
+data, data_struct = preprocess(data, data_struct)
+
+outcomes, used_columns = calculate_outcomes_12_d21(data, data_struct)
+data = pd.concat([data, outcomes], axis=1)
+
+data = data.groupby(by='Record Id', axis=0).last()
+
+outcomes = data[outcomes.columns]
+
+excel_file = os.path.join(config['CastorCredentials']['local_private_path'],'tabellen_manuscript.xlsx')
+excel_file_source_variables = os.path.join(config['CastorCredentials']['local_private_path'],'/tabellen_manuscript_inclusions.xlsx')
 writer = pd.ExcelWriter(excel_file, engine='xlsxwriter')
 
 for variable_type in ['sowieso',
