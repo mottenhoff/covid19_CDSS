@@ -370,7 +370,6 @@ def transform_categorical_features(data, data_struct):
 
     dummies_list = []
     for col in category_columns:
-        print(col)
         # Get all unique categories in the column
         unique_categories = pd.unique([cat for value in data[col].values for cat in str(value).split(';')])
         unique_categories = [cat for cat in unique_categories if cat.lower() not in ['nan', 'none']]
@@ -383,7 +382,6 @@ def transform_categorical_features(data, data_struct):
         dummies = pd.DataFrame(0, index=data.index, columns=dummy_column_names)
         # Insert the data
         for cat in unique_categories:
-            print(str(cat)+ '(' + str(unique_categories) +')')
             # TODO fix that 1 is in cat 10 (OUTCOME!)
             data[col] = data[col].fillna('') # Can't handle nans, will be deleted anyway
             dummies.loc[data[col].str.contains(cat), get_name(col, cat)] = 1
