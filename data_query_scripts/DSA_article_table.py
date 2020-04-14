@@ -18,10 +18,38 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), './../'))
 
 site.addsitedir('./../') # add directory to path to enable import of covid19*
+from unit_lookup import get_unit_lookup_dict
 from covid19_ICU_admission import load_data, preprocess
 from covid19_ICU_util import calculate_outcomes, calculate_outcomes_12_d21
+from castor_api import Castor_api
 
 # %
+def get_units(cols_input):
+    # connect to castor api to fetch information on variable lists
+    config = configparser.ConfigParser()
+    config.read('../user_settings.ini') # create this once using and never upload
+
+    path_creds = config['CastorCredentials']['local_private_path']
+    c = Castor_api(path_creds)
+    c.select_study_by_name(config['CastorCredentials']['study_name'])
+    optiongroups = c.request_study_export_optiongroups()
+    studystruct = c.request_study_export_structure()
+
+    cols = pd.Series(cols_input)
+    units = pd.Series(cols_input)
+    units[:] = ''
+    lookup_dict, numeric_vars = get_unit_lookup_dict()
+    for variable in cols.to_list():
+        if variable in numeric_vars:
+            # the one with 1.0 as conversion factor is used.
+            for ind, conversion in lookup_dict[numeric_vars[variable]].items():
+                if conversion == 1.0:
+                    option_group_id = studystruct['Field Option Group'][studystruct['Field Variable Name'] == numeric_vars[variable]]
+                    options = optiongroups[['Option Name','Option Value']][optiongroups['Option Group Id'] == option_group_id.values[0]]
+                    unit = options['Option Name'][options['Option Value'].values.astype(int) == ind]
+                    units[cols == variable] = unit.values[0]
+    return units.to_list()
+
 def get_variable_names_to_analyze_and_variable_type(
         excel_file,
         variable_type=None):
@@ -288,9 +316,11 @@ def create_table_for_variables_outcomes(df_variable_columns):
                 data[c][data[c] == ''] = 'NaN'
                 data[c] = np.float64(data[c])
             elif c == 'Smoking':
-                data['Smoking_active'] = data[c].replace({'1':1,'2':2,'3':2,
-                                                          '4':np.nan})
-                data['Smoking_active_and_past'] = data[c].replace({'1':1,'2':2,'3':1,
+                if True: # active smoking only
+                    data['Smoking'] = data[c].replace({'1':1,'2':2,'3':2,
+                                                              '4':np.nan})
+                else: # all smoking
+                    data['Smoking'] = data[c].replace({'1':1,'2':2,'3':1,
                                                                    '4':np.nan})
                 data[c].drop()
             elif c == 'CT_thorax_performed':
@@ -363,10 +393,12 @@ def create_table_for_variables_outcomes(df_variable_columns):
     pvalues_corrected = pvalues * np.nan
     t, pvalues_corrected[mask] = mt.fdrcorrection(pvalues[mask], alpha=0.05, method='indep', is_sorted=False)
 
+    data_to_print['Pvalue_FDR_corrected'] = [round(p,3) for p in pvalues_corrected]
+    data_to_print['Units'] = get_units(cols)
+
     data_to_print['Variable'] = cols
     data_to_print['Castor questions'] = cols_q
     data_to_print['Pvalue_uncorrected'] = [round(p,3) for p in pvalues]
-    data_to_print['Pvalue_FDR_corrected'] = [round(p,3) for p in pvalues_corrected]
     data_to_print.sort_values(by='Pvalue_FDR_corrected',ascending=True,inplace=True)
 
     if any(~(np.isfinite(pvalues_corrected))):
@@ -382,9 +414,8 @@ config.read('../user_settings.ini') # create this once using and never upload
 
 path_creds = config['CastorCredentials']['local_private_path']
 
-if 'data_raw' not in locals():
-    data_raw, data_struct_raw = load_data(path_creds)
-data, data_struct = preprocess(data_raw, data_struct_raw)
+data, data_struct = load_data(path_creds)
+data, data_struct = preprocess(data, data_struct)
 
 outcomes, used_columns = calculate_outcomes_12_d21(data, data_struct)
 data = pd.concat([data, outcomes], axis=1)
@@ -411,8 +442,6 @@ for variable_type in ['sowieso',
 
     table = pd.concat([row_df, table],ignore_index=True)
     table.set_index(table['Variable'],inplace=True)
-
-    #print('\t'.join([str(s)+' ('+str(round(s/outcomes.sum().values[0]*100,1))+'%)' for s in outcomes.sum().values]))
 
     # Write each dataframe to a different worksheet.
     table.to_excel(writer, sheet_name=variable_type)
