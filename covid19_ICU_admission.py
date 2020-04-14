@@ -12,6 +12,7 @@ import sys
 path_to_classifiers = r'./Classifiers/'
 # path_to_settings = r'./' # TODO: add settings
 sys.path.insert(0, path_to_classifiers)
+sys.path.insert(0, r'/../Classifiers') # TODO: check if this works, otherwise try block
 
 # 3th party libs
 import matplotlib.pyplot as plt
@@ -118,11 +119,11 @@ def preprocess(data, data_struct, save=False):
     
      # Transform variables
     data, data_struct = transform_binary_features(data, data_struct)
-    data = transform_categorical_features(data, data_struct)
-    data = transform_numeric_features(data, data_struct)
-    data = transform_time_features(data, data_struct)
-    data = transform_string_features(data, data_struct)
-    data = transform_calculated_features(data, data_struct)
+    data, data_struct = transform_categorical_features(data, data_struct)
+    data, data_struct = transform_numeric_features(data, data_struct)
+    data, data_struct = transform_time_features(data, data_struct)
+    data, data_struct = transform_string_features(data, data_struct)
+    data, data_struct = transform_calculated_features(data, data_struct)
  
     # Remove columns without any information
     data = select_data(data)
@@ -142,6 +143,22 @@ def feature_selection(data, data_struct, var_groups, save=False):
     TODO: Check if there are variables only measured in the ICU
     TODO: Some form of feature selection?
     ''' 
+
+    ####
+    # add category columns -> By check column names contain at columns
+
+
+
+    ####
+    # Keys are based on columns names (and thus categories/variables) in data_struct,
+    #   Don't worry about duplicates, they are handled
+    variables_to_include = {
+        'Form Collection Name': [], # Variable groups
+        'Form Name': [], # variable subgroups
+        'Field Variable Name': [] # single variables
+    }
+
+
 
     outcomes, used_columns = calculate_outcomes(data, data_struct)
     # outcomes, used_columns = calculate_outcomes_12_d21(data, data_struct)

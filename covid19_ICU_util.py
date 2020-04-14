@@ -324,6 +324,111 @@ def fix_single_errors(data):
 
     return data
 
+def transform_binary_features(data, data_struct):
+    value_na = None
+    dict_yes_no = {0:0, 1:1, 2:0, 3:value_na}
+    dict_yp = {0:0, 1:1, 2:.5, 3:0, 4:value_na} # [1, 2, 3, 4 ] --> [1, .5, 0, -1]
+    dict_smoke = {0:0,1:1, 2:0, 3:.5, 4:value_na} # [Yes, no, stopped_smoking] --> [1, 0, .5]
+
+    radio_fields = data_struct.loc[data_struct['Field Type'] == 'radio', 'Field Variable Name'].to_list()
+
+    # Find all answers with Yes No and re-value them
+    if_yes_no = lambda x: 1 if type(x)==list and ("Yes" in x and "No" in x) else 0 
+    is_yes_no = data_struct['Option Name'].apply(if_yes_no)==1
+    vars_yes_no = is_in_columns(data_struct.loc[is_yes_no, 'Field Variable Name'].to_list(), data)
+    data.loc[:, vars_yes_no] = data.loc[:, vars_yes_no].fillna(3).astype(int).applymap(lambda x: dict_yes_no.get(x))
+
+    # Find all answers with Yes probable
+    if_yes_probable = lambda x: 1 if type(x)==list and ("YES - Probable" in x or "Yes - Probable" in x) else 0
+    is_yes_probable = data_struct['Option Name'].apply(if_yes_probable) == 1
+    vars_yes_probable = is_in_columns(data_struct.loc[is_yes_probable, 'Field Variable Name'].to_list(), data)
+    data.loc[:, vars_yes_probable] = data.loc[:, vars_yes_probable].fillna(4).astype(int).applymap(lambda x: dict_yp.get(x))
+
+    # Hand code some other variables
+    other_radio_vars = ['Bacteria', 'Smoking', 'CT_thorax_performed', 'facility_transfer', 'culture']
+    data.loc[:, 'Bacteria'].fillna(3).astype(int).apply(lambda x: dict_yes_no.get(x))
+    data.loc[:, 'Smoking'].fillna(4).astype(int).apply(lambda x: dict_smoke.get(x))
+    data.loc[:, 'CT_thorax_performed'].fillna(3).astype(int).apply(lambda x: {0:0, 1:0, 2:1, 3:0}.get(x))
+    data.loc[:, 'facility_transfer'].fillna(3).astype(int).apply(lambda x: dict_yes_no.get(x))
+    data.loc[:, 'culture'].fillna(1).astype(int).apply(lambda x: {0:0, 1:0, 2:1, 3:2}.get(x))
+
+    # Unit variables
+    if_unit = lambda x: 1 if 'unit' in x.lower() or 'units' in x.lower() else 0
+    vars_units = data_struct.loc[(data_struct['Field Type'] == 'radio') & \
+                                 (data_struct['Field Label'].apply(if_unit)==1),
+                                 'Field Variable Name'].to_list() + ['WBC_1']
+    data_struct.loc[data_struct['Field Variable Name'].isin(vars_units), 'Field Type'] = 'unit'
+
+    # All other variables
+    handled_vars = vars_yes_no + vars_yes_probable + other_radio_vars + vars_units
+    vars_other = is_in_columns([v for v in radio_fields if v not in handled_vars], data)
+    data_struct.loc[data_struct['Field Variable Name'].isin(vars_other), 'Field Type'] = 'category'
+
+    return data, data_struct
+
+
+def transform_categorical_features(data, data_struct):
+    ''' Create dummyvariables for category variables, 
+        removes empty variables and attaches column names 
+    '''
+
+    # # Get all information about category variables
+    is_category = data_struct['Field Type'].isin(['category', 'checkbox', 'dropdown'])
+    data_struct.loc[is_category, 'Field Type'] = 'category'
+    cat_struct = data_struct.loc[is_category, 
+                                ['Field Variable Name', 'Option Name', 'Option Value']]
+
+    category_columns = is_in_columns(cat_struct['Field Variable Name'], data)
+
+    get_name = lambda c, v: '{:s}_cat_{:s}'.format(col, str(v))
+    
+    dummies_list = []
+    for col in category_columns:
+        # Get all unique categories in the column
+        unique_categories = pd.unique([cat for value in data[col].values for cat in str(value).split(';')])
+        unique_categories = [cat for cat in unique_categories if cat.lower() not in ['nan', 'none']]
+        if not any(unique_categories):
+            continue
+        
+        # TODO: Make column names to actual name instead of numeric answer
+        dummy_column_names = [get_name(col, v) for v in unique_categories if v.lower() not in ['nan', 'none']]
+        # Create new dataframe with the dummies
+        dummies = pd.DataFrame(0, index=data.index, columns=dummy_column_names)
+        # Insert the data
+        for cat in unique_categories:
+            data[col] = data[col].fillna('') # Can't handle nans, will be deleted anyway
+            dummies.loc[data[col].str.contains(cat), get_name(col, cat)] = 1
+
+        dummies_list += [dummies]
+    
+    data = pd.concat([data] + dummies_list, axis=1)
+    data = data.drop(category_columns, axis=1)
+    return data, data_struct
+
+def transform_numeric_features(data, data_struct):
+    # Calculates all variables to the same unit, 
+    #   according to a handmade mapping in unit_lookup.py
+    unit_dict, var_numeric = get_unit_lookup_dict()
+
+    numeric_columns = is_in_columns(var_numeric.keys(), data)
+    wbc_value_study = 'WBC_2_1' #= 'units_lymph', 'units_neutro'
+    wbc_value_report = 'WBC_2' #= 'lymph_units_1', 'neutro_units_2'
+    
+    for col in numeric_columns:
+        unit_col = var_numeric[col]
+        data[unit_col] = data[unit_col].fillna(-1).astype(int).apply(lambda x: unit_dict[unit_col].get(x))
+        if unit_col in ['units_lymph', 'units_neutro']:
+            has_999 = data[unit_col]==-999
+            data.loc[has_999, unit_col] = data.loc[has_999, wbc_value_study].astype(float).div(100)
+        elif unit_col in ['lymph_units_1', 'neutro_units_2']:
+            has_999 = data[unit_col]==-999
+            data.loc[has_999, unit_col] = data.loc[has_999, wbc_value_report].astype(float).div(100)
+        has_value = data[col].notna()
+        data.loc[has_value, col] = data.loc[has_value, col].astype(float) * data.loc[has_value, unit_col].astype(float)
+
+    data = data.drop(is_in_columns(unit_dict.keys(), data), axis=1)
+
+    return data, data_struct
 
 def transform_time_features(data, data_struct):
     '''
@@ -398,116 +503,20 @@ def transform_time_features(data, data_struct):
     cols_to_drop = [col for col in data.columns if col in date_cols]
     data = data.drop(cols_to_drop, axis=1)
 
-    return data
-
-
-def transform_binary_features(data, data_struct):
-    value_na = None
-    dict_yes_no = {0:0, 1:1, 2:0, 3:value_na}
-    dict_yp = {0:0, 1:1, 2:.5, 3:0, 4:value_na} # [1, 2, 3, 4 ] --> [1, .5, 0, -1]
-    dict_smoke = {0:0,1:1, 2:0, 3:.5, 4:value_na} # [Yes, no, stopped_smoking] --> [1, 0, .5]
-
-    radio_fields = data_struct.loc[data_struct['Field Type'] == 'radio', 'Field Variable Name'].to_list()
-
-    # Find all answers with Yes No and re-value them
-    if_yes_no = lambda x: 1 if type(x)==list and ("Yes" in x and "No" in x) else 0 
-    is_yes_no = data_struct['Option Name'].apply(if_yes_no)==1
-    vars_yes_no = is_in_columns(data_struct.loc[is_yes_no, 'Field Variable Name'].to_list(), data)
-    data.loc[:, vars_yes_no] = data.loc[:, vars_yes_no].fillna(3).astype(int).applymap(lambda x: dict_yes_no.get(x))
-
-    # Find all answers with Yes probable
-    if_yes_probable = lambda x: 1 if type(x)==list and ("YES - Probable" in x or "Yes - Probable" in x) else 0
-    is_yes_probable = data_struct['Option Name'].apply(if_yes_probable) == 1
-    vars_yes_probable = is_in_columns(data_struct.loc[is_yes_probable, 'Field Variable Name'].to_list(), data)
-    data.loc[:, vars_yes_probable] = data.loc[:, vars_yes_probable].fillna(4).astype(int).applymap(lambda x: dict_yp.get(x))
-
-    # Hand code some other variables
-    other_radio_vars = ['Bacteria', 'Smoking', 'CT_thorax_performed', 'facility_transfer', 'culture']
-    data.loc[:, 'Bacteria'].fillna(3).astype(int).apply(lambda x: dict_yes_no.get(x))
-    data.loc[:, 'Smoking'].fillna(4).astype(int).apply(lambda x: dict_smoke.get(x))
-    data.loc[:, 'CT_thorax_performed'].fillna(3).astype(int).apply(lambda x: {0:0, 1:0, 2:1, 3:0}.get(x))
-    data.loc[:, 'facility_transfer'].fillna(3).astype(int).apply(lambda x: dict_yes_no.get(x))
-    data.loc[:, 'culture'].fillna(1).astype(int).apply(lambda x: {0:0, 1:0, 2:1, 3:2}.get(x))
-
-    # Unit variables
-    if_unit = lambda x: 1 if 'unit' in x.lower() or 'units' in x.lower() else 0
-    vars_units = data_struct.loc[(data_struct['Field Type'] == 'radio') & \
-                                 (data_struct['Field Label'].apply(if_unit)==1),
-                                 'Field Variable Name'].to_list() + ['WBC_1']
-    data_struct.loc[data_struct['Field Variable Name'].isin(vars_units), 'Field Type'] = 'unit'
-
-    # All other variables
-    handled_vars = vars_yes_no + vars_yes_probable + other_radio_vars + vars_units
-    vars_other = is_in_columns([v for v in radio_fields if v not in handled_vars], data)
-    data_struct.loc[data_struct['Field Variable Name'].isin(vars_other), 'Field Type'] = 'category'
+    # Add the new variables to the struct dataframe, so that they can be selected later on
+    new_vars = []
+    new_vars += [pd.Series(['Study', 'BASELINE', 'DEMOGRAPHICS', 'age_yrs', None, 'datetime', None, None])] 
+    new_vars += [pd.Series(['Study', 'HOSPITAL ADMISSION', 'ONSET & ADMISSION', var, None, 'datetime', None, None]) \
+                            for var in ['days_since_onset', 'days_since_admission_current_hosp', 'days_since_admission_first_hosp']]
+    new_vars += [pd.Series(['Study', 'OUTCOME', 'OUTCOME', var, None, 'datetime', None, None]) \
+                            for var in ['days_until_outcome_3wk', 'days_until_outcome_6wk']]
+    new_vars += [pd.Series(['Report', 'Daily case record form', 'Respiratory assessment', var, None, 'datetime', None, None]) \
+                            for var in ['days_at_ward', 'days_at_mc', 'days_at_icu']]
+    new_vars = pd.concat(new_vars, axis=1).T
+    new_vars.columns = data_struct.columns
+    data_struct = data_struct.append(new_vars)
 
     return data, data_struct
-
-
-def transform_categorical_features(data, data_struct):
-    ''' Create dummyvariables for category variables, 
-        removes empty variables and attaches column names 
-
-        TODO: Handle checkbox variables with multiple categories
-    '''
-
-    # # Get all information about category variables
-    cat_struct = data_struct.loc[data_struct['Field Type'].isin(['category', 'checkbox', 'dropdown']), 
-                                ['Field Variable Name', 'Option Name', 'Option Value']]
-    # # Make a mapping between names and values of the variable
-    # cat_struct['value_map'] = cat_struct.apply(lambda x: dict(zip(x['Option Value'], x['Option Name'])), axis=1)
-
-    category_columns = is_in_columns(cat_struct['Field Variable Name'], data)
-
-    get_name = lambda c, v: '{:s}_cat_{:s}'.format(col, str(v))
-    
-    dummies_list = []
-    for col in category_columns:
-        # Get all unique categories in the column
-        unique_categories = pd.unique([cat for value in data[col].values for cat in str(value).split(';')])
-        unique_categories = [cat for cat in unique_categories if cat.lower() not in ['nan', 'none']]
-        if not any(unique_categories):
-            continue
-        
-        # TODO: Make column names to actual name instead of numeric answer
-        dummy_column_names = [get_name(col, v) for v in unique_categories if v.lower() not in ['nan', 'none']]
-        # Create new dataframe with the dummies
-        dummies = pd.DataFrame(0, index=data.index, columns=dummy_column_names)
-        # Insert the data
-        for cat in unique_categories:
-            data[col] = data[col].fillna('') # Can't handle nans, will be deleted anyway
-            dummies.loc[data[col].str.contains(cat), get_name(col, cat)] = 1
-
-        dummies_list += [dummies]
-    
-    data = pd.concat([data] + dummies_list, axis=1)
-    data = data.drop(category_columns, axis=1)
-    return data
-
-def transform_numeric_features(data, data_struct):
-    # Calculates all variables to the same unit, 
-    #   according to a handmade mapping in unit_lookup.py
-    unit_dict, var_numeric = get_unit_lookup_dict()
-
-    numeric_columns = is_in_columns(var_numeric.keys(), data)
-    wbc_value_study = 'WBC_2_1' #= 'units_lymph', 'units_neutro'
-    wbc_value_report = 'WBC_2' #= 'lymph_units_1', 'neutro_units_2'
-    
-    for col in numeric_columns:
-        unit_col = var_numeric[col]
-        data[unit_col] = data[unit_col].fillna(-1).astype(int).apply(lambda x: unit_dict[unit_col].get(x))
-        if unit_col in ['units_lymph', 'units_neutro']:
-            has_999 = data[unit_col]==-999
-            data.loc[has_999, unit_col] = data.loc[has_999, wbc_value_study].astype(float).div(100)
-        elif unit_col in ['lymph_units_1', 'neutro_units_2']:
-            has_999 = data[unit_col]==-999
-            data.loc[has_999, unit_col] = data.loc[has_999, wbc_value_report].astype(float).div(100)
-        has_value = data[col].notna()
-        data.loc[has_value, col] = data.loc[has_value, col].astype(float) * data.loc[has_value, unit_col].astype(float)
-
-    data = data.drop(is_in_columns(unit_dict.keys(), data), axis=1)
-
-    return data
 
 def transform_string_features(data, data_struct):
     # TODO: Why it med_specify not in data_struct?
@@ -521,7 +530,10 @@ def transform_string_features(data, data_struct):
     cols_to_drop = is_in_columns(string_cols + ['med_specify', 'other_drug_1'], data)
     data = data.drop(cols_to_drop, axis=1)
 
-    return data
+    data_struct = data_struct.append(pd.Series(['Study', 'BASELINE', 'CO-MORBIDITIES', 
+                                                'uses_n_medicine', None, 'numeric', None, None],
+                                     index=data_struct.columns), ignore_index=True)
+    return data, data_struct
 
 
 def transform_calculated_features(data, data_struct):
@@ -531,7 +543,7 @@ def transform_calculated_features(data, data_struct):
 
     cols_to_drop = [c for c in calc_cols if c not in ['discharge_live_3wk', 'discharge_live_6wk']]
     data = data.drop(cols_to_drop, axis=1)
-    return data
+    return data, data_struct
 
 def select_data(data):
     cols_to_keep = [col for col in data.columns if col not in IS_MEASURED_COLUMNS]
