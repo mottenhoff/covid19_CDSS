@@ -86,13 +86,6 @@ def load_data(path_to_creds):
 
     df_study, df_report, data_struct = load_data_api(path_to_creds)
 
-    # disabled - Remove all the cardiology variables for now
-    # study_cols_to_drop = data_struct.loc[data_struct['Form Collection Name']=='CARDIO (OPTIONAL)', 'Field Variable Name']
-    # report_cols_to_drop = data_struct.loc[data_struct['Form Collection Name'].isin([]), 'Field Variable Name']
-    # df_study = df_study.drop([col for col in study_cols_to_drop if col in df_study.columns], axis=1)
-    # df_report = df_report.drop([col for col in report_cols_to_drop if col in df_report.columns], axis=1)
-    # data_struct = data_struct.loc[~data_struct['Form Collection Name'].isin(['CARDIO (OPTIONAL)', 'Repolarization', 'Cardiovascular'])]
-
     data = pd.merge(left=df_study, right=df_report, how='right', on='Record Id')
 
     # Fix empty columns:
@@ -117,10 +110,6 @@ def preprocess(data, data_struct):
 
     # Remove columns without any information
     data, data_struct = select_data(data, data_struct)
-
-    # Sort data chronologically
-    if save:
-        data.to_excel('data_processed.xlsx')
 
     return data, data_struct
 
@@ -236,7 +225,7 @@ if __name__ == "__main__":
     model_fn = train_logistic_regression
     model_kwargs = {}
     for i in range(repetitions):
-        print('Current rep: {}'.format(i))
+        print('.', end='', flush=True)
         model, train_x, train_y, test_x, \
             test_y, test_y_hat = model_and_predict(x, y, model_fn, model_kwargs, test_size=0.2)
         auc = score_and_vizualize_prediction(model, test_x, test_y, test_y_hat, i)

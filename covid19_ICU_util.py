@@ -273,17 +273,19 @@ def fix_single_errors(data):
         data = data.replace(value, None)
 
     # Specific fix
-    data['Enrolment_date'].replace('24-02-1960', '24-02-2020', inplace=True)
-    data['admission_dt'].replace('19-03-0202', '19-03-2020', inplace=True)
-    data['admission_facility_dt'].replace('01-01-2998', None, inplace=True)
-    data['age'].replace('14-09-2939', '14-09-1939', inplace=True)
-    data['specify_Acute_Respiratory_Distress_Syndrome_1_1'].replace('Covid-19 associated', None, inplace=True)
-    data['specify_Acute_Respiratory_Distress_Syndrome_1_1'].replace('Hypoxomie wv invasieve beademing', None, inplace=True)
-    data['oxygentherapy_1'].replace(-98, None, inplace=True)
-    data['Smoking'].replace(-99, None, inplace=True)
+    data.loc[:, 'Enrolment_date'] = data.loc[:, 'Enrolment_date'].replace('24-02-1960', '24-02-2020')
+    data.loc[:, 'admission_dt'] = data.loc[:, 'admission_dt'].replace('19-03-0202', '19-03-2020')
+    data.loc[:, 'admission_facility_dt'] = data.loc[:, 'admission_facility_dt'].replace('01-01-2998', None)
+    data.loc[:, 'age'] = data.loc[:, 'age'].replace('14-09-2939', '14-09-1939')
+    data.loc[:, 'specify_Acute_Respiratory_Distress_Syndrome_1_1'] = data.loc[:, 'specify_Acute_Respiratory_Distress_Syndrome_1_1'] \
+                                                                         .replace('Covid-19 associated', None)
+    data.loc[:, 'specify_Acute_Respiratory_Distress_Syndrome_1_1'] = data.loc[:, 'specify_Acute_Respiratory_Distress_Syndrome_1_1'] \
+                                                                         .replace('Hypoxomie wv invasieve beademing', None)
+    data.loc[:, 'oxygentherapy_1'] = data.loc[:, 'oxygentherapy_1'].replace(-98, None)
+    data.loc[:, 'Smoking'] = data.loc[:, 'Smoking'].replace(-99, None)
 
-    data.loc[data['Record Id'].isin(['120007', '130032']),
-            'assessment_dt'].replace('20-02-2020', '20-03-2020', inplace=True)
+    mask = data['Record Id'].isin(['120007', '130032'])
+    data.loc[mask, 'assessment_dt'] = data.loc[mask, 'assessment_dt'].replace('20-02-2020', '20-03-2020')
 
     return data
 
@@ -428,6 +430,7 @@ def transform_time_features(data, data_struct):
                  'assessment_dt']           # Datetime of assessment of report
     
     date_cols = data_struct.loc[data_struct['Field Type'].isin(['date', 'time']), 'Field Variable Name'].to_list()
+    # TODO:
     # Last known dt = max([outcome_dt, assessment_dt])
     # Days untreated = "earliest known hospital admission" - onset
     # Days in hospital = last_known_date - "earliest known hospital admission"
