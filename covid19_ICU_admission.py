@@ -82,7 +82,7 @@ def load_data_api(path_credentials):
     return df_study, df_report, data_struct
 
 
-def load_data(path_to_creds, save=False):
+def load_data(path_to_creds):
 
     df_study, df_report, data_struct = load_data_api(path_to_creds)
 
@@ -98,20 +98,16 @@ def load_data(path_to_creds, save=False):
     # Fix empty columns:
     data = data.rename(columns={"": "EMPTY_COLUMN_NAME", None: "EMPTY_COLUMN_NAME"})
 
-    if save:
-        data.to_excel('data_unprocessed.xlsx')
-
     return data, data_struct
 
 
-
-def preprocess(data, data_struct, save=False):
+def preprocess(data, data_struct):
     ''' Processed the data per datatype.'''
 
     # Fix single errors
     data = fix_single_errors(data)
 
-     # Transform variables
+    # Transform variables
     data, data_struct = transform_binary_features(data, data_struct)
     data, data_struct = transform_categorical_features(data, data_struct)
     data, data_struct = transform_numeric_features(data, data_struct)
@@ -133,6 +129,7 @@ def prepare_for_learning(data, data_struct, group_by_record=True,
                          use_outcome=None, additional_fn=None):
     # Get all outcomes
     outcomes, used_columns = calculate_outcomes(data, data_struct)
+    # outcomes, used_columns = calculate_outcomes_12_d21(data, data_struct)
     data = pd.concat([data, outcomes], axis=1)
 
     ##### Prepare for learning section #####
@@ -173,14 +170,15 @@ def prepare_for_learning(data, data_struct, group_by_record=True,
     # Fill missing values with 0 (as far as I know 0==missing or no)
     x = x.fillna(0)
 
-
     # TODO TEMP:
-    x = x.drop(['delivery_date'], axis=1)
+    # x = x.drop(['EMPTY_COLUMN_NAME'], axis=1)
 
     print('LOG: Selected {} variables for predictive model'.format(x.columns.size))
 
     return x, y, data
 
+# ethnic_group
+# ethnic_group  # 2 ?????
 
 def model_and_predict(x, y, model_fn, model_kwargs, test_size=0.2):
     ''' NOTE: kwargs must be a dict. e.g.: {"select_features": True,
@@ -223,8 +221,8 @@ if __name__ == "__main__":
     # Saves intermediate
     save = False # REMEMBER TO SAVE AS FEW A POSSIBLE FOR PRIVACY REASONS
 
-    data, data_struct = load_data(path_creds, save=save)
-    data, data_struct = preprocess(data, data_struct, save=save)
+    data, data_struct = load_data(path_creds)
+    data, data_struct = preprocess(data, data_struct)
     x, y, data = prepare_for_learning(data, data_struct)
 
     explore_data(x, y)

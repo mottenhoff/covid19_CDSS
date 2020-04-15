@@ -171,28 +171,18 @@ def calculate_outcomes_12_d21(data, data_struct):
     outcome_icu_never = ~outcome_icu_ever
 
     # beademd geweest op IC
-    # outcome_ventilation_any = np.logical_or(
-    #     np.logical_or(
-    #         data['patient_interventions_cat_1'] == 1.0,
-    #         data['patient_interventions_cat_2'] == 1.0),
-    #     data['Invasive_ventilation_1'] == 1.0)
-    # outcome_ventilation_daily = np.logical_or(
-    #         data['patient_interventions_cat_1'] == 1.0,
-    #         data['patient_interventions_cat_2'] == 1.0)
+    # outcome_ventilation_any = data['patient_interventions_cat_1'] == 1.0 | data['patient_interventions_cat_2'] == 1.0 | \
+    #                           data['Invasive_ventilation_1'] == 1.0
+    # outcome_ventilation_daily = data['patient_interventions_cat_1'] == 1.0 | \
+    #                             data['patient_interventions_cat_2'] == 1.0
 
-    # orgaanfalen lever, nier
-
-    # outcome_organfailure_any = np.logical_or(
-    #     np.logical_or(
-    #         np.logical_or(
-    #             np.logical_or(
-    #                 np.logical_or(
-    #                     data['patient_interventions_cat_3'] == 1.0,
-    #                     data['patient_interventions_cat_5'] == 1.0),
-    #                 data['Extracorporeal_support_1'] == 1.0),
-    #             data['Liver_dysfunction_1_1'] == 1.0),
-    #         data['INR_1_1'].astype('float') > 1.5),
-    #     data['Acute_renal_injury_Acute_renal_failure_1_1'] == 1.0)
+    # Orgaanfalen lever, nier
+    # outcome_organfailure_any = data['patient_interventions_cat_3'] == 1.0 | \
+    #                            data['patient_interventions_cat_5'] == 1.0 | \
+    #                            data['Extracorporeal_support_1'] == 1.0 | \
+    #                            data['Liver_dysfunction_1_1'] == 1.0 | \
+    #                            data['INR_1_1'].astype('float') > 1.5 | \
+    #                            data['Acute_renal_injury_Acute_renal_failure_1_1'] == 1.0
 
     df_outcomes = pd.DataFrame([[False]*12]*len(data), index=data.index)
 
@@ -271,7 +261,6 @@ def calculate_outcomes_12_d21(data, data_struct):
 
 
 def fix_single_errors(data):
-    # TODO: Consider moving this after merge study & report
 
     # Global fix
     data = data.replace('11-11-1111', None)
@@ -300,16 +289,19 @@ def fix_single_errors(data):
 
 def transform_binary_features(data, data_struct):
     value_na = None
-    dict_yes_no = {0:0, 1:1, 2:0, 3:value_na}
+    dict_yes_no = {0:0, 1:1, 2:0, 3:value_na, 9:value_na, 9999: value_na}
     dict_yp = {0:0, 1:1, 2:.5, 3:0, 4:value_na} # [1, 2, 3, 4 ] --> [1, .5, 0, -1]
-    dict_yu = {9999:value_na, 5555:value_na, -1:value_na} # only change unknown to nan
-    dict_smoke = {0:0,1:1, 2:0, 3:.5, 4:value_na} # [Yes, no, stopped_smoking] --> [1, 0, .5]
+    dict_yu = {0:0, 1:1, 9999:value_na}
+    dict_smoke = {0:0, 1:1, 2:0, 3:.5, 4:value_na} # [Yes, no, stopped_smoking] --> [1, 0, .5]
+
+    # Some fixed for erronuous field types
+    data_struct.loc[data_struct['Field Variable Name']=='MH_HF', 'Field Type'] = 'radio'
 
     radio_fields = data_struct.loc[data_struct['Field Type'] == 'radio', 'Field Variable Name'].to_list()
 
     # Find all answers with Yes No and re-value them
     if_yes_no = lambda x: 1 if type(x)==list and ("Yes" in x and "No" in x) else 0
-    is_yes_no = data_struct['Option Name'].apply(if_yes_no)==1
+    is_yes_no = data_struct['Option Name'].apply(if_yes_no) == 1
     vars_yes_no = is_in_columns(data_struct.loc[is_yes_no, 'Field Variable Name'].to_list(), data)
     data.loc[:, vars_yes_no] = data.loc[:, vars_yes_no].fillna(3).astype(int).applymap(lambda x: dict_yes_no.get(x))
 
@@ -319,16 +311,12 @@ def transform_binary_features(data, data_struct):
     vars_yes_probable = is_in_columns(data_struct.loc[is_yes_probable, 'Field Variable Name'].to_list(), data)
     data.loc[:, vars_yes_probable] = data.loc[:, vars_yes_probable].fillna(4).astype(int).applymap(lambda x: dict_yp.get(x))
 
+    # NOTE in current implementation all unknowns are caught by is_yes_no
     # Find all answers with Unknown (cardiac variables)
-    if_unknown = lambda x: 1 if type(x)==list and ("Unknown" in x or "unknown" in x) else 0
-    is_unknown = data_struct['Option Name'].apply(if_unknown) == 1
-    is_radio_dropdown = [(d in ['dropdown','radio']) for d in data_struct['Field Type'].to_list()]
-    # avoid deleting unknown from outcomes.
-    is_few_options = data_struct['Option Name'].apply(lambda x: len(x) if type(x)==list else 99) <= 3
-    is_unknown = is_radio_dropdown & is_unknown & is_few_options
-    vars_unknown = is_in_columns(data_struct.loc[is_unknown, 'Field Variable Name'].to_list(), data)
-    data.loc[:, vars_unknown] = data.loc[:, vars_unknown].fillna(-1).astype(int).applymap(lambda x: dict_yu.get(x))
-
+    if_unknown = lambda x: 1 if (type(x)==list) and (("Unknown" in x or "unknown" in x) and ("Yes" in x)) else 0
+    has_unknown = data_struct['Option Name'].apply(if_unknown) == 1
+    vars_yes_unknown = is_in_columns(data_struct.loc[has_unknown, 'Field Variable Name'].to_list(), data)
+    data.loc[:, vars_yes_unknown] = data.loc[:, vars_yes_unknown].fillna(9999).astype(int).applymap(lambda x: dict_yu.get(x))
 
     # Hand code some other variables
     other_radio_vars = ['Bacteria', 'Smoking', 'CT_thorax_performed', 'facility_transfer', 'culture']
@@ -346,12 +334,11 @@ def transform_binary_features(data, data_struct):
     data_struct.loc[data_struct['Field Variable Name'].isin(vars_units), 'Field Type'] = 'unit'
 
     # All other variables
-    handled_vars = vars_yes_no + vars_yes_probable + other_radio_vars + vars_units
+    handled_vars = vars_yes_no + vars_yes_probable + other_radio_vars + vars_yes_unknown + vars_units
     vars_other = is_in_columns([v for v in radio_fields if v not in handled_vars], data)
     data_struct.loc[data_struct['Field Variable Name'].isin(vars_other), 'Field Type'] = 'category'
 
     return data, data_struct
-
 
 def transform_categorical_features(data, data_struct):
     ''' Create dummyvariables for category variables,
@@ -389,7 +376,7 @@ def transform_categorical_features(data, data_struct):
         dummies_list += [dummies]
 
     data = pd.concat([data] + dummies_list, axis=1)
-    # data = data.drop(category_columns, axis=1)
+    data = data.drop(category_columns, axis=1)
     return data, data_struct
 
 def transform_numeric_features(data, data_struct):
@@ -439,8 +426,8 @@ def transform_time_features(data, data_struct):
                  'Outcome6wk_dt_1',         # Date of outcome measurement at 6wks(e.g, discharge/death/transfer) (supposedly)
                  'date_readmission_3wk',    # Date of readmission hospital
                  'assessment_dt']           # Datetime of assessment of report
-
-
+    
+    date_cols = data_struct.loc[data_struct['Field Type'].isin(['date', 'time']), 'Field Variable Name'].to_list()
     # Last known dt = max([outcome_dt, assessment_dt])
     # Days untreated = "earliest known hospital admission" - onset
     # Days in hospital = last_known_date - "earliest known hospital admission"
@@ -453,18 +440,18 @@ def transform_time_features(data, data_struct):
     days_since_onset = (most_recent_date - format_dt(data['onset_dt'])).dt.days
     days_in_current_hosp = (most_recent_date - format_dt(data['admission_dt'])).dt.days
     days_since_first_hosp = (most_recent_date - format_dt(data['admission_facility_dt'])).dt.days
-    days_untreated = (format_dt(data['admission_dt']) - format_dt(data['onset_dt'])).dt.days
+    days_untreated = pd.to_numeric((format_dt(data['admission_dt']) - format_dt(data['onset_dt'])).dt.days)
     days_untreated.loc[days_untreated < 0] = 0  # If negative, person already in hospital at onset
     days_until_outcome_3wk = (format_dt(data['Outcome_dt']) - format_dt(data['admission_dt'])).dt.days
     days_until_outcome_6wk = (format_dt(data['Outcome6wk_dt_1']) - format_dt(data['admission_dt'])).dt.days
 
-    days_since_ICU_admission = (format_dt(data['assessment_dt']) - format_dt(data['Admission_dt_icu_1'])).dt.days
-    days_since_ICU_discharge = (format_dt(data['assessment_dt']) - format_dt(data['Discharge_dt_icu_1'])).dt.days
+    days_since_ICU_admission = pd.to_numeric((format_dt(data['assessment_dt']) - format_dt(data['Admission_dt_icu_1'])).dt.days)
+    days_since_ICU_discharge = pd.to_numeric((format_dt(data['assessment_dt']) - format_dt(data['Discharge_dt_icu_1'])).dt.days)
 
     days_since_ICU_admission.loc[(days_since_ICU_admission<0) & (days_since_ICU_discharge>=0)] = None ## As_type(int) to prevent copy warning?
     days_since_ICU_discharge.loc[(days_since_ICU_discharge<0)] = None
-    days_since_MC_admission = (format_dt(data['assessment_dt']) - format_dt(data['Admission_dt_mc_1'])).dt.days
-    days_since_MC_discharge = (format_dt(data['assessment_dt']) - format_dt(data['Admission_dt_mc_1'])).dt.days
+    days_since_MC_admission = pd.to_numeric((format_dt(data['assessment_dt']) - format_dt(data['Admission_dt_mc_1'])).dt.days)
+    days_since_MC_discharge = pd.to_numeric((format_dt(data['assessment_dt']) - format_dt(data['Admission_dt_mc_1'])).dt.days)
     days_since_MC_admission.loc[(days_since_MC_admission<0) & (days_since_MC_discharge>=0)] = None
     days_since_MC_discharge.loc[(days_since_MC_discharge<0)] = None
 
