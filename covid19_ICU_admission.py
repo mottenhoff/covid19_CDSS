@@ -41,8 +41,8 @@ from covid19_ICU_util import transform_string_features
 from covid19_ICU_util import transform_calculated_features
 from covid19_ICU_util import select_data
 from covid19_ICU_util import calculate_outcomes
-from covid19_ICU_util import calculate_outcomes_12_d21
-from covid19_ICU_util import get_variables
+from covid19_ICU_util import select_x_y
+from covid19_ICU_util import select_variables
 from covid19_ICU_util import plot_model_results
 from covid19_ICU_util import plot_model_weights
 from covid19_ICU_util import explore_data
@@ -117,19 +117,16 @@ def preprocess(data, data_struct):
 def prepare_for_learning(data, data_struct, group_by_record=True,
                          use_outcome=None, additional_fn=None):
     # Get all outcomes
+    # outcomes, used_columns = calculate_outcomes(data, data_struct)
     outcomes, used_columns = calculate_outcomes(data, data_struct)
-    # outcomes, used_columns = calculate_outcomes_12_d21(data, data_struct)
     data = pd.concat([data, outcomes], axis=1)
-
-    ##### Prepare for learning section #####
 
     # Group per record id
     if group_by_record:
+        outcomes = outcomes.groupby(by=data['Record Id'], axis=0).last()
         data = data.groupby(by='Record Id', axis=0).last()
 
-    # Split in x and y
-    x = data.copy()
-    y = data.loc[:, outcomes.columns].copy()
+    x, y, outcome_name = select_x_y(data, outcomes, used_columns)
 
     # Select variables to include in prediction
     variables_to_include_dict = {
@@ -137,31 +134,21 @@ def prepare_for_learning(data, data_struct, group_by_record=True,
             'Form Name':            ['DEMOGRAPHICS', 'CO-MORBIDITIES'], # variable subgroups
             'Field Variable Name':  [] # single variables
         }
-    x = get_variables(x, data_struct, variables_to_include_dict)
+
+    x = select_variables(x, data_struct, variables_to_include_dict)
 
     # Select variables to exclude
     #       TODO: used_columns (can't include columns used to calculate the outcome)
     #             any other columns
 
-    # Select outcome
-    outcome_name = 'final_outcome' if not use_outcome else use_outcome
-    print('LOG: Using <{}> as y.'.format(outcome_name))
-    y = y[outcome_name] if len(y.shape)>1 else y
-
-    # Drop records without outcome
-    has_outcome = y.notna()
-    y = y.loc[has_outcome]
-    x = x.loc[has_outcome, :]
-
     # Remove columns without information
     x = x.loc[:, x.nunique()>1] # Remove columns without information
+    x = x.fillna(0) # Fill missing values with 0 (as far as I know 0==missing or no)
 
-    # Fill missing values with 0 (as far as I know 0==missing or no)
-    x = x.fillna(0)
-
-    # TODO TEMP:
+    # FIXME: Drop any unhandles variables here
     # x = x.drop(['EMPTY_COLUMN_NAME'], axis=1)
 
+    print('LOG: Using <{}> as y.'.format(outcome_name))
     print('LOG: Selected {} variables for predictive model'.format(x.columns.size))
 
     return x, y, data
