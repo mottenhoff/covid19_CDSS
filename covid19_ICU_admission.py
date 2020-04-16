@@ -123,15 +123,15 @@ def prepare_for_learning(data, data_struct, group_by_record=True,
 
     # Group per record id
     if group_by_record:
-        outcomes = outcomes.groupby(by=data['Record Id'], axis=0).last()
-        data = data.groupby(by='Record Id', axis=0).last()
+        outcomes = outcomes.groupby(by=data['Record Id'], axis=0).last().reset_index(drop=True)
+        data = data.groupby(by='Record Id', axis=0).last().reset_index(drop=True)
 
     x, y, outcome_name = select_x_y(data, outcomes, used_columns)
 
     # Select variables to include in prediction
     variables_to_include_dict = {
-            'Form Collection Name': [], # Variable groups
-            'Form Name':            ['DEMOGRAPHICS', 'CO-MORBIDITIES'], # variable subgroups
+            'Form Collection Name': ['BASELINE', 'HOSPITAL ADMISSION'], # Variable groups
+            'Form Name':            [], # variable subgroups
             'Field Variable Name':  [] # single variables
         }
 
@@ -153,9 +153,6 @@ def prepare_for_learning(data, data_struct, group_by_record=True,
 
     return x, y, data
 
-# ethnic_group
-# ethnic_group  # 2 ?????
-
 def model_and_predict(x, y, model_fn, model_kwargs, test_size=0.2):
     ''' 
     NOTE: kwargs must be a dict. e.g.: {"select_features": True,
@@ -164,7 +161,7 @@ def model_and_predict(x, y, model_fn, model_kwargs, test_size=0.2):
     Monte Carlo cross-validation) with balanced class weight (meaning test has the same 
     Y-class distribution as train)
     '''
-    
+
     # Train/test-split
     train_x, test_x, train_y, test_y = train_test_split(x, y, test_size=test_size, stratify=y) # stratify == simila y distribution in both sets
 
@@ -193,12 +190,13 @@ if __name__ == "__main__":
 
     path_creds = config['CastorCredentials']['local_private_path']
 
-    # Saves intermediate
-    save = False # REMEMBER TO SAVE AS FEW A POSSIBLE FOR PRIVACY REASONS
-
     data, data_struct = load_data(path_creds)
     data, data_struct = preprocess(data, data_struct)
     x, y, data = prepare_for_learning(data, data_struct)
+
+
+    # TEMP remove duration to allow for input logreg classification
+    y = y.iloc[:, 0]
 
     explore_data(x, y)
 

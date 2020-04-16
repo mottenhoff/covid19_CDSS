@@ -141,18 +141,38 @@ def calculate_outcomes(data, data_struct):
     return df_outcomes, used_columns
 
 def select_x_y(data, outcomes, used_columns, remove_no_outcome=True):
-    x = data.drop(used_columns, axis=1).reset_index(drop=True)
-    y = pd.Series(None, index=x.index).reset_index(drop=True)
-    outcomes = outcomes.reset_index(drop=True)
+    x = data.drop(used_columns, axis=1)
+    y = pd.Series(None, index=x.index)
 
-    outcome_name = 'Discharged from hospital alive'
-    y.loc[outcomes.loc[:, 'Levend ontslagen en niet heropgenomen - totaal']==True] = 1
-    y.loc[outcomes.loc[:, 'Dood - totaal']==1] = 0
+    #(un)comment to choose your outcome
+    
+    ### Dead or Alive
+    # outcome_name = 'Discharged from hospital alive'
+    # y.loc[outcomes.loc[:, 'Levend ontslagen en niet heropgenomen - totaal']==True] = 1
+    # y.loc[outcomes.loc[:, 'Dood - totaal']==1] = 0
+    # y = y.dropna()
 
-    if remove_no_outcome:
-        has_outcome = y.notna()
-        x = x.loc[has_outcome, :]
-        y = y.loc[has_outcome]
+    ### Survival analysis - Time until leaving ICU
+    # Survival analysis
+    outcome_name = 'Leaving ICU dead or alive and the duration until event.'
+    y_event = pd.Series(None, index=x.index, name='event').reset_index(drop=True)
+
+    # Event happened
+    y_event.loc[outcomes.loc[:, ['Levend ontslagen en niet heropgenomen - waarvan opgenomen geweest op IC', \
+                        'Dood op dag 21 - op IC geweest']].any(axis=1)] = 1
+
+    # No event happened yet
+    is_at_icu = data.loc[:, 'days_at_icu'].notna()
+    has_no_outcome = outcomes.loc[:, 'Onbekend (alle patiënten zonder outcome)'] == 1
+    has_icu_outcome = outcomes.loc[:, 'Levend dag 21 maar nog in het ziekenhuis - waarvan nu nog op IC'] == 1
+    y_event.loc[(is_at_icu & has_no_outcome) | has_icu_outcome] = 0
+
+    # Time to event
+    y_duration = pd.Series(None, index=y_event.index, name='duration')
+    y_duration[y_event==1] = data.loc[y_event==1, 'days_until_outcome_3wk']
+    y_duration[y_event==0] = data.loc[y_event==0, 'days_at_icu']
+    y = pd.concat([y_event, y_duration], axis=1).dropna(axis=0)
+    x = x.loc[y.index, :]
 
     return x, y, outcome_name
 
