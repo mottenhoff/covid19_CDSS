@@ -224,12 +224,11 @@ def transform_binary_features(data, data_struct):
     data.loc[:, 'facility_transfer'].fillna(3).astype(int).apply(lambda x: dict_yes_no.get(x))
     data.loc[:, 'culture'].fillna(1).astype(int).apply(lambda x: {0:0, 1:0, 2:1, 3:2}.get(x))
 
-    # Unit variables
-    if_unit = lambda x: 1 if 'unit' in x.lower() or 'units' in x.lower() else 0
+    unit_dict, _ = get_unit_lookup_dict()
     vars_units = data_struct.loc[(data_struct['Field Type'] == 'radio') & \
-                                 (data_struct['Field Label'].apply(if_unit)==1),
-                                 'Field Variable Name'].to_list() + ['WBC_1']
-    data_struct.loc[data_struct['Field Variable Name'].isin(vars_units), 'Field Type'] = 'unit'
+                                 data_struct['Field Variable Name'].isin(unit_dict.keys()),
+                                 'Field Variable Name'].to_list()                                 
+    data_struct.loc[data_struct.loc[:, 'Field Variable Name'].isin(vars_units), 'Field Type'] = 'unit'
 
     # All other variables
     handled_vars = vars_yes_no + vars_yes_probable + other_radio_vars + vars_yes_unknown + vars_units
@@ -336,11 +335,11 @@ def transform_time_features(data, data_struct):
     # ReInotropes_duration = Inotropes_last - inotroped_first
     most_recent_date = format_dt(data['assessment_dt'])         #most_recent_date = max(format_dt(data['Outcome_dt']), format_dt(data['assessment_dt']))
 
-    age = (most_recent_date - format_dt(data['age'])).dt.days // 365
-    days_since_onset = (most_recent_date - format_dt(data['onset_dt'])).dt.days
-    days_in_current_hosp = (most_recent_date - format_dt(data['admission_dt'])).dt.days
+    age =                   (most_recent_date - format_dt(data['age'])).dt.days // 365
+    days_since_onset =      (most_recent_date - format_dt(data['onset_dt'])).dt.days
+    days_in_current_hosp =  (most_recent_date - format_dt(data['admission_dt'])).dt.days
     days_since_first_hosp = (most_recent_date - format_dt(data['admission_facility_dt'])).dt.days
-    days_untreated = pd.to_numeric((format_dt(data['admission_dt']) - format_dt(data['onset_dt'])).dt.days)
+    days_untreated =        pd.to_numeric((format_dt(data['admission_dt']) - format_dt(data['onset_dt'])).dt.days)
     days_untreated.loc[days_untreated < 0] = 0  # If negative, person already in hospital at onset
     days_until_outcome_3wk = (format_dt(data['Outcome_dt']) - format_dt(data['admission_dt'])).dt.days
     days_until_outcome_6wk = (format_dt(data['Outcome6wk_dt_1']) - format_dt(data['admission_dt'])).dt.days
@@ -379,15 +378,14 @@ def transform_time_features(data, data_struct):
     data = data.drop(cols_to_drop, axis=1)
 
     # Add the new variables to the struct dataframe, so that they can be selected later on
-    new_vars = []
-    new_vars += [pd.Series(['Study', 'BASELINE', 'DEMOGRAPHICS', 'age_yrs', None, 'datetime', None, None])]
-    new_vars += [pd.Series(['Study', 'HOSPITAL ADMISSION', 'ONSET & ADMISSION', var, None, 'datetime', None, None]) \
-                            for var in ['days_since_onset', 'days_since_admission_current_hosp', 'days_since_admission_first_hosp']]
-    new_vars += [pd.Series(['Study', 'OUTCOME', 'OUTCOME', var, None, 'datetime', None, None]) \
-                            for var in ['days_until_outcome_3wk', 'days_until_outcome_6wk']]
-    new_vars += [pd.Series(['Report', 'Daily case record form', 'Respiratory assessment', var, None, 'datetime', None, None]) \
-                            for var in ['days_at_ward', 'days_at_mc', 'days_at_icu']]
-    new_vars = pd.concat(new_vars, axis=1).T
+    new_vars = pd.concat(
+                  [pd.Series(['Study', 'BASELINE', 'DEMOGRAPHICS', 'age_yrs', None, 'datetime', None, None])] +
+                  [pd.Series(['Study', 'HOSPITAL ADMISSION', 'ONSET & ADMISSION', var, None, 'datetime', None, None]) \
+                              for var in ['days_since_onset', 'days_since_admission_current_hosp', 'days_since_admission_first_hosp']] +
+                  [pd.Series(['Study', 'OUTCOME', 'OUTCOME', var, None, 'datetime', None, None]) \
+                              for var in ['days_until_outcome_3wk', 'days_until_outcome_6wk']] +
+                  [pd.Series(['Report', 'Daily case record form', 'Respiratory assessment', var, None, 'datetime', None, None]) \
+                              for var in ['days_at_ward', 'days_at_mc', 'days_at_icu']], axis=1).T
     new_vars.columns = data_struct.columns
     data_struct = data_struct.append(new_vars)
 

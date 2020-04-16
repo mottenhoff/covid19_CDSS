@@ -157,15 +157,14 @@ def prepare_for_learning(data, data_struct, group_by_record=True,
 # ethnic_group  # 2 ?????
 
 def model_and_predict(x, y, model_fn, model_kwargs, test_size=0.2):
-    ''' NOTE: kwargs must be a dict. e.g.: {"select_features": True,
-                                            "plot_graph": False}
-
-        Select samples and fit model.
-        Currently uses random sub-sampling validation (also called
-            Monte Carlo cross-validation) with balanced class weight
-                (meaning test has the same Y-class distribution as
-                 train)
+    ''' 
+    NOTE: kwargs must be a dict. e.g.: {"select_features": True,
+                                        "plot_graph": False}
+    Select samples and fit model. Currently uses random sub-sampling validation (also called
+    Monte Carlo cross-validation) with balanced class weight (meaning test has the same 
+    Y-class distribution as train)
     '''
+    
     # Train/test-split
     train_x, test_x, train_y, test_y = train_test_split(x, y, test_size=test_size, stratify=y) # stratify == simila y distribution in both sets
 
