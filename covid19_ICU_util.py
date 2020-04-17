@@ -183,7 +183,7 @@ def select_x_y(data, outcomes, used_columns, remove_no_outcome=True,
     # Prediction 2: Which factors predict mortality at t=21
     #       Y = Dead/Alive
     #       X = All data before ICU admission
-    if goal == 'mortality':
+    elif goal == 'mortality':
         outcome_name = 'Patient has died'
         y_event = pd.Series(None, index=data.index)
         y_duration = outcomes.loc[:, 'Days until death']
@@ -199,7 +199,7 @@ def select_x_y(data, outcomes, used_columns, remove_no_outcome=True,
     # Prediction 3b: Which factors predict which patients are still at ICU at 21 days
     #       Y = [Left_ICU, duration]
     #       X = All data before ICU admission (or at ICU admission)
-    if goal == 'duration_of_stay_at_icu':
+    elif goal == 'duration_of_stay_at_icu':
         ### Survival analysis - Time until leaving ICU
         # Survival analysis
         outcome_name = 'Leaving ICU dead or alive and the duration until event.'
@@ -524,11 +524,11 @@ def select_variables(data, data_struct, variables_to_include_dict):
 def remove_columns_wo_information(data, data_struct):
     pass
 
-def plot_model_results(aucs):
+def plot_model_results(aucs, classifier='Logistic regression', outcome='ICU admission'):
     fig, ax = plt.subplots(1, 1)
     ax.plot(aucs)
-    ax.set_title('Logistic regression - ICU admission at hospital presentation\nROC AUC // Avg: {:.3f}' \
-                    .format(sum(aucs)/max(len(aucs), 1)))
+    ax.set_title('{} - {}\nROC AUC // Avg: {:.3f}' \
+                    .format(classifier, outcome, sum(aucs)/max(len(aucs), 1)))
     ax.axhline(sum(aucs)/max(len(aucs), 1), color='g', linewidth=1)
     ax.axhline(.5, color='r', linewidth=1)
     ax.set_ylim(0, 1)
@@ -536,9 +536,9 @@ def plot_model_results(aucs):
     fig.savefig('Performance_roc_auc.png')
     return fig, ax
 
-def plot_model_weights(coefs, intercepts, field_names, show_n_labels=10,
+def plot_model_weights(coefs, intercepts, field_names, show_n_features=10,
                        normalize_coefs=False):
-    show_n_labels = coefs.shape[1] if show_n_labels == None else show_n_labels
+    show_n_features = coefs.shape[1] if show_n_features == None else show_n_features
     coefs = np.array(coefs).squeeze()
     intercepts = np.array(intercepts).squeeze()
 
@@ -547,7 +547,7 @@ def plot_model_weights(coefs, intercepts, field_names, show_n_labels=10,
     avg_coefs = coefs.mean(axis=0)
     var_coefs = coefs.var(axis=0) if not normalize_coefs else None
 
-    idx_n_max_values = abs(avg_coefs).argsort()[-show_n_labels:]
+    idx_n_max_values = abs(avg_coefs).argsort()[-show_n_features:]
     n_bars = np.arange(coefs.shape[1])
     bar_labels = [''] * n_bars.size
     for idx in idx_n_max_values:
@@ -561,6 +561,17 @@ def plot_model_weights(coefs, intercepts, field_names, show_n_labels=10,
     ax.set_xlabel('Weight')
     ax.set_title('Logistic regression - Average weight value')
     fig.savefig('Average_weight_variance.png')
+    return fig, ax
+
+def plot_feature_importance(importances, features, show_n_features=5):
+    show_n_features = features.shape[0] if not show_n_features else show_n_features
+    
+    fig, ax = plt.subplots()
+    ax.set_title('Average feature importance')
+    feat_importances = pd.Series(np.mean(importances, axis=0), index=features)
+    feat_importances.nlargest(show_n_features).plot(kind='barh')
+    fig.savefig('Average_feature_importance.png')
+
     return fig, ax
 
 def explore_data(x, y):
