@@ -87,12 +87,19 @@ def calculate_outcomes(data, data_struct):
     has_unknown_outcome = data[get_outcome_columns([4,9,10])].any(axis=1)
     has_no_outcome = ~data[get_outcome_columns([1,2,3,4,5,6,7,8,9,10])].any(axis=1)
 
+    is_first_day_at_icu = data.loc[:, 'days_at_icu']==1 
+    days_until_icu = pd.Series(None, index=data.index)
+    days_until_icu.loc[is_first_day_at_icu] = data.loc[is_first_day_at_icu, 'days_since_admission_current_hosp']
+
+    has_died = data.loc[:, ['Outcome_cat_7','Outcome_cat_8']].any(axis=1)
+    days_until_death = pd.Series(None, index=data.index)
+    days_until_death.loc[has_died] = data.loc[has_died, 'days_until_outcome_3wk']
+
     outcome_icu_any = data['days_at_icu'] > 0
     outcome_icu_any = outcome_icu_any.groupby(by=data['Record Id']).transform(lambda x: 1 if x.any() else 0)
 
     outcome_icu_now = data['dept_cat_3'] == 1.0
     outcome_icu_now = outcome_icu_now.groupby(by=data['Record Id']).transform(lambda x: 1 if x.iloc[-1]==True else 0) # Technically doesn't matter if later aggregation is .last() anyway, but this is more secure
-
     outcome_icu_ever = outcome_icu_any | outcome_icu_now
     outcome_icu_never = ~outcome_icu_ever
 
@@ -121,7 +128,7 @@ def calculate_outcomes(data, data_struct):
                           data=  outcome_4 & outcome_icu_now)
 
     outcome_8 = pd.Series(name= 'Dood - totaal',
-                          data=  data.loc[:, ['Outcome_cat_7','Outcome_cat_8']].any(axis=1))
+                          data=  has_died)
 
     outcome_9 = pd.Series(name= 'Dood op dag 21 - niet op IC geweest',
                           data=  outcome_8 & outcome_icu_never)
@@ -130,49 +137,99 @@ def calculate_outcomes(data, data_struct):
                            data=  outcome_8 & outcome_icu_ever)
 
     outcome_11 = pd.Series(name= 'Onbekend (alle patiënten zonder outcome)',
-                           data= has_unknown_outcome | has_no_outcome)                                           
+                           data=  has_unknown_outcome | has_no_outcome)                                           
+    
+    outcome_13 = pd.Series(name= 'Days until death',
+                           data=  days_until_death.groupby(by=data.loc[:, 'Record Id']).transform(lambda x: max(x)))
+
+    outcome_12 = pd.Series(name= 'Days until ICU admission',
+                           data=  days_until_icu.groupby(by=data.loc[:, 'Record Id']).transform(lambda x: max(x))) # days_since_admission_first_hosp
+
+    outcome_14 = pd.Series(name= 'Total days at ICU',
+                           data=  data.loc[:, 'days_at_icu'].groupby(by=data.loc[:, 'Record Id']).transform(lambda x: max(x)))
+
 
     df_outcomes = pd.concat([outcome_0, outcome_1, outcome_2, outcome_3, outcome_4, outcome_5,
-                             outcome_6, outcome_7, outcome_8, outcome_9, outcome_10, outcome_11], axis=1)
+                             outcome_6, outcome_7, outcome_8, outcome_9, outcome_10, outcome_11,
+                             outcome_12, outcome_13, outcome_14], axis=1)
 
-    # used_columns = ['days_at_icu', 'dept_cat_3'] + \
+     # used_columns = ['days_at_icu', 'dept_cat_3'] + \
     used_columns = [col for col in data.columns if 'Outcome' in col] # Keep track of var
-
     return df_outcomes, used_columns
 
-def select_x_y(data, outcomes, used_columns, remove_no_outcome=True):
+def select_x_y(data, outcomes, used_columns, remove_no_outcome=True,
+               goal=None):
     x = data.drop(used_columns, axis=1)
     y = pd.Series(None, index=x.index)
 
-    #(un)comment to choose your outcome
-    
-    ### Dead or Alive
-    # outcome_name = 'Discharged from hospital alive'
-    # y.loc[outcomes.loc[:, 'Levend ontslagen en niet heropgenomen - totaal']==True] = 1
-    # y.loc[outcomes.loc[:, 'Dood - totaal']==1] = 0
-    # y = y.dropna()
+  
+    # Prediction 1: Which factors predict ICU admission
+    #       Y = ICU_admitted at sometime
+    #       X = All data before ICU admission
+    #           Ideally data at admission
+    if goal == 'icu_admission':
+        outcome_name = 'Patient is ICU admitted at some time during the whole hospital admission'
+        y_event = pd.Series(None, index=data.index)
+        y_duration = outcomes.loc[:, 'Days until ICU admission']
+        y_event.loc[y_duration.notna()] = 1
+        has_not_been_icu = outcomes.loc[:, ['Levend ontslagen en niet heropgenomen - waarvan niet opgenomen geweest op IC',
+                                            'Levend dag 21 maar nog in het ziekenhuis - niet op IC geweest',
+                                            'Dood op dag 21 - niet op IC geweest']].any(axis=1)
+        y_duration.loc[has_not_been_icu] = data.loc[has_not_been_icu, 'days_since_admission_current_hosp']
+        y_event.loc[has_not_been_icu] = 0
+        y = pd.concat([y_event, y_duration], axis=1)
+        y.columns = ['event', 'duration']
 
-    ### Survival analysis - Time until leaving ICU
-    # Survival analysis
-    outcome_name = 'Leaving ICU dead or alive and the duration until event.'
-    y_event = pd.Series(None, index=x.index, name='event').reset_index(drop=True)
+    # Prediction 2: Which factors predict mortality at t=21
+    #       Y = Dead/Alive
+    #       X = All data before ICU admission
+    if goal == 'mortality':
+        outcome_name = 'Patient has died'
+        y_event = pd.Series(None, index=data.index)
+        y_duration = outcomes.loc[:, 'Days until death']
+        y_event.loc[y_duration.notna()] = 1
+        has_not_died = outcomes.loc[:, ['Levend ontslagen en niet heropgenomen - totaal',
+                                        'Levend dag 21 maar nog in het ziekenhuis - totaal']].any(axis=1)
+        y_duration.loc[has_not_died] = data.loc[has_not_died, 'days_since_admission_current_hosp']
+        y_event.loc[has_not_died] = 0
+        y = pd.concat([y_event, y_duration], axis=1)
+        y.columns = ['event', 'duration']
 
-    # Event happened
-    y_event.loc[outcomes.loc[:, ['Levend ontslagen en niet heropgenomen - waarvan opgenomen geweest op IC', \
-                        'Dood op dag 21 - op IC geweest']].any(axis=1)] = 1
+    # Prediction 3a: Which factors predict duration of ICU admission
+    # Prediction 3b: Which factors predict which patients are still at ICU at 21 days
+    #       Y = [Left_ICU, duration]
+    #       X = All data before ICU admission (or at ICU admission)
+    if goal == 'duration_of_stay_at_icu':
+        ### Survival analysis - Time until leaving ICU
+        # Survival analysis
+        outcome_name = 'Leaving ICU dead or alive and the duration until event.'
+        y_event = pd.Series(None, index=x.index, name='event').reset_index(drop=True)
 
-    # No event happened yet
-    is_at_icu = data.loc[:, 'days_at_icu'].notna()
-    has_no_outcome = outcomes.loc[:, 'Onbekend (alle patiënten zonder outcome)'] == 1
-    has_icu_outcome = outcomes.loc[:, 'Levend dag 21 maar nog in het ziekenhuis - waarvan nu nog op IC'] == 1
-    y_event.loc[(is_at_icu & has_no_outcome) | has_icu_outcome] = 0
+        # Event happened
+        y_event.loc[outcomes.loc[:, ['Levend ontslagen en niet heropgenomen - waarvan opgenomen geweest op IC', \
+                                     'Dood op dag 21 - op IC geweest']].any(axis=1)] = 1
 
-    # Time to event
-    y_duration = pd.Series(None, index=y_event.index, name='duration')
-    y_duration[y_event==1] = data.loc[y_event==1, 'days_until_outcome_3wk']
-    y_duration[y_event==0] = data.loc[y_event==0, 'days_at_icu']
-    y = pd.concat([y_event, y_duration], axis=1).dropna(axis=0)
-    x = x.loc[y.index, :]
+        # No event happened yet
+        is_at_icu = data.loc[:, 'days_at_icu'].notna()
+        has_no_outcome = outcomes.loc[:, 'Onbekend (alle patiënten zonder outcome)'] == 1
+        has_icu_outcome = outcomes.loc[:, 'Levend dag 21 maar nog in het ziekenhuis - waarvan nu nog op IC'] == 1
+        y_event.loc[(is_at_icu & has_no_outcome) | has_icu_outcome] = 0
+
+        # Time to event
+        y_duration = pd.Series(None, index=y_event.index, name='duration')
+        y_duration[y_event==1] = data.loc[y_event==1, 'days_until_outcome_3wk'] # Should be first day of ICU admission to outcome
+        y_duration[y_event==0] = data.loc[y_event==0, 'days_at_icu']
+        y = pd.concat([y_event, y_duration], axis=1)
+
+    # Prediction 4: Which factors predict mono- or multi-organ failure at t=21
+    # TODO
+    if goal == 4:
+        pass
+
+    has_any_nan = y.isna().any(axis=1)
+    x = x.loc[~has_any_nan, :]
+    y = y.loc[~has_any_nan]
+
 
     return x, y, outcome_name
 

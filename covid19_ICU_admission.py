@@ -114,10 +114,11 @@ def preprocess(data, data_struct):
     return data, data_struct
 
 
-def prepare_for_learning(data, data_struct, group_by_record=True,
+def prepare_for_learning(data, data_struct, variables_to_incl, goal, group_by_record=True,
                          use_outcome=None, additional_fn=None):
     # Get all outcomes
     # outcomes, used_columns = calculate_outcomes(data, data_struct)
+
     outcomes, used_columns = calculate_outcomes(data, data_struct)
     data = pd.concat([data, outcomes], axis=1)
 
@@ -126,17 +127,12 @@ def prepare_for_learning(data, data_struct, group_by_record=True,
         outcomes = outcomes.groupby(by=data['Record Id'], axis=0).last().reset_index(drop=True)
         data = data.groupby(by='Record Id', axis=0).last().reset_index(drop=True)
 
-    x, y, outcome_name = select_x_y(data, outcomes, used_columns)
+
+    x, y, outcome_name = select_x_y(data, outcomes, used_columns,
+                                    goal=goal)
 
     # Select variables to include in prediction
-    variables_to_include_dict = {
-            'Form Collection Name': ['BASELINE', 'HOSPITAL ADMISSION'], # Variable groups
-            'Form Name':            [], # variable subgroups
-            'Field Variable Name':  [] # single variables
-        }
-
-    x = select_variables(x, data_struct, variables_to_include_dict)
-
+    x = select_variables(x, data_struct, variables_to_incl)
     # Select variables to exclude
     #       TODO: used_columns (can't include columns used to calculate the outcome)
     #             any other columns
@@ -144,9 +140,6 @@ def prepare_for_learning(data, data_struct, group_by_record=True,
     # Remove columns without information
     x = x.loc[:, x.nunique()>1] # Remove columns without information
     x = x.fillna(0) # Fill missing values with 0 (as far as I know 0==missing or no)
-
-    # FIXME: Drop any unhandles variables here
-    # x = x.drop(['EMPTY_COLUMN_NAME'], axis=1)
 
     print('LOG: Using <{}> as y.'.format(outcome_name))
     print('LOG: Selected {} variables for predictive model'.format(x.columns.size))
@@ -185,15 +178,22 @@ def score_and_vizualize_prediction(model, test_x, test_y, y_hat, rep):
 
 
 if __name__ == "__main__":
+    prediction_goal = ['icu_admission', 'mortality', 'duration_of_stay_at_icu']
+    goal = prediction_goal[2]
+
+    variables_to_include = {
+        'Form Collection Name': ['BASELINE', 'HOSPITAL ADMISSION'], # Variable groups
+        'Form Name':            [], # variable subgroups
+        'Field Variable Name':  [] # single variables
+    }
+
     config = configparser.ConfigParser()
     config.read('user_settings.ini') # create this once using covid19_createconfig and never upload this file to git.
-
     path_creds = config['CastorCredentials']['local_private_path']
 
     data, data_struct = load_data(path_creds)
     data, data_struct = preprocess(data, data_struct)
-    x, y, data = prepare_for_learning(data, data_struct)
-
+    x, y, data = prepare_for_learning(data, data_struct, variables_to_include, goal)
 
     # TEMP remove duration to allow for input logreg classification
     y = y.iloc[:, 0]
