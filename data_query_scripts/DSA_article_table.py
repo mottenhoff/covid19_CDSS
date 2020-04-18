@@ -7,30 +7,27 @@ Created on Fri Apr 10 14:01:40 2020
 """
 
 import configparser
-import pickle
 import os
-import site
 import pandas as pd
 import numpy as np
 import statsmodels.stats.multitest as mt
 from scipy import stats as ss
+import castorapi as ca
 import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), './../'))
+from unit_lookup import get_unit_lookup_dict  # noqa: E402
+from covid19_ICU_admission import load_data, preprocess  # noqa: E402
+from covid19_ICU_util import calculate_outcomes_12_d21  # noqa: E402
 
-site.addsitedir('./../') # add directory to path to enable import of covid19*
-from unit_lookup import get_unit_lookup_dict
-from covid19_ICU_admission import load_data, preprocess
-from covid19_ICU_util import calculate_outcomes, calculate_outcomes_12_d21
-from castor_api import Castor_api
 
-# %
 def get_units(cols_input):
     # connect to castor api to fetch information on variable lists
     config = configparser.ConfigParser()
-    config.read('../user_settings.ini') # create this once using and never upload
+    config.read('../user_settings.ini')  # create this once and never upload
 
     path_creds = config['CastorCredentials']['local_private_path']
-    c = Castor_api(path_creds)
+    c = ca.CastorApi(path_creds)
     c.select_study_by_name(config['CastorCredentials']['study_name'])
     optiongroups = c.request_study_export_optiongroups()
     studystruct = c.request_study_export_structure()
@@ -44,11 +41,18 @@ def get_units(cols_input):
             # the one with 1.0 as conversion factor is used.
             for ind, conversion in lookup_dict[numeric_vars[variable]].items():
                 if conversion == 1.0:
-                    option_group_id = studystruct['Field Option Group'][studystruct['Field Variable Name'] == numeric_vars[variable]]
-                    options = optiongroups[['Option Name','Option Value']][optiongroups['Option Group Id'] == option_group_id.values[0]]
-                    unit = options['Option Name'][options['Option Value'].values.astype(int) == ind]
+                    option_group_id = studystruct['Field Option Group'][
+                        studystruct['Field Variable Name'] ==
+                        numeric_vars[variable]]
+                    options = optiongroups[
+                        ['Option Name', 'Option Value']][
+                            optiongroups['Option Group Id'] ==
+                            option_group_id.values[0]]
+                    unit = options['Option Name'][
+                        options['Option Value'].values.astype(int) == ind]
                     units[cols == variable] = unit.values[0]
     return units.to_list()
+
 
 def get_variable_names_to_analyze_and_variable_type(
         excel_file,
@@ -60,28 +64,32 @@ def get_variable_names_to_analyze_and_variable_type(
     #    3.vergelijking presentatie
     #    4.vergelijking opname
     #    5.type variabele
-    excel_data = pd.read_excel(excel_file,sheet_name='AdmissionVariables',
+    excel_data = pd.read_excel(excel_file, sheet_name='AdmissionVariables',
                                header=0)
     mask = excel_data['sowieso'] == 1
     if variable_type is not None:
-        mask = np.logical_or(mask,excel_data[variable_type]==1)
+        mask = np.logical_or(mask, excel_data[variable_type] == 1)
 
-    return excel_data[['Form Type','Form Collection Name','Form Name',
-                       'Field Variable Name','Field Label','type variabele']][mask]
+    return excel_data[['Form Type', 'Form Collection Name', 'Form Name',
+                       'Field Variable Name', 'Field Label',
+                       'type variabele']][mask]
 
-def get_values(data,c):
+
+def get_values(data, c):
     values = {}
     for outcome in outcomes:
         values[outcome] = data[c][data[outcome]]
     return values
 
-def summarize_values(values,summary_type=None,threshold=5e-2,decimal_count=2):
+
+def summarize_values(values, summary_type=None,
+                     threshold=5e-2, decimal_count=2):
     s = {}
     total_len = np.nansum([len(values[x]) for x in values])
     for key in values:
         s[key] = ''
         v = values[key]
-        if summary_type == 1.0: # numeric
+        if summary_type == 1.0:  # numeric
             data1 = values['Dood - totaal'][~values['Dood - totaal'].isna()]
             data2 = values['Levend ontslagen en niet heropgenomen - totaal'][~values['Levend ontslagen en niet heropgenomen - totaal'].isna()]
             normalresult1 = ss.normaltest(data1)
@@ -316,7 +324,7 @@ def create_table_for_variables_outcomes(df_variable_columns):
                 data[c][data[c] == ''] = 'NaN'
                 data[c] = np.float64(data[c])
             elif c == 'Smoking':
-                if True: # active smoking only
+                if False: # active smoking only
                     data['Smoking'] = data[c].replace({'1':1,'2':2,'3':2,
                                                               '4':np.nan})
                 else: # all smoking
