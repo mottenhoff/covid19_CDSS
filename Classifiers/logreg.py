@@ -7,6 +7,10 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import cross_val_predict
 from sklearn.metrics import roc_auc_score
 
+import warnings
+from sklearn.exceptions import ConvergenceWarning
+warnings.filterwarnings(action='ignore', category=ConvergenceWarning)
+
 def add_engineered_features(data, pca=None):
     ''' Generate and add features'''
     # TODO: Normalize/scale numeric features (also to 0 to 1?)
@@ -53,7 +57,6 @@ def feature_contribution(clf, x, y, plot_graph=False, plot_n_features=None,
         ax.set_ylabel('Difference with baseline')
 
     return importances
-
 
 def train_logistic_regression(train_x, test_x, train_y, test_y, **kwargs):  
     n_best_features = 10 if not kwargs.get('n_best_features') else kwargs.get('n_best_features')

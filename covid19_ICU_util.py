@@ -37,24 +37,10 @@ def get_all_field_information(path_to_creds):
 
     return data_struct
 
-def remove_invalid_data(data, cols):
-    # DEPRECATED
-
-    '''Remove any data irregularities'''
-
-    # Some entries are interpreted as the worst values
-    # during the whole admission retrospectively. This was
-    # later changed, but some of these entries are still
-    # in the data and thus have to be removed.
-
-
-
-    return data
-
 def count_occurrences(col, record_ids, reset_count=False, start_count_at=1):
     # Make counter of occurences in binary column
     # NOTE: Make sure to supply sorted array
-    # TODO: Optimize (maybe use df.groupby?)
+    # TODO: Optimize with groupby
     new_cols = []
     for record in record_ids.unique():
 
@@ -80,198 +66,174 @@ def count_occurrences(col, record_ids, reset_count=False, start_count_at=1):
     new_col = pd.concat(new_cols, axis=0)
     return new_col
 
-
 def calculate_outcomes(data, data_struct):
-
-    # OUTCOME 1 ==> Outcome good or bad
-    data['has_severe_complications'] = 0
-    data.loc[(data['Extracorporeal_support_1']==1) | (data['Liver_dysfunction_1_1']==1) |
-                (data['INR_1_1'].astype('float') > 1.5), 'has_severe_complications'] = 1
-
-    get_outcome_columns = lambda x: ['{}_{}'.format(str_, i) for i in x for str_ in ['Outcome_cat', 'Outcome_6wk_cat']]
-    positive_columns = is_in_columns(get_outcome_columns([1, 2, 5, 6]), data)
-    negative_columns = is_in_columns(get_outcome_columns([7, 8]), data)
-    unknown_columns = is_in_columns(get_outcome_columns([4, 9, 10]), data)
-    icu_columns = is_in_columns(get_outcome_columns([3]), data)
-
-    final_outcome = pd.Series(None, index=data.index, name='final_outcome')
-    final_outcome.loc[(data.loc[:, positive_columns].any(axis=1)) |
-                        ((data['has_severe_complications']==0) & (data.loc[:, icu_columns].any(axis=1)))] = 1
-    final_outcome.loc[data.loc[:, negative_columns].any(axis=1) |
-                        ((data['has_severe_complications']==0) & (data.loc[:, icu_columns].any(axis=1)))] = 0
-
-    used_columns = positive_columns + negative_columns + unknown_columns + \
-                    icu_columns + ['Extracorporeal_support_1', 'Liver_dysfunction_1_1', 'INR_1_1']
-
-    # Outcome 2 ==> ICU admission at n days
-    n_days = 7
-    icu_within_n_days = pd.Series(None, index=data.index, name='icu_within_{}_days'.format(n_days))
-    icu_within_n_days.loc[(data['days_since_admission_current_hosp'] >= n_days) &
-                            ((data['days_at_icu']>=1) | (data['days_since_icu_admission']>=1))] = 0
-    icu_within_n_days.loc[(data['days_since_admission_current_hosp'] < n_days) &
-                            ((data['days_at_icu']<1) | (data['days_since_icu_admission']<1))] = 1
-
-    used_columns += ['days_since_admission_current_hosp', 'days_at_icu', 'days_since_icu_admission']
-
-    outcomes = pd.concat([final_outcome, icu_within_n_days], axis=1)
-    return outcomes, used_columns
-
-def calculate_outcomes_12_d21(data, data_struct):
+    # CATEGORY EXPLANATION
+    # Discharged alive: 1) Discharged to home
+    #                   5) Transfer to nursing home  
+    # 	                6) Transfer to rehabilitation unit
+    # 	
+    # In hospital:      2) Hospitalization (ward / medium care)
+    #                   3) Hospitalization (ICU)
+    #
+    # Died:             7) Palliative discharge
+    #                   8) Death
+ 
+    # Unknown           4) Transfer to other hospital
+    #                   9) Unknown
+    #                  10) Discharged to home and re-admitted
+    
     get_outcome_columns = lambda x: ['{}_{}'.format(str_, i) for i in x for str_ in ['Outcome_cat']]
 
-
-
-    # FIXME: Fix in fix_single_errors()
-    outcols = [col for col in data.columns if 'Outcome' in col]
-    data.loc[data['Outcome']=='', 'Outcome'] = None
-    data.loc[data['Outcome_6wk']=='', 'Outcome_6wk'] = None
-    for col in outcols:
-        data[col] = pd.to_numeric(data[col])
-
-     # FIXME: Fix this error in transform_categories()
-    data.loc[data['Outcome']==10, 'Outcome_cat_1'] = 0
-    ## TEMP
-
-    # Discharged to home	1
-    # Transfer to nursing home	5
-    # Transfer to rehabilitation unit	6
-
-    # Hospitalization (ward / medium care)	2
-    # Hospitalization (ICU)	3
-
-    # Palliative discharge	7
-    # Death	8
-
-    # Transfer to other hospital	4
-    # Unknown	9
-    # Discharged to home and re-admitted	10
-
-
-    # NOTE: Quickfix, normaly there shouldn't be any aggregation in this function imo
-    # 1:'Levend ontslagen en niet heropgenomen',
-    outcome_1 = data.loc[:, get_outcome_columns([1, 5, 6])].any(axis=1)
-
-    # 4:'Levend dag 21 maar nog in het ziekenhuis',
-    outcome_4 = data.loc[:, get_outcome_columns([2,3])].any(axis=1)
-
-    # 8:'Dood'
-    outcome_8 = data.loc[:, ['Outcome_cat_7','Outcome_cat_8']].any(axis=1)
-
-    # 11:'Alle patiënten zonder dag 21 outcome'
     has_unknown_outcome = data[get_outcome_columns([4,9,10])].any(axis=1)
     has_no_outcome = ~data[get_outcome_columns([1,2,3,4,5,6,7,8,9,10])].any(axis=1)
-    outcome_11 = has_unknown_outcome | has_no_outcome
 
+    is_first_day_at_icu = data.loc[:, 'days_at_icu']==1 
+    days_until_icu = pd.Series(None, index=data.index)
+    days_until_icu.loc[is_first_day_at_icu] = data.loc[is_first_day_at_icu, 'days_since_admission_current_hosp']
+
+    has_died = data.loc[:, ['Outcome_cat_7','Outcome_cat_8']].any(axis=1)
+    days_until_death = pd.Series(None, index=data.index)
+    days_until_death.loc[has_died] = data.loc[has_died, 'days_until_outcome_3wk']
 
     outcome_icu_any = data['days_at_icu'] > 0
     outcome_icu_any = outcome_icu_any.groupby(by=data['Record Id']).transform(lambda x: 1 if x.any() else 0)
+
     outcome_icu_now = data['dept_cat_3'] == 1.0
     outcome_icu_now = outcome_icu_now.groupby(by=data['Record Id']).transform(lambda x: 1 if x.iloc[-1]==True else 0) # Technically doesn't matter if later aggregation is .last() anyway, but this is more secure
     outcome_icu_ever = outcome_icu_any | outcome_icu_now
     outcome_icu_never = ~outcome_icu_ever
 
-    # beademd geweest op IC
-    # outcome_ventilation_any = np.logical_or(
-    #     np.logical_or(
-    #         data['patient_interventions_cat_1'] == 1.0,
-    #         data['patient_interventions_cat_2'] == 1.0),
-    #     data['Invasive_ventilation_1'] == 1.0)
-    # outcome_ventilation_daily = np.logical_or(
-    #         data['patient_interventions_cat_1'] == 1.0,
-    #         data['patient_interventions_cat_2'] == 1.0)
+    outcome_0 = pd.Series(name= 'Totaal',
+                          data=  True, index=data.index)
 
-    # orgaanfalen lever, nier
+    outcome_1 = pd.Series(name= 'Levend ontslagen en niet heropgenomen - totaal',
+                          data=  data.loc[:, get_outcome_columns([1, 5, 6])].any(axis=1))
 
-    # outcome_organfailure_any = np.logical_or(
-    #     np.logical_or(
-    #         np.logical_or(
-    #             np.logical_or(
-    #                 np.logical_or(
-    #                     data['patient_interventions_cat_3'] == 1.0,
-    #                     data['patient_interventions_cat_5'] == 1.0),
-    #                 data['Extracorporeal_support_1'] == 1.0),
-    #             data['Liver_dysfunction_1_1'] == 1.0),
-    #         data['INR_1_1'].astype('float') > 1.5),
-    #     data['Acute_renal_injury_Acute_renal_failure_1_1'] == 1.0)
+    outcome_2 = pd.Series(name= 'Levend ontslagen en niet heropgenomen - waarvan niet opgenomen geweest op IC',
+                          data=  outcome_1 & outcome_icu_never)
 
-    df_outcomes = pd.DataFrame([[False]*12]*len(data), index=data.index)
+    outcome_3 = pd.Series(name= 'Levend ontslagen en niet heropgenomen - waarvan opgenomen geweest op IC',
+                          data=  outcome_1 & outcome_icu_ever)
 
-    # 0:'Totaal'
-    df_outcomes.loc[:, 0] = True
+    outcome_4 = pd.Series(name= 'Levend dag 21 maar nog in het ziekenhuis - totaal',
+                          data=  data.loc[:, get_outcome_columns([2,3])].any(axis=1))
 
-    # 1:'Levend ontslagen en niet heropgenomen - totaal',
-    df_outcomes.loc[:, 1] = outcome_1
+    outcome_5 = pd.Series(name= 'Levend dag 21 maar nog in het ziekenhuis - niet op IC geweest',
+                          data=  outcome_4 & outcome_icu_never)
 
-    # 2:'Levend ontslagen en niet heropgenomen - waarvan niet opgenomen geweest op IC',
-    df_outcomes.loc[:, 2] = outcome_1 & outcome_icu_never
+    outcome_6 = pd.Series(name= 'Levend dag 21 maar nog in het ziekenhuis - op IC geweest',
+                          data=  outcome_4 & outcome_icu_ever)
 
-    # 3:'Levend ontslagen en niet heropgenomen - waarvan opgenomen geweest op IC',
-    df_outcomes.loc[:, 3] = outcome_1 & outcome_icu_ever
+    outcome_7 = pd.Series(name= 'Levend dag 21 maar nog in het ziekenhuis - waarvan nu nog op IC',
+                          data=  outcome_4 & outcome_icu_now)
 
-    # 4:'Levend dag 21 maar nog in het ziekenhuis - totaal',
-    df_outcomes.loc[:, 4] = outcome_4
+    outcome_8 = pd.Series(name= 'Dood - totaal',
+                          data=  has_died)
 
-    # 5:'Levend dag 21 maar nog in het ziekenhuis - niet op IC geweest',
-    df_outcomes.loc[:, 5] = outcome_4 & outcome_icu_never
+    outcome_9 = pd.Series(name= 'Dood op dag 21 - niet op IC geweest',
+                          data=  outcome_8 & outcome_icu_never)
 
-    # 6:'Levend dag 21 maar nog in het ziekenhuis - op IC geweest
-    df_outcomes.loc[:, 6] = outcome_4 & outcome_icu_ever
+    outcome_10 = pd.Series(name= 'Dood op dag 21 - op IC geweest',
+                           data=  outcome_8 & outcome_icu_ever)
 
-    # 7:'Levend dag 21 maar nog in het ziekenhuis - nog op IC',
-    df_outcomes.loc[:, 7] = outcome_4 & outcome_icu_now
+    outcome_11 = pd.Series(name= 'Onbekend (alle patiënten zonder outcome)',
+                           data=  has_unknown_outcome | has_no_outcome)                                           
+    
+    outcome_13 = pd.Series(name= 'Days until death',
+                           data=  days_until_death.groupby(by=data.loc[:, 'Record Id']).transform(lambda x: max(x)))
 
-    # 8:'Dood - totaal',
-    df_outcomes.loc[:,8] = outcome_8
+    outcome_12 = pd.Series(name= 'Days until ICU admission',
+                           data=  days_until_icu.groupby(by=data.loc[:, 'Record Id']).transform(lambda x: max(x))) # days_since_admission_first_hosp
 
-    # 9:'Dood op dag 21 - niet op IC geweest',
-    df_outcomes.loc[:, 9] = outcome_8 & outcome_icu_never
-
-    # 10:'Dood op dag 21 - op IC geweest',
-    df_outcomes.loc[:, 10] = outcome_8 & outcome_icu_ever
-
-    # 11:'Onbekend (alle patiënten zonder outcome)'}
-    df_outcomes.loc[:, 11] = outcome_11
+    outcome_14 = pd.Series(name= 'Total days at ICU',
+                           data=  data.loc[:, 'days_at_icu'].groupby(by=data.loc[:, 'Record Id']).transform(lambda x: max(x)))
 
 
-    # OUTCOME 1 ==> Outcome good or bad
-    # data['has_severe_complications'] = 0
-    # data.loc[(data['Extracorporeal_support_1']==1) | (data['Liver_dysfunction_1_1']==1) |
-    #             (data['INR_1_1'].astype('float') > 1.5), 'has_severe_complications'] = 1
+    df_outcomes = pd.concat([outcome_0, outcome_1, outcome_2, outcome_3, outcome_4, outcome_5,
+                             outcome_6, outcome_7, outcome_8, outcome_9, outcome_10, outcome_11,
+                             outcome_12, outcome_13, outcome_14], axis=1)
 
-    # get_outcome_columns = lambda x: ['{}_{}'.format(str_, i) for i in x for str_ in ['Outcome_cat', 'Outcome_6wk_cat']]
-    # positive_columns = is_in_columns(get_outcome_columns([1, 2, 5, 6]), data)
-    # negative_columns = is_in_columns(get_outcome_columns([7, 8]), data)
-    # unknown_columns = is_in_columns(get_outcome_columns([4, 9, 10]), data)
-    # icu_columns = is_in_columns(get_outcome_columns([3]), data)
-
-    # final_outcome = pd.Series(None, index=data.index, name='final_outcome')
-    # final_outcome.loc[(data.loc[:, positive_columns].any(axis=1)) |
-    #                     ((data['has_severe_complications']==0) & (data.loc[:, icu_columns].any(axis=1)))] = 1
-    # final_outcome.loc[data.loc[:, negative_columns].any(axis=1) |
-    #                     ((data['has_severe_complications']==0) & (data.loc[:, icu_columns].any(axis=1)))] = 0
-
-    used_columns = []
-    # used_columns = positive_columns + negative_columns + unknown_columns + \
-    #                 icu_columns + ['Extracorporeal_support_1', 'Liver_dysfunction_1_1', 'INR_1_1']
-
-    df_outcomes.rename(columns={0:'Totaal',
-                                1:'Levend ontslagen en niet heropgenomen - totaal',
-                                2:'Levend ontslagen en niet heropgenomen - waarvan niet opgenomen geweest op IC',
-                                3:'Levend ontslagen en niet heropgenomen - waarvan opgenomen geweest op IC',
-                                4:'Levend dag 21 maar nog in het ziekenhuis - totaal',
-                                5:'Levend dag 21 maar nog in het ziekenhuis - niet op IC geweest',
-                                6:'Levend dag 21 maar nog in het ziekenhuis - op IC geweest',
-                                7:'Levend dag 21 maar nog in het ziekenhuis - waarvan nu nog op IC',
-                                8:'Dood - totaal',
-                                9:'Dood op dag 21 - niet op IC geweest',
-                                10:'Dood op dag 21 - op IC geweest',
-                                11:'Onbekend (alle patiënten zonder outcome)'}, inplace=True)
-
+     # used_columns = ['days_at_icu', 'dept_cat_3'] + \
+    used_columns = [col for col in data.columns if 'Outcome' in col] # Keep track of var
     return df_outcomes, used_columns
 
+def select_x_y(data, outcomes, used_columns, remove_no_outcome=True,
+               goal=None):
+    x = data.drop(used_columns, axis=1)
+    y = pd.Series(None, index=x.index)
+
+  
+    # Prediction 1: Which factors predict ICU admission
+    #       Y = ICU_admitted at sometime
+    #       X = All data before ICU admission
+    #           Ideally data at admission
+    if goal == 'icu_admission':
+        outcome_name = 'Patient is ICU admitted at some time during the whole hospital admission'
+        y_event = pd.Series(None, index=data.index)
+        y_duration = outcomes.loc[:, 'Days until ICU admission']
+        y_event.loc[y_duration.notna()] = 1
+        has_not_been_icu = outcomes.loc[:, ['Levend ontslagen en niet heropgenomen - waarvan niet opgenomen geweest op IC',
+                                            'Levend dag 21 maar nog in het ziekenhuis - niet op IC geweest',
+                                            'Dood op dag 21 - niet op IC geweest']].any(axis=1)
+        y_duration.loc[has_not_been_icu] = data.loc[has_not_been_icu, 'days_since_admission_current_hosp']
+        y_event.loc[has_not_been_icu] = 0
+        y = pd.concat([y_event, y_duration], axis=1)
+        y.columns = ['event', 'duration']
+
+    # Prediction 2: Which factors predict mortality at t=21
+    #       Y = Dead/Alive
+    #       X = All data before ICU admission
+    if goal == 'mortality':
+        outcome_name = 'Patient has died'
+        y_event = pd.Series(None, index=data.index)
+        y_duration = outcomes.loc[:, 'Days until death']
+        y_event.loc[y_duration.notna()] = 1
+        has_not_died = outcomes.loc[:, ['Levend ontslagen en niet heropgenomen - totaal',
+                                        'Levend dag 21 maar nog in het ziekenhuis - totaal']].any(axis=1)
+        y_duration.loc[has_not_died] = data.loc[has_not_died, 'days_since_admission_current_hosp']
+        y_event.loc[has_not_died] = 0
+        y = pd.concat([y_event, y_duration], axis=1)
+        y.columns = ['event', 'duration']
+
+    # Prediction 3a: Which factors predict duration of ICU admission
+    # Prediction 3b: Which factors predict which patients are still at ICU at 21 days
+    #       Y = [Left_ICU, duration]
+    #       X = All data before ICU admission (or at ICU admission)
+    if goal == 'duration_of_stay_at_icu':
+        ### Survival analysis - Time until leaving ICU
+        # Survival analysis
+        outcome_name = 'Leaving ICU dead or alive and the duration until event.'
+        y_event = pd.Series(None, index=x.index, name='event').reset_index(drop=True)
+
+        # Event happened
+        y_event.loc[outcomes.loc[:, ['Levend ontslagen en niet heropgenomen - waarvan opgenomen geweest op IC', \
+                                     'Dood op dag 21 - op IC geweest']].any(axis=1)] = 1
+
+        # No event happened yet
+        is_at_icu = data.loc[:, 'days_at_icu'].notna()
+        has_no_outcome = outcomes.loc[:, 'Onbekend (alle patiënten zonder outcome)'] == 1
+        has_icu_outcome = outcomes.loc[:, 'Levend dag 21 maar nog in het ziekenhuis - waarvan nu nog op IC'] == 1
+        y_event.loc[(is_at_icu & has_no_outcome) | has_icu_outcome] = 0
+
+        # Time to event
+        y_duration = pd.Series(None, index=y_event.index, name='duration')
+        y_duration[y_event==1] = data.loc[y_event==1, 'days_until_outcome_3wk'] # Should be first day of ICU admission to outcome
+        y_duration[y_event==0] = data.loc[y_event==0, 'days_at_icu']
+        y = pd.concat([y_event, y_duration], axis=1)
+
+    # Prediction 4: Which factors predict mono- or multi-organ failure at t=21
+    # TODO
+    if goal == 4:
+        pass
+
+    has_any_nan = y.isna().any(axis=1)
+    x = x.loc[~has_any_nan, :]
+    y = y.loc[~has_any_nan]
+
+
+    return x, y, outcome_name
 
 def fix_single_errors(data):
-    # TODO: Consider moving this after merge study & report
 
     # Global fix
     data = data.replace('11-11-1111', None)
@@ -284,32 +246,37 @@ def fix_single_errors(data):
         data = data.replace(value, None)
 
     # Specific fix
-    data['Enrolment_date'].replace('24-02-1960', '24-02-2020', inplace=True)
-    data['admission_dt'].replace('19-03-0202', '19-03-2020', inplace=True)
-    data['admission_facility_dt'].replace('01-01-2998', None, inplace=True)
-    data['age'].replace('14-09-2939', '14-09-1939', inplace=True)
-    data['specify_Acute_Respiratory_Distress_Syndrome_1_1'].replace('Covid-19 associated', None, inplace=True)
-    data['specify_Acute_Respiratory_Distress_Syndrome_1_1'].replace('Hypoxomie wv invasieve beademing', None, inplace=True)
-    data['oxygentherapy_1'].replace(-98, None, inplace=True)
-    data['Smoking'].replace(-99, None, inplace=True)
+    data.loc[:, 'Enrolment_date'] = data.loc[:, 'Enrolment_date'].replace('24-02-1960', '24-02-2020')
+    data.loc[:, 'admission_dt'] = data.loc[:, 'admission_dt'].replace('19-03-0202', '19-03-2020')
+    data.loc[:, 'admission_facility_dt'] = data.loc[:, 'admission_facility_dt'].replace('01-01-2998', None)
+    data.loc[:, 'age'] = data.loc[:, 'age'].replace('14-09-2939', '14-09-1939')
+    data.loc[:, 'specify_Acute_Respiratory_Distress_Syndrome_1_1'] = data.loc[:, 'specify_Acute_Respiratory_Distress_Syndrome_1_1'] \
+                                                                         .replace('Covid-19 associated', None)
+    data.loc[:, 'specify_Acute_Respiratory_Distress_Syndrome_1_1'] = data.loc[:, 'specify_Acute_Respiratory_Distress_Syndrome_1_1'] \
+                                                                         .replace('Hypoxomie wv invasieve beademing', None)
+    data.loc[:, 'oxygentherapy_1'] = data.loc[:, 'oxygentherapy_1'].replace(-98, None)
+    data.loc[:, 'Smoking'] = data.loc[:, 'Smoking'].replace(-99, None)
 
-    data.loc[data['Record Id'].isin(['120007', '130032']),
-            'assessment_dt'].replace('20-02-2020', '20-03-2020', inplace=True)
+    mask = data['Record Id'].isin(['120007', '130032'])
+    data.loc[mask, 'assessment_dt'] = data.loc[mask, 'assessment_dt'].replace('20-02-2020', '20-03-2020')
 
     return data
 
 def transform_binary_features(data, data_struct):
     value_na = None
-    dict_yes_no = {0:0, 1:1, 2:0, 3:value_na}
+    dict_yes_no = {0:0, 1:1, 2:0, 3:value_na, 9:value_na, 9999: value_na}
     dict_yp = {0:0, 1:1, 2:.5, 3:0, 4:value_na} # [1, 2, 3, 4 ] --> [1, .5, 0, -1]
-    dict_yu = {9999:value_na, 5555:value_na, -1:value_na} # only change unknown to nan
-    dict_smoke = {0:0,1:1, 2:0, 3:.5, 4:value_na} # [Yes, no, stopped_smoking] --> [1, 0, .5]
+    dict_yu = {0:0, 1:1, 9999:value_na}
+    dict_smoke = {0:0, 1:1, 2:0, 3:.5, 4:value_na} # [Yes, no, stopped_smoking] --> [1, 0, .5]
+
+    # Some fixed for erronuous field types
+    data_struct.loc[data_struct['Field Variable Name']=='MH_HF', 'Field Type'] = 'radio'
 
     radio_fields = data_struct.loc[data_struct['Field Type'] == 'radio', 'Field Variable Name'].to_list()
 
     # Find all answers with Yes No and re-value them
     if_yes_no = lambda x: 1 if type(x)==list and ("Yes" in x and "No" in x) else 0
-    is_yes_no = data_struct['Option Name'].apply(if_yes_no)==1
+    is_yes_no = data_struct['Option Name'].apply(if_yes_no) == 1
     vars_yes_no = is_in_columns(data_struct.loc[is_yes_no, 'Field Variable Name'].to_list(), data)
     data.loc[:, vars_yes_no] = data.loc[:, vars_yes_no].fillna(3).astype(int).applymap(lambda x: dict_yes_no.get(x))
 
@@ -319,16 +286,12 @@ def transform_binary_features(data, data_struct):
     vars_yes_probable = is_in_columns(data_struct.loc[is_yes_probable, 'Field Variable Name'].to_list(), data)
     data.loc[:, vars_yes_probable] = data.loc[:, vars_yes_probable].fillna(4).astype(int).applymap(lambda x: dict_yp.get(x))
 
+    # NOTE in current implementation all unknowns are caught by is_yes_no
     # Find all answers with Unknown (cardiac variables)
-    if_unknown = lambda x: 1 if type(x)==list and ("Unknown" in x or "unknown" in x) else 0
-    is_unknown = data_struct['Option Name'].apply(if_unknown) == 1
-    is_radio_dropdown = [(d in ['dropdown','radio']) for d in data_struct['Field Type'].to_list()]
-    # avoid deleting unknown from outcomes.
-    is_few_options = data_struct['Option Name'].apply(lambda x: len(x) if type(x)==list else 99) <= 3
-    is_unknown = is_radio_dropdown & is_unknown & is_few_options
-    vars_unknown = is_in_columns(data_struct.loc[is_unknown, 'Field Variable Name'].to_list(), data)
-    data.loc[:, vars_unknown] = data.loc[:, vars_unknown].fillna(-1).astype(int).applymap(lambda x: dict_yu.get(x))
-
+    if_unknown = lambda x: 1 if (type(x)==list) and (("Unknown" in x or "unknown" in x) and ("Yes" in x)) else 0
+    has_unknown = data_struct['Option Name'].apply(if_unknown) == 1
+    vars_yes_unknown = is_in_columns(data_struct.loc[has_unknown, 'Field Variable Name'].to_list(), data)
+    data.loc[:, vars_yes_unknown] = data.loc[:, vars_yes_unknown].fillna(9999).astype(int).applymap(lambda x: dict_yu.get(x))
 
     # Hand code some other variables
     other_radio_vars = ['Bacteria', 'Smoking', 'CT_thorax_performed', 'facility_transfer', 'culture']
@@ -338,26 +301,23 @@ def transform_binary_features(data, data_struct):
     data.loc[:, 'facility_transfer'].fillna(3).astype(int).apply(lambda x: dict_yes_no.get(x))
     data.loc[:, 'culture'].fillna(1).astype(int).apply(lambda x: {0:0, 1:0, 2:1, 3:2}.get(x))
 
-    # Unit variables
-    if_unit = lambda x: 1 if 'unit' in x.lower() or 'units' in x.lower() else 0
+    unit_dict, _ = get_unit_lookup_dict()
     vars_units = data_struct.loc[(data_struct['Field Type'] == 'radio') & \
-                                 (data_struct['Field Label'].apply(if_unit)==1),
-                                 'Field Variable Name'].to_list() + ['WBC_1']
-    data_struct.loc[data_struct['Field Variable Name'].isin(vars_units), 'Field Type'] = 'unit'
+                                 data_struct['Field Variable Name'].isin(unit_dict.keys()),
+                                 'Field Variable Name'].to_list()                                 
+    data_struct.loc[data_struct.loc[:, 'Field Variable Name'].isin(vars_units), 'Field Type'] = 'unit'
 
     # All other variables
-    handled_vars = vars_yes_no + vars_yes_probable + other_radio_vars + vars_units
+    handled_vars = vars_yes_no + vars_yes_probable + other_radio_vars + vars_yes_unknown + vars_units
     vars_other = is_in_columns([v for v in radio_fields if v not in handled_vars], data)
     data_struct.loc[data_struct['Field Variable Name'].isin(vars_other), 'Field Type'] = 'category'
 
     return data, data_struct
 
-
 def transform_categorical_features(data, data_struct):
     ''' Create dummyvariables for category variables,
         removes empty variables and attaches column names
     '''
-
     # # Get all information about category variables
     is_category = data_struct['Field Type'].isin(['category', 'checkbox', 'dropdown'])
     data_struct.loc[is_category, 'Field Type'] = 'category'
@@ -382,14 +342,15 @@ def transform_categorical_features(data, data_struct):
         dummies = pd.DataFrame(0, index=data.index, columns=dummy_column_names)
         # Insert the data
         for cat in unique_categories:
-            # TODO fix that 1 is in cat 10 (OUTCOME!)
+            # TODO: Filter specific categories that are nan/na/none/unknown
             data[col] = data[col].fillna('') # Can't handle nans, will be deleted anyway
-            dummies.loc[data[col].str.contains(cat), get_name(col, cat)] = 1
+            regex_str = '(?:;|^){}(?:;|$)'.format(cat)
+            dummies.loc[data[col].str.contains(regex_str, regex=True), get_name(col, cat)] = 1
 
         dummies_list += [dummies]
 
     data = pd.concat([data] + dummies_list, axis=1)
-    # data = data.drop(category_columns, axis=1)
+    data = data.drop(category_columns, axis=1)
     return data, data_struct
 
 def transform_numeric_features(data, data_struct):
@@ -439,8 +400,10 @@ def transform_time_features(data, data_struct):
                  'Outcome6wk_dt_1',         # Date of outcome measurement at 6wks(e.g, discharge/death/transfer) (supposedly)
                  'date_readmission_3wk',    # Date of readmission hospital
                  'assessment_dt']           # Datetime of assessment of report
-
-
+   
+    
+    date_cols = data_struct.loc[data_struct['Field Type'].isin(['date', 'time']), 'Field Variable Name'].to_list()
+    # TODO:
     # Last known dt = max([outcome_dt, assessment_dt])
     # Days untreated = "earliest known hospital admission" - onset
     # Days in hospital = last_known_date - "earliest known hospital admission"
@@ -449,22 +412,22 @@ def transform_time_features(data, data_struct):
     # ReInotropes_duration = Inotropes_last - inotroped_first
     most_recent_date = format_dt(data['assessment_dt'])         #most_recent_date = max(format_dt(data['Outcome_dt']), format_dt(data['assessment_dt']))
 
-    age = (most_recent_date - format_dt(data['age'])).dt.days // 365
-    days_since_onset = (most_recent_date - format_dt(data['onset_dt'])).dt.days
-    days_in_current_hosp = (most_recent_date - format_dt(data['admission_dt'])).dt.days
+    age =                   (most_recent_date - format_dt(data['age'])).dt.days // 365
+    days_since_onset =      (most_recent_date - format_dt(data['onset_dt'])).dt.days
+    days_in_current_hosp =  (most_recent_date - format_dt(data['admission_dt'])).dt.days
     days_since_first_hosp = (most_recent_date - format_dt(data['admission_facility_dt'])).dt.days
-    days_untreated = (format_dt(data['admission_dt']) - format_dt(data['onset_dt'])).dt.days
+    days_untreated =        pd.to_numeric((format_dt(data['admission_dt']) - format_dt(data['onset_dt'])).dt.days)
     days_untreated.loc[days_untreated < 0] = 0  # If negative, person already in hospital at onset
     days_until_outcome_3wk = (format_dt(data['Outcome_dt']) - format_dt(data['admission_dt'])).dt.days
     days_until_outcome_6wk = (format_dt(data['Outcome6wk_dt_1']) - format_dt(data['admission_dt'])).dt.days
 
-    days_since_ICU_admission = (format_dt(data['assessment_dt']) - format_dt(data['Admission_dt_icu_1'])).dt.days
-    days_since_ICU_discharge = (format_dt(data['assessment_dt']) - format_dt(data['Discharge_dt_icu_1'])).dt.days
+    days_since_ICU_admission = pd.to_numeric((format_dt(data['assessment_dt']) - format_dt(data['Admission_dt_icu_1'])).dt.days)
+    days_since_ICU_discharge = pd.to_numeric((format_dt(data['assessment_dt']) - format_dt(data['Discharge_dt_icu_1'])).dt.days)
 
     days_since_ICU_admission.loc[(days_since_ICU_admission<0) & (days_since_ICU_discharge>=0)] = None ## As_type(int) to prevent copy warning?
     days_since_ICU_discharge.loc[(days_since_ICU_discharge<0)] = None
-    days_since_MC_admission = (format_dt(data['assessment_dt']) - format_dt(data['Admission_dt_mc_1'])).dt.days
-    days_since_MC_discharge = (format_dt(data['assessment_dt']) - format_dt(data['Admission_dt_mc_1'])).dt.days
+    days_since_MC_admission = pd.to_numeric((format_dt(data['assessment_dt']) - format_dt(data['Admission_dt_mc_1'])).dt.days)
+    days_since_MC_discharge = pd.to_numeric((format_dt(data['assessment_dt']) - format_dt(data['Admission_dt_mc_1'])).dt.days)
     days_since_MC_admission.loc[(days_since_MC_admission<0) & (days_since_MC_discharge>=0)] = None
     days_since_MC_discharge.loc[(days_since_MC_discharge<0)] = None
 
@@ -492,15 +455,14 @@ def transform_time_features(data, data_struct):
     data = data.drop(cols_to_drop, axis=1)
 
     # Add the new variables to the struct dataframe, so that they can be selected later on
-    new_vars = []
-    new_vars += [pd.Series(['Study', 'BASELINE', 'DEMOGRAPHICS', 'age_yrs', None, 'datetime', None, None])]
-    new_vars += [pd.Series(['Study', 'HOSPITAL ADMISSION', 'ONSET & ADMISSION', var, None, 'datetime', None, None]) \
-                            for var in ['days_since_onset', 'days_since_admission_current_hosp', 'days_since_admission_first_hosp']]
-    new_vars += [pd.Series(['Study', 'OUTCOME', 'OUTCOME', var, None, 'datetime', None, None]) \
-                            for var in ['days_until_outcome_3wk', 'days_until_outcome_6wk']]
-    new_vars += [pd.Series(['Report', 'Daily case record form', 'Respiratory assessment', var, None, 'datetime', None, None]) \
-                            for var in ['days_at_ward', 'days_at_mc', 'days_at_icu']]
-    new_vars = pd.concat(new_vars, axis=1).T
+    new_vars = pd.concat(
+                  [pd.Series(['Study', 'BASELINE', 'DEMOGRAPHICS', 'age_yrs', None, 'datetime', None, None])] +
+                  [pd.Series(['Study', 'HOSPITAL ADMISSION', 'ONSET & ADMISSION', var, None, 'datetime', None, None]) \
+                              for var in ['days_since_onset', 'days_since_admission_current_hosp', 'days_since_admission_first_hosp']] +
+                  [pd.Series(['Study', 'OUTCOME', 'OUTCOME', var, None, 'datetime', None, None]) \
+                              for var in ['days_until_outcome_3wk', 'days_until_outcome_6wk']] +
+                  [pd.Series(['Report', 'Daily case record form', 'Respiratory assessment', var, None, 'datetime', None, None]) \
+                              for var in ['days_at_ward', 'days_at_mc', 'days_at_icu']], axis=1).T
     new_vars.columns = data_struct.columns
     data_struct = data_struct.append(new_vars)
 
@@ -523,7 +485,6 @@ def transform_string_features(data, data_struct):
                                      index=data_struct.columns), ignore_index=True)
     return data, data_struct
 
-
 def transform_calculated_features(data, data_struct):
     struct_calc = data_struct.loc[data_struct['Field Type']=='calculation', :]
 
@@ -545,7 +506,7 @@ def select_data(data, data_struct):
 
     return data, data_struct
 
-def get_variables(data, data_struct, variables_to_include_dict):
+def select_variables(data, data_struct, variables_to_include_dict):
     # Get all variables
     variables_to_include = []
     for k, v in variables_to_include_dict.items():
@@ -563,7 +524,6 @@ def get_variables(data, data_struct, variables_to_include_dict):
 def remove_columns_wo_information(data, data_struct):
     pass
 
-
 def plot_model_results(aucs):
     fig, ax = plt.subplots(1, 1)
     ax.plot(aucs)
@@ -575,7 +535,6 @@ def plot_model_results(aucs):
     ax.legend(['ROC AUC','Average',  'Chance level'], bbox_to_anchor=(1, 0.5))
     fig.savefig('Performance_roc_auc.png')
     return fig, ax
-
 
 def plot_model_weights(coefs, intercepts, field_names, show_n_labels=10,
                        normalize_coefs=False):
@@ -610,3 +569,25 @@ def explore_data(x, y):
     plt.matshow(corr)
 
 
+
+
+
+
+
+
+
+
+
+ # beademd geweest op IC
+    # outcome_ventilation_any = data['patient_interventions_cat_1'] == 1.0 | data['patient_interventions_cat_2'] == 1.0 | \
+    #                           data['Invasive_ventilation_1'] == 1.0
+    # outcome_ventilation_daily = data['patient_interventions_cat_1'] == 1.0 | \
+    #                             data['patient_interventions_cat_2'] == 1.0
+
+    # Orgaanfalen lever, nier
+    # outcome_organfailure_any = data['patient_interventions_cat_3'] == 1.0 | \
+    #                            data['patient_interventions_cat_5'] == 1.0 | \
+    #                            data['Extracorporeal_support_1'] == 1.0 | \
+    #                            data['Liver_dysfunction_1_1'] == 1.0 | \
+    #                            data['INR_1_1'].astype('float') > 1.5 | \
+    #                            data['Acute_renal_injury_Acute_renal_failure_1_1'] == 1.0

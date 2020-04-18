@@ -41,8 +41,8 @@ from covid19_ICU_util import transform_string_features
 from covid19_ICU_util import transform_calculated_features
 from covid19_ICU_util import select_data
 from covid19_ICU_util import calculate_outcomes
-from covid19_ICU_util import calculate_outcomes_12_d21
-from covid19_ICU_util import get_variables
+from covid19_ICU_util import select_x_y
+from covid19_ICU_util import select_variables
 from covid19_ICU_util import plot_model_results
 from covid19_ICU_util import plot_model_weights
 from covid19_ICU_util import explore_data
@@ -82,36 +82,25 @@ def load_data_api(path_credentials):
     return df_study, df_report, data_struct
 
 
-def load_data(path_to_creds, save=False):
+def load_data(path_to_creds):
 
     df_study, df_report, data_struct = load_data_api(path_to_creds)
-
-    # disabled - Remove all the cardiology variables for now
-    # study_cols_to_drop = data_struct.loc[data_struct['Form Collection Name']=='CARDIO (OPTIONAL)', 'Field Variable Name']
-    # report_cols_to_drop = data_struct.loc[data_struct['Form Collection Name'].isin([]), 'Field Variable Name']
-    # df_study = df_study.drop([col for col in study_cols_to_drop if col in df_study.columns], axis=1)
-    # df_report = df_report.drop([col for col in report_cols_to_drop if col in df_report.columns], axis=1)
-    # data_struct = data_struct.loc[~data_struct['Form Collection Name'].isin(['CARDIO (OPTIONAL)', 'Repolarization', 'Cardiovascular'])]
 
     data = pd.merge(left=df_study, right=df_report, how='right', on='Record Id')
 
     # Fix empty columns:
     data = data.rename(columns={"": "EMPTY_COLUMN_NAME", None: "EMPTY_COLUMN_NAME"})
 
-    if save:
-        data.to_excel('data_unprocessed.xlsx')
-
     return data, data_struct
 
 
-
-def preprocess(data, data_struct, save=False):
+def preprocess(data, data_struct):
     ''' Processed the data per datatype.'''
 
     # Fix single errors
     data = fix_single_errors(data)
 
-     # Transform variables
+    # Transform variables
     data, data_struct = transform_binary_features(data, data_struct)
     data, data_struct = transform_categorical_features(data, data_struct)
     data, data_struct = transform_numeric_features(data, data_struct)
@@ -122,76 +111,50 @@ def preprocess(data, data_struct, save=False):
     # Remove columns without any information
     data, data_struct = select_data(data, data_struct)
 
-    # Sort data chronologically
-    if save:
-        data.to_excel('data_processed.xlsx')
-
     return data, data_struct
 
 
-def prepare_for_learning(data, data_struct, group_by_record=True,
+def prepare_for_learning(data, data_struct, variables_to_incl, goal, group_by_record=True,
                          use_outcome=None, additional_fn=None):
     # Get all outcomes
+    # outcomes, used_columns = calculate_outcomes(data, data_struct)
+
     outcomes, used_columns = calculate_outcomes(data, data_struct)
     data = pd.concat([data, outcomes], axis=1)
 
-    ##### Prepare for learning section #####
-
     # Group per record id
     if group_by_record:
-        data = data.groupby(by='Record Id', axis=0).last()
+        outcomes = outcomes.groupby(by=data['Record Id'], axis=0).last().reset_index(drop=True)
+        data = data.groupby(by='Record Id', axis=0).last().reset_index(drop=True)
 
-    # Split in x and y
-    x = data.copy()
-    y = data.loc[:, outcomes.columns].copy()
+
+    x, y, outcome_name = select_x_y(data, outcomes, used_columns,
+                                    goal=goal)
 
     # Select variables to include in prediction
-    variables_to_include_dict = {
-            'Form Collection Name': [], # Variable groups
-            'Form Name':            ['DEMOGRAPHICS', 'CO-MORBIDITIES'], # variable subgroups
-            'Field Variable Name':  [] # single variables
-        }
-    x = get_variables(x, data_struct, variables_to_include_dict)
-
+    x = select_variables(x, data_struct, variables_to_incl)
     # Select variables to exclude
     #       TODO: used_columns (can't include columns used to calculate the outcome)
     #             any other columns
 
-    # Select outcome
-    outcome_name = 'final_outcome' if not use_outcome else use_outcome
-    print('LOG: Using <{}> as y.'.format(outcome_name))
-    y = y[outcome_name] if len(y.shape)>1 else y
-
-    # Drop records without outcome
-    has_outcome = y.notna()
-    y = y.loc[has_outcome]
-    x = x.loc[has_outcome, :]
-
     # Remove columns without information
     x = x.loc[:, x.nunique()>1] # Remove columns without information
+    x = x.fillna(0) # Fill missing values with 0 (as far as I know 0==missing or no)
 
-    # Fill missing values with 0 (as far as I know 0==missing or no)
-    x = x.fillna(0)
-
-
-    # TODO TEMP:
-    x = x.drop(['delivery_date'], axis=1)
-
+    print('LOG: Using <{}> as y.'.format(outcome_name))
     print('LOG: Selected {} variables for predictive model'.format(x.columns.size))
 
     return x, y, data
 
-
 def model_and_predict(x, y, model_fn, model_kwargs, test_size=0.2):
-    ''' NOTE: kwargs must be a dict. e.g.: {"select_features": True,
-                                            "plot_graph": False}
-
-        Select samples and fit model.
-        Currently uses random sub-sampling validation (also called
-            Monte Carlo cross-validation) with balanced class weight
-                (meaning test has the same Y-class distribution as
-                 train)
+    ''' 
+    NOTE: kwargs must be a dict. e.g.: {"select_features": True,
+                                        "plot_graph": False}
+    Select samples and fit model. Currently uses random sub-sampling validation (also called
+    Monte Carlo cross-validation) with balanced class weight (meaning test has the same 
+    Y-class distribution as train)
     '''
+
     # Train/test-split
     train_x, test_x, train_y, test_y = train_test_split(x, y, test_size=test_size, stratify=y) # stratify == simila y distribution in both sets
 
@@ -215,17 +178,25 @@ def score_and_vizualize_prediction(model, test_x, test_y, y_hat, rep):
 
 
 if __name__ == "__main__":
+    prediction_goal = ['icu_admission', 'mortality', 'duration_of_stay_at_icu']
+    goal = prediction_goal[2]
+
+    variables_to_include = {
+        'Form Collection Name': ['BASELINE', 'HOSPITAL ADMISSION'], # Variable groups
+        'Form Name':            [], # variable subgroups
+        'Field Variable Name':  [] # single variables
+    }
+
     config = configparser.ConfigParser()
     config.read('user_settings.ini') # create this once using covid19_createconfig and never upload this file to git.
-
     path_creds = config['CastorCredentials']['local_private_path']
 
-    # Saves intermediate
-    save = False # REMEMBER TO SAVE AS FEW A POSSIBLE FOR PRIVACY REASONS
+    data, data_struct = load_data(path_creds)
+    data, data_struct = preprocess(data, data_struct)
+    x, y, data = prepare_for_learning(data, data_struct, variables_to_include, goal)
 
-    data, data_struct = load_data(path_creds, save=save)
-    data, data_struct = preprocess(data, data_struct, save=save)
-    x, y, data = prepare_for_learning(data, data_struct)
+    # TEMP remove duration to allow for input logreg classification
+    y = y.iloc[:, 0]
 
     explore_data(x, y)
 
@@ -238,7 +209,7 @@ if __name__ == "__main__":
     model_fn = train_logistic_regression
     model_kwargs = {}
     for i in range(repetitions):
-        print('Current rep: {}'.format(i))
+        print('.', end='', flush=True)
         model, train_x, train_y, test_x, \
             test_y, test_y_hat = model_and_predict(x, y, model_fn, model_kwargs, test_size=0.2)
         auc = score_and_vizualize_prediction(model, test_x, test_y, test_y_hat, i)
