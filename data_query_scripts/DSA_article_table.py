@@ -163,6 +163,7 @@ def summarize_values(values, summary_type=None,
                 s[key] = ['n/a']
     return s
 
+
 def calculate_chisquare_from_2_arrays(data1,data2):
     if type(data1) is not pd.Series:
         raise NameError('pandas Series expected')
@@ -189,6 +190,7 @@ def calculate_chisquare_from_2_arrays(data1,data2):
         t = None # chi square not possible
 
     return t
+
 
 def do_statistics(values, threshold=5e-2,variable_type=None):
     # variable_type can be 1,2,3,4 (numeric, binary, nominal/ordinal, nominal_multiple_options)
@@ -295,6 +297,7 @@ def do_statistics(values, threshold=5e-2,variable_type=None):
         raise NameError('Data type not found: ' + str(type(data1[0])))
 
     return testtype, pvalue #, pvalue_corrected
+
 
 def create_table_for_variables_outcomes(df_variable_columns):
     data_to_print = None
@@ -413,6 +416,7 @@ def create_table_for_variables_outcomes(df_variable_columns):
         print('\n\n\nFAILED STATISTICS: ')
         print(', '.join(data_to_print['Variable'][~(np.isfinite(pvalues_corrected))].to_list()))
     return data_to_print
+
 
 # % THE ACTUAL CALCULATION
 
