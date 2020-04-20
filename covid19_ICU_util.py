@@ -2,27 +2,32 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-from sklearn.model_selection import cross_val_predict
-from sklearn.metrics import roc_auc_score
-
 from covid19_import import import_study_report_structure
 from unit_lookup import get_unit_lookup_dict
 
-IS_MEASURED_COLUMNS = ['baby_ARI', 'Haemoglobin_1', 'WBC_3', 'Lymphocyte_2', 'Neutrophil_1', 'Platelets_1', 'APT_APTR_2',
-                       'INR_2', 'ALT_SGPT_2', 'Total_Bilirubin_3', 'AST_SGOT_2', 'Glucose_1', 'Blood_Urea_Nitrogen_1',
-                       'Lactate_3', 'Creatinine_1', 'Sodium_2', 'Potassium_2', 'CRP_1', 'Albumin_admision_1', 'CKina',
-                       'LDHadmi', 'bloed_gas', 'oxygentherapy_1', 'pao2_yes_no', 'Same_blood_gas_PaO2_PCO2_1', 'ph__1',
-                       'Chest_X_Ray_2', 'Add_Daily_CRF_1',
-                        # Report
-                       'oxygentherapy', 'pao2_yes_no_1', 'sa02_yes_no', 'Same_blood_gas_PaO2_PCO2', 'ph_', 'HCO3', 'Base_excess',
-                       'EMV_yes_no', 'resprat_yes_no_1', 'heartrate_yes_no_2', 'Systolic_bp', 'diastolic_bp',
-                       'mean_arterial_bp', 'temperature_yes_no_3', 'temperature_yes_no_4', 'patient_interventions_yes_no', 'blood_assessment_yes_no',
-                       'Haemoglobin', 'WBC', 'Lymphocyte', 'Neutrophil', 'Platelets', 'APT_APTR', 'INR', 'ALT_SGPT',
-                       'Total_Bilirubin', 'AST_SGOT', 'Glucose', 'Blood_Urea_Nitrogen', 'Lactate', 'Creatinine',
-                       'Sodium', 'Potassium', 'CRP', 'Albumin', 'CKin', 'LDH_daily', 'Chest_X_Ray', 'CTperf', 'd_dimer_yes_no']
+IS_MEASURED_COLUMNS = \
+    ['baby_ARI', 'Haemoglobin_1', 'WBC_3', 'Lymphocyte_2', 'Neutrophil_1',
+     'Platelets_1', 'APT_APTR_2', 'INR_2', 'ALT_SGPT_2', 'Total_Bilirubin_3',
+     'AST_SGOT_2', 'Glucose_1', 'Blood_Urea_Nitrogen_1', 'Lactate_3',
+     'Creatinine_1', 'Sodium_2', 'Potassium_2', 'CRP_1', 'Albumin_admision_1',
+     'CKina', 'LDHadmi', 'bloed_gas', 'oxygentherapy_1', 'pao2_yes_no',
+     'Same_blood_gas_PaO2_PCO2_1', 'ph__1', 'Chest_X_Ray_2',
+     'Add_Daily_CRF_1',
+     # Report
+     'oxygentherapy', 'pao2_yes_no_1', 'sa02_yes_no',
+     'Same_blood_gas_PaO2_PCO2', 'ph_', 'HCO3', 'Base_excess', 'EMV_yes_no',
+     'resprat_yes_no_1', 'heartrate_yes_no_2', 'Systolic_bp', 'diastolic_bp',
+     'mean_arterial_bp', 'temperature_yes_no_3', 'temperature_yes_no_4',
+     'patient_interventions_yes_no', 'blood_assessment_yes_no', 'Haemoglobin',
+     'WBC', 'Lymphocyte', 'Neutrophil', 'Platelets', 'APT_APTR', 'INR',
+     'ALT_SGPT', 'Total_Bilirubin', 'AST_SGOT', 'Glucose',
+     'Blood_Urea_Nitrogen', 'Lactate', 'Creatinine', 'Sodium', 'Potassium',
+     'CRP', 'Albumin', 'CKin', 'LDH_daily', 'Chest_X_Ray', 'CTperf',
+     'd_dimer_yes_no']
 
 format_dt = lambda col: pd.to_datetime(col, format='%d-%m-%Y', errors='coerce').astype('datetime64[ns]')
 is_in_columns = lambda var_list, data: [v for v in var_list if v in data.columns]
+
 
 def get_all_field_information(path_to_creds):
     study_struct, reports_struct, optiongroups_struct = import_study_report_structure(path_to_creds)
@@ -36,6 +41,7 @@ def get_all_field_information(path_to_creds):
     data_struct = pd.concat([study_struct_withoptions, reports_struct_withoptions], axis=0)
 
     return data_struct
+
 
 def count_occurrences(col, record_ids, reset_count=False, start_count_at=1):
     # Make counter of occurences in binary column
@@ -66,28 +72,29 @@ def count_occurrences(col, record_ids, reset_count=False, start_count_at=1):
     new_col = pd.concat(new_cols, axis=0)
     return new_col
 
+
 def calculate_outcomes(data, data_struct):
     # CATEGORY EXPLANATION
     # Discharged alive: 1) Discharged to home
-    #                   5) Transfer to nursing home  
+    #                   5) Transfer to nursing home
     # 	                6) Transfer to rehabilitation unit
-    # 	
+    #
     # In hospital:      2) Hospitalization (ward / medium care)
     #                   3) Hospitalization (ICU)
     #
     # Died:             7) Palliative discharge
     #                   8) Death
- 
+
     # Unknown           4) Transfer to other hospital
     #                   9) Unknown
     #                  10) Discharged to home and re-admitted
-    
+
     get_outcome_columns = lambda x: ['{}_{}'.format(str_, i) for i in x for str_ in ['Outcome_cat']]
 
     has_unknown_outcome = data[get_outcome_columns([4,9,10])].any(axis=1)
     has_no_outcome = ~data[get_outcome_columns([1,2,3,4,5,6,7,8,9,10])].any(axis=1)
 
-    is_first_day_at_icu = data.loc[:, 'days_at_icu']==1 
+    is_first_day_at_icu = data.loc[:, 'days_at_icu']==1
     days_until_icu = pd.Series(None, index=data.index)
     days_until_icu.loc[is_first_day_at_icu] = data.loc[is_first_day_at_icu, 'days_since_admission_current_hosp']
 
@@ -137,8 +144,8 @@ def calculate_outcomes(data, data_struct):
                            data=  outcome_8 & outcome_icu_ever)
 
     outcome_11 = pd.Series(name= 'Onbekend (alle patiënten zonder outcome)',
-                           data=  has_unknown_outcome | has_no_outcome)                                           
-    
+                           data=  has_unknown_outcome | has_no_outcome)
+
     outcome_13 = pd.Series(name= 'Days until death',
                            data=  days_until_death.groupby(by=data.loc[:, 'Record Id']).transform(lambda x: max(x)))
 
@@ -157,12 +164,13 @@ def calculate_outcomes(data, data_struct):
     used_columns = [col for col in data.columns if 'Outcome' in col] # Keep track of var
     return df_outcomes, used_columns
 
+
 def select_x_y(data, outcomes, used_columns, remove_no_outcome=True,
                goal=None):
     x = data.drop(used_columns, axis=1)
     y = pd.Series(None, index=x.index)
 
-  
+
     # Prediction 1: Which factors predict ICU admission
     #       Y = ICU_admitted at sometime
     #       X = All data before ICU admission
@@ -217,8 +225,10 @@ def select_x_y(data, outcomes, used_columns, remove_no_outcome=True,
 
         # Time to event
         y_duration = pd.Series(None, index=y_event.index, name='duration')
-        y_duration[y_event==1] = data.loc[y_event==1, 'days_until_outcome_3wk'] # Should be first day of ICU admission to outcome
-        y_duration[y_event==0] = data.loc[y_event==0, 'days_at_icu']
+        # Should be first day of ICU admission to outcome
+        y_duration[y_event == 1] = data.loc[y_event == 1,
+                                            'days_until_outcome_3wk']
+        y_duration[y_event == 0] = data.loc[y_event == 0, 'days_at_icu']
         y = pd.concat([y_event, y_duration], axis=1)
 
     # Prediction 4: Which factors predict mono- or multi-organ failure at t=21
@@ -230,8 +240,8 @@ def select_x_y(data, outcomes, used_columns, remove_no_outcome=True,
     x = x.loc[~has_any_nan, :]
     y = y.loc[~has_any_nan]
 
-
     return x, y, outcome_name
+
 
 def fix_single_errors(data):
 
@@ -261,6 +271,7 @@ def fix_single_errors(data):
     data.loc[mask, 'assessment_dt'] = data.loc[mask, 'assessment_dt'].replace('20-02-2020', '20-03-2020')
 
     return data
+
 
 def transform_binary_features(data, data_struct):
     value_na = None
@@ -303,30 +314,39 @@ def transform_binary_features(data, data_struct):
 
     unit_dict, _ = get_unit_lookup_dict()
     vars_units = data_struct.loc[(data_struct['Field Type'] == 'radio') & \
-                                 data_struct['Field Variable Name'].isin(unit_dict.keys()),
-                                 'Field Variable Name'].to_list()                                 
-    data_struct.loc[data_struct.loc[:, 'Field Variable Name'].isin(vars_units), 'Field Type'] = 'unit'
+                                 data_struct['Field Variable Name']\
+                                     .isin(unit_dict.keys()),
+                                 'Field Variable Name'].to_list()
+    data_struct.loc[data_struct.loc[:, 'Field Variable Name']\
+                    .isin(vars_units), 'Field Type'] = 'unit'
 
     # All other variables
-    handled_vars = vars_yes_no + vars_yes_probable + other_radio_vars + vars_yes_unknown + vars_units
-    vars_other = is_in_columns([v for v in radio_fields if v not in handled_vars], data)
-    data_struct.loc[data_struct['Field Variable Name'].isin(vars_other), 'Field Type'] = 'category_1'
+    handled_vars = vars_yes_no + vars_yes_probable + other_radio_vars \
+        + vars_yes_unknown + vars_units
+    vars_other = is_in_columns([v for v in radio_fields
+                                if v not in handled_vars], data)
+    data_struct.loc[data_struct['Field Variable Name'].isin(vars_other),
+                    'Field Type'] = 'category_1'
 
     return data, data_struct
+
 
 def transform_categorical_features(data, data_struct):
     ''' Create dummyvariables for category variables,
         removes empty variables and attaches column names
     '''
     # # Get all information about category variables
-    # NOTE: only transform categorical variables with multiple answers -> Checkbox
-    is_category = data_struct['Field Type'].isin(['category, dropdown']) 
+    # NOTE: only transform categorical variables with multi answers -> Checkbox
+    is_category = data_struct['Field Type'].isin(['category, dropdown'])
     data_struct.loc[is_category, 'Field Type'] = 'category'
-    is_one_hot_encoded = data_struct['Field Type'].isin(['checkbox']) | data_struct['Field Variable Name'].isin(['dept', 'Outcome'])
-    data_struct.loc[is_one_hot_encoded, 'Field Type'] = 'category_one_not_encoded'   
+    is_one_hot_encoded = data_struct['Field Type'].isin(['checkbox']) | \
+        data_struct['Field Variable Name'].isin(['dept', 'Outcome'])
+    data_struct.loc[is_one_hot_encoded, 'Field Type']\
+        = 'category_one_not_encoded'
 
     cat_struct = data_struct.loc[is_one_hot_encoded,
-                                ['Field Variable Name', 'Option Name', 'Option Value']]
+                                 ['Field Variable Name', 'Option Name',
+                                  'Option Value']]
     category_columns = is_in_columns(cat_struct['Field Variable Name'], data)
 
     get_name = lambda c, v: '{:s}_cat_{:s}'.format(col, str(v))
@@ -334,27 +354,36 @@ def transform_categorical_features(data, data_struct):
     dummies_list = []
     for col in category_columns:
         # Get all unique categories in the column
-        unique_categories = pd.unique([cat for value in data[col].values for cat in str(value).split(';')])
-        unique_categories = [cat for cat in unique_categories if cat.lower() not in ['nan', 'none']]
+        unique_categories = pd.unique([cat for value in data[col].values
+                                       for cat in str(value).split(';')])
+        unique_categories = [cat for cat in unique_categories
+                             if cat.lower() not in ['nan', 'none']]
         if not any(unique_categories):
             continue
 
         # TODO: Make column names to actual name instead of numeric answer
-        dummy_column_names = [get_name(col, v) for v in unique_categories if v.lower() not in ['nan', 'none']]
+        dummy_column_names = [get_name(col, v) for v in unique_categories
+                              if v.lower() not in ['nan', 'none']]
         # Create new dataframe with the dummies
         dummies = pd.DataFrame(0, index=data.index, columns=dummy_column_names)
         # Insert the data
         for cat in unique_categories:
             # TODO: Filter specific categories that are nan/na/none/unknown
-            data[col] = data[col].fillna('') # Can't handle nans, will be deleted anyway
+
+            # Can't handle nans, will be deleted anyway
+            data[col] = data[col].fillna('')
+
             regex_str = '(?:;|^){}(?:;|$)'.format(cat)
-            dummies.loc[data[col].str.contains(regex_str, regex=True), get_name(col, cat)] = 1
+            dummies.loc[data[col].str.contains(regex_str, regex=True),
+                        get_name(col, cat)] = 1
 
         dummies_list += [dummies]
 
     data = pd.concat([data] + dummies_list, axis=1)
     data = data.drop(category_columns, axis=1)
+
     return data, data_struct
+
 
 def transform_numeric_features(data, data_struct):
     # Calculates all variables to the same unit,
@@ -362,24 +391,29 @@ def transform_numeric_features(data, data_struct):
     unit_dict, var_numeric = get_unit_lookup_dict()
 
     numeric_columns = is_in_columns(var_numeric.keys(), data)
-    wbc_value_study = 'WBC_2_1' #= 'units_lymph', 'units_neutro'
-    wbc_value_report = 'WBC_2' #= 'lymph_units_1', 'neutro_units_2'
+    wbc_value_study = 'WBC_2_1'  # = 'units_lymph', 'units_neutro'
+    wbc_value_report = 'WBC_2'  # = 'lymph_units_1', 'neutro_units_2'
 
     for col in numeric_columns:
         unit_col = var_numeric[col]
-        data[unit_col] = data[unit_col].fillna(-1).astype(int).apply(lambda x: unit_dict[unit_col].get(x))
+        data[unit_col] = data[unit_col].fillna(-1).astype(int)\
+            .apply(lambda x: unit_dict[unit_col].get(x))
         if unit_col in ['units_lymph', 'units_neutro']:
-            has_999 = data[unit_col]==-999
-            data.loc[has_999, unit_col] = data.loc[has_999, wbc_value_study].astype(float).div(100)
+            has_999 = data[unit_col] == -999
+            data.loc[has_999, unit_col] = data.loc[has_999, wbc_value_study]\
+                .astype(float).div(100)
         elif unit_col in ['lymph_units_1', 'neutro_units_2']:
-            has_999 = data[unit_col]==-999
-            data.loc[has_999, unit_col] = data.loc[has_999, wbc_value_report].astype(float).div(100)
+            has_999 = data[unit_col] == -999
+            data.loc[has_999, unit_col] = data.loc[has_999, wbc_value_report]\
+                .astype(float).div(100)
         has_value = data[col].notna()
-        data.loc[has_value, col] = data.loc[has_value, col].astype(float) * data.loc[has_value, unit_col].astype(float)
+        data.loc[has_value, col] = data.loc[has_value, col].astype(float) \
+            * data.loc[has_value, unit_col].astype(float)
 
     data = data.drop(is_in_columns(unit_dict.keys(), data), axis=1)
 
     return data, data_struct
+
 
 def transform_time_features(data, data_struct):
     '''
@@ -403,8 +437,8 @@ def transform_time_features(data, data_struct):
                  'Outcome6wk_dt_1',         # Date of outcome measurement at 6wks(e.g, discharge/death/transfer) (supposedly)
                  'date_readmission_3wk',    # Date of readmission hospital
                  'assessment_dt']           # Datetime of assessment of report
-   
-    
+
+
     date_cols = data_struct.loc[data_struct['Field Type'].isin(['date', 'time']), 'Field Variable Name'].to_list()
     # TODO:
     # Last known dt = max([outcome_dt, assessment_dt])
@@ -471,81 +505,105 @@ def transform_time_features(data, data_struct):
 
     return data, data_struct
 
+
 def transform_string_features(data, data_struct):
     # TODO: Why it med_specify not in data_struct?
 
-    struct_string = data_struct.loc[data_struct['Field Type']=='string', :]
-    string_cols = [col for col in data.columns if col in struct_string['Field Variable Name'].to_list()]
+    struct_string = data_struct.loc[data_struct['Field Type'] == 'string', :]
+    string_cols = [col for col in data.columns
+                   if col in struct_string['Field Variable Name'].to_list()]
 
     get_n_medicine = lambda x: len([v for v in x.split(',') if len(v) > 15])
-    data['uses_n_medicine'] = data['med_specify'].fillna('').apply(get_n_medicine)
+    data['uses_n_medicine'] = data['med_specify'].fillna('')\
+        .apply(get_n_medicine)
 
-    cols_to_drop = is_in_columns(string_cols + ['med_specify', 'other_drug_1'], data)
+    cols_to_drop = is_in_columns(string_cols + ['med_specify',
+                                                'other_drug_1'], data)
     data = data.drop(cols_to_drop, axis=1)
 
-    data_struct = data_struct.append(pd.Series(['Study', 'BASELINE', 'CO-MORBIDITIES',
-                                                'uses_n_medicine', None, 'numeric', None, None],
-                                     index=data_struct.columns), ignore_index=True)
+    data_struct = data_struct.append(
+        pd.Series(['Study', 'BASELINE', 'CO-MORBIDITIES',
+                   'uses_n_medicine', None, 'numeric', None, None],
+                  index=data_struct.columns), ignore_index=True)
     return data, data_struct
+
 
 def transform_calculated_features(data, data_struct):
     struct_calc = data_struct.loc[data_struct['Field Type']=='calculation', :]
 
     calc_cols = is_in_columns(struct_calc.loc[:, 'Field Variable Name'], data)
 
-    cols_to_drop = [c for c in calc_cols if c not in ['discharge_live_3wk', 'discharge_live_6wk']]
+    cols_to_drop = [c for c in calc_cols
+                    if c not in ['discharge_live_3wk', 'discharge_live_6wk']]
     data = data.drop(cols_to_drop, axis=1)
     return data, data_struct
 
+
 def select_data(data, data_struct):
-    cols_to_keep = [col for col in data.columns if col not in IS_MEASURED_COLUMNS]
+    cols_to_keep = [col for col in data.columns
+                    if col not in IS_MEASURED_COLUMNS]
     data = data.loc[:, cols_to_keep]
 
     # TODO: Add this
-    # resp_cols = [col for col in cols['Respiratory assessment'] if col in data.columns]
-    # blood_cols = [col for col in cols['Blood assessment'] if col in data.columns]
+    # resp_cols = [col for col in cols['Respiratory assessment'] \
+    #     if col in data.columns]
+    # blood_cols = [col for col in cols['Blood assessment'] \
+    #     if col in data.columns]
     # data.loc[data['whole_admission_yes_no'] == 1, resp_cols] = None
     # data.loc[data['whole_admission_yes_no_1'] == 1, blood_cols] = None
 
     return data, data_struct
 
+
 def select_variables(data, data_struct, variables_to_include_dict):
     # Get all variables
     variables_to_include = []
     for k, v in variables_to_include_dict.items():
-        variables_to_include += data_struct.loc[data_struct[k].isin(v), 'Field Variable Name'].to_list()
-    variables_to_include = list(np.unique(variables_to_include)) # get unique values and check if in data.columns
+        variables_to_include += data_struct.loc[data_struct[k].isin(v),
+                                                'Field Variable Name']\
+                                               .to_list()
+    # get unique values and check if in data.columns
+    variables_to_include = list(np.unique(variables_to_include))
 
     # Retrieve the corresponding categorical 1-hot encoded column names
-    category_vars = data_struct.loc[data_struct['Field Type']=='category', 'Field Variable Name'].to_list()
-    variables_to_include += [c for var in variables_to_include for c in data.columns if (var in category_vars) and (var in c)]
+    category_vars = data_struct.loc[data_struct['Field Type'] == 'category',
+                                    'Field Variable Name'].to_list()
+    variables_to_include += [c for var in variables_to_include
+                             for c in data.columns
+                             if (var in category_vars) and (var in c)]
 
     variables_to_include += ['Record Id']
     variables_to_include = is_in_columns(variables_to_include, data)
     return data.loc[:, variables_to_include]
 
+
 def remove_columns_wo_information(data, data_struct):
     pass
 
-def plot_model_results(aucs, classifier='Logistic regression', outcome='ICU admission'):
+
+def plot_model_results(aucs, classifier='Logistic regression',
+                       outcome='ICU admission'):
     fig, ax = plt.subplots(1, 1)
     ax.plot(aucs)
-    ax.set_title('{} - {}\nROC AUC // Avg: {:.3f}' \
-                    .format(classifier, outcome, sum(aucs)/max(len(aucs), 1)))
+    ax.set_title('{} - {}\nROC AUC // Avg: {:.3f}'
+                 .format(classifier, outcome, sum(aucs)/max(len(aucs), 1)))
     ax.axhline(sum(aucs)/max(len(aucs), 1), color='g', linewidth=1)
     ax.axhline(.5, color='r', linewidth=1)
     ax.set_ylim(0, 1)
-    ax.legend(['ROC AUC','Average',  'Chance level'], bbox_to_anchor=(1, 0.5))
+    ax.legend(['ROC AUC', 'Average',  'Chance level'], bbox_to_anchor=(1, 0.5))
     fig.savefig('Performance_roc_auc.png')
     return fig, ax
 
+
 def plot_model_weights(coefs, intercepts, field_names, show_n_features=10,
                        normalize_coefs=False):
-    show_n_features = coefs.shape[1] if show_n_features == None else show_n_features
+    show_n_features = coefs.shape[1] if show_n_features is None \
+        else show_n_features
     coefs = np.array(coefs).squeeze()
     intercepts = np.array(intercepts).squeeze()
 
-    coefs = (coefs-coefs.mean(axis=0))/coefs.std(axis=0) if normalize_coefs else coefs
+    coefs = (coefs-coefs.mean(axis=0))/coefs.std(axis=0) if normalize_coefs \
+        else coefs
 
     avg_coefs = coefs.mean(axis=0)
     var_coefs = coefs.var(axis=0) if not normalize_coefs else None
@@ -556,9 +614,10 @@ def plot_model_weights(coefs, intercepts, field_names, show_n_features=10,
     for idx in idx_n_max_values:
         bar_labels[idx] = field_names[idx]
 
-    bar_width = .5 # bar width
+    bar_width = .5  # bar width
     fig, ax = plt.subplots()
-    bars = ax.barh(n_bars, avg_coefs, bar_width, xerr=var_coefs,label='Weight')
+    ax.barh(n_bars, avg_coefs, bar_width,
+            xerr=var_coefs, label='Weight')
     ax.set_yticks(n_bars)
     ax.set_yticklabels(bar_labels, fontdict={'fontsize': 6})
     ax.set_xlabel('Weight')
@@ -566,9 +625,11 @@ def plot_model_weights(coefs, intercepts, field_names, show_n_features=10,
     fig.savefig('Average_weight_variance.png')
     return fig, ax
 
+
 def plot_feature_importance(importances, features, show_n_features=5):
-    show_n_features = features.shape[0] if not show_n_features else show_n_features
-    
+    show_n_features = features.shape[0] if not show_n_features \
+        else show_n_features
+
     fig, ax = plt.subplots()
     ax.set_title('Average feature importance')
     feat_importances = pd.Series(np.mean(importances, axis=0), index=features)
@@ -577,31 +638,24 @@ def plot_feature_importance(importances, features, show_n_features=5):
 
     return fig, ax
 
+
 def explore_data(x, y):
     data = pd.concat([x, y], axis=1)
     corr = data.corr(method='spearman')
     plt.matshow(corr)
 
 
+# beademd geweest op IC
+# outcome_ventilation_any = data['patient_interventions_cat_1'] == 1.0 \
+#                           | data['patient_interventions_cat_2'] == 1.0 \
+#                           | data['Invasive_ventilation_1'] == 1.0
+# outcome_ventilation_daily = data['patient_interventions_cat_1'] == 1.0 | \
+#                             data['patient_interventions_cat_2'] == 1.0
 
-
-
-
-
-
-
-
-
- # beademd geweest op IC
-    # outcome_ventilation_any = data['patient_interventions_cat_1'] == 1.0 | data['patient_interventions_cat_2'] == 1.0 | \
-    #                           data['Invasive_ventilation_1'] == 1.0
-    # outcome_ventilation_daily = data['patient_interventions_cat_1'] == 1.0 | \
-    #                             data['patient_interventions_cat_2'] == 1.0
-
-    # Orgaanfalen lever, nier
-    # outcome_organfailure_any = data['patient_interventions_cat_3'] == 1.0 | \
-    #                            data['patient_interventions_cat_5'] == 1.0 | \
-    #                            data['Extracorporeal_support_1'] == 1.0 | \
-    #                            data['Liver_dysfunction_1_1'] == 1.0 | \
-    #                            data['INR_1_1'].astype('float') > 1.5 | \
-    #                            data['Acute_renal_injury_Acute_renal_failure_1_1'] == 1.0
+# Orgaanfalen lever, nier
+# outcome_organfailure_any = data['patient_interventions_cat_3'] == 1.0 | \
+# data['patient_interventions_cat_5'] == 1.0 | \
+# data['Extracorporeal_support_1'] == 1.0 | \
+# data['Liver_dysfunction_1_1'] == 1.0 | \
+# data['INR_1_1'].astype('float') > 1.5 | \
+# data['Acute_renal_injury_Acute_renal_failure_1_1'] == 1.0
