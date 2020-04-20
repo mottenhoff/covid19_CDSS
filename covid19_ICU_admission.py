@@ -202,7 +202,7 @@ if __name__ == "__main__":
     # TEMP remove duration to allow for input logreg classification
     y = y.iloc[:, 0]
 
-    explore_data(x, y)
+    explore_data(x, y) 
 
     aucs = []
     model_coefs = []

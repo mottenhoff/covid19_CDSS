@@ -310,7 +310,7 @@ def transform_binary_features(data, data_struct):
     # All other variables
     handled_vars = vars_yes_no + vars_yes_probable + other_radio_vars + vars_yes_unknown + vars_units
     vars_other = is_in_columns([v for v in radio_fields if v not in handled_vars], data)
-    data_struct.loc[data_struct['Field Variable Name'].isin(vars_other), 'Field Type'] = 'category'
+    data_struct.loc[data_struct['Field Variable Name'].isin(vars_other), 'Field Type'] = 'category_1'
 
     return data, data_struct
 
@@ -319,11 +319,14 @@ def transform_categorical_features(data, data_struct):
         removes empty variables and attaches column names
     '''
     # # Get all information about category variables
-    is_category = data_struct['Field Type'].isin(['category', 'checkbox', 'dropdown'])
+    # NOTE: only transform categorical variables with multiple answers -> Checkbox
+    is_category = data_struct['Field Type'].isin(['category, dropdown']) 
     data_struct.loc[is_category, 'Field Type'] = 'category'
-    cat_struct = data_struct.loc[is_category,
-                                ['Field Variable Name', 'Option Name', 'Option Value']]
+    is_one_hot_encoded = data_struct['Field Type'].isin(['checkbox']) | data_struct['Field Variable Name'].isin(['dept', 'Outcome'])
+    data_struct.loc[is_one_hot_encoded, 'Field Type'] = 'category_one_not_encoded'   
 
+    cat_struct = data_struct.loc[is_one_hot_encoded,
+                                ['Field Variable Name', 'Option Name', 'Option Value']]
     category_columns = is_in_columns(cat_struct['Field Variable Name'], data)
 
     get_name = lambda c, v: '{:s}_cat_{:s}'.format(col, str(v))

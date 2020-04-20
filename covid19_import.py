@@ -82,7 +82,7 @@ def import_study_report_structure(path_to_api_creds=None):
     #        1 string only per file) from castor are saved by the user
     # see also:
     # https://helpdesk.castoredc.com/article/124-application-programming-interface-api
-    c = ca.Castorapi(path_to_api_creds)  # e.g. in user dir outside of GIT repo
+    c = ca.CastorApi(path_to_api_creds)  # e.g. in user dir outside of GIT repo
 
     # get study ID for COVID study
     c.select_study_by_name(config['CastorCredentials']['study_name'])
