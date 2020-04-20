@@ -45,12 +45,16 @@ from covid19_ICU_util import select_x_y
 from covid19_ICU_util import select_variables
 from covid19_ICU_util import plot_model_results
 from covid19_ICU_util import plot_model_weights
+from covid19_ICU_util import plot_feature_importance
 from covid19_ICU_util import explore_data
 
 # classifiers
 from logreg import train_logistic_regression
+from gradboost import train_gradient_boosting
 
 is_in_columns = lambda var_list, data: [v for v in var_list if v in data.columns]
+goal_name = {'icu_admission': 'ICU admission', 'mortality': 'Mortality', 'duration_of_stay_at_icu': 'Duration of stay at ICU'}
+
 
 def load_data_api(path_credentials):
 
@@ -179,7 +183,7 @@ def score_and_vizualize_prediction(model, test_x, test_y, y_hat, rep):
 
 if __name__ == "__main__":
     prediction_goal = ['icu_admission', 'mortality', 'duration_of_stay_at_icu']
-    goal = prediction_goal[2]
+    goal = prediction_goal[0]
 
     variables_to_include = {
         'Form Collection Name': ['BASELINE', 'HOSPITAL ADMISSION'], # Variable groups
@@ -203,11 +207,18 @@ if __name__ == "__main__":
     aucs = []
     model_coefs = []
     model_intercepts = []
+    model_importances = []
     repetitions = 100
     select_features = False
-
+    has_intercept = True # {True for LR - False for gradientboosting}
+       
     model_fn = train_logistic_regression
+    #model_fn = train_gradient_boosting
     model_kwargs = {}
+
+    # Gradientboosting kwargs
+    #model_kwargs = {'gridsearch' : False}
+    
     for i in range(repetitions):
         print('.', end='', flush=True)
         model, train_x, train_y, test_x, \
@@ -215,12 +226,22 @@ if __name__ == "__main__":
         auc = score_and_vizualize_prediction(model, test_x, test_y, test_y_hat, i)
 
         aucs.append(auc)
-        model_intercepts.append(model.intercept_)
-        model_coefs.append(model.coef_)
+        
+        if has_intercept:
+            model_intercepts.append(model.intercept_)
+            model_coefs.append(model.coef_)
+        else:
+            model_importances.append(model.feature_importances_)
 
-    fig, ax = plot_model_results(aucs)
-    if not select_features:
-        fig, ax = plot_model_weights(model_coefs, model_intercepts, test_x.columns,
-                                     show_n_labels=25, normalize_coefs=False)
+    # TODO: Develop a way to aquire the name of the model automatically
+    fig, ax = plot_model_results(aucs, goal_name[goal], 'Logistic regression')
+
+    if has_intercept:
+        if not select_features:
+            fig, ax = plot_model_weights(model_coefs, model_intercepts, test_x.columns,
+                                         show_n_features=25, normalize_coefs=False)
+    else:
+        fig, ax = plot_feature_importance(model_importances, train_x.columns.values, show_n_features=5)
     plt.show()
+        
     print('done')
