@@ -53,7 +53,6 @@ from logreg import train_logistic_regression
 from gradboost import train_gradient_boosting
 
 is_in_columns = lambda var_list, data: [v for v in var_list if v in data.columns]
-goal_name = {'icu_admission': 'ICU admission', 'mortality': 'Mortality', 'duration_of_stay_at_icu': 'Duration of stay at ICU'}
 
 
 def load_data_api(path_credentials):
@@ -116,7 +115,6 @@ def preprocess(data, data_struct):
     data, data_struct = select_data(data, data_struct)
 
     return data, data_struct
-
 
 def prepare_for_learning(data, data_struct, variables_to_incl, goal, group_by_record=True,
                          use_outcome=None, additional_fn=None):
@@ -182,9 +180,11 @@ def score_and_vizualize_prediction(model, test_x, test_y, y_hat, rep):
 
 
 if __name__ == "__main__":
-    prediction_goal = ['icu_admission', 'mortality', 'duration_of_stay_at_icu']
-    goal = prediction_goal[0]
-
+    goal_name = {'icu_admission': 'ICU admission', 
+                 'mortality': 'Mortality', 
+                 'duration_of_stay_at_icu': 'Duration of stay at ICU'}
+    goal = 'mortality'
+    
     variables_to_include = {
         'Form Collection Name': ['BASELINE', 'HOSPITAL ADMISSION'], # Variable groups
         'Form Name':            [], # variable subgroups
@@ -199,8 +199,10 @@ if __name__ == "__main__":
     data, data_struct = preprocess(data, data_struct)
     x, y, data = prepare_for_learning(data, data_struct, variables_to_include, goal)
 
+    y.to_excel('y.xlsx')
+
     # TEMP remove duration to allow for input logreg classification
-    y = y.iloc[:, 0]
+    # y = y.iloc[:, 0]
 
     explore_data(x, y) 
 
@@ -211,14 +213,16 @@ if __name__ == "__main__":
     repetitions = 100
     select_features = False
     has_intercept = True # {True for LR - False for gradientboosting}
-       
+
+    # model_dict = {'logreg': {'model_fn': train_logistic_regression,
+    #                          'score_fn': }}
     model_fn = train_logistic_regression
     #model_fn = train_gradient_boosting
     model_kwargs = {}
 
     # Gradientboosting kwargs
     #model_kwargs = {'gridsearch' : False}
-    
+
     for i in range(repetitions):
         print('.', end='', flush=True)
         model, train_x, train_y, test_x, \
@@ -234,12 +238,12 @@ if __name__ == "__main__":
             model_importances.append(model.feature_importances_)
 
     # TODO: Develop a way to aquire the name of the model automatically
-    fig, ax = plot_model_results(aucs, goal_name[goal], 'Logistic regression')
+    fig, ax = plot_model_results(aucs, classifier=goal_name[goal], outcome='Logistic regression')
 
     if has_intercept:
         if not select_features:
             fig, ax = plot_model_weights(model_coefs, model_intercepts, test_x.columns,
-                                         show_n_features=25, normalize_coefs=False)
+                                            show_n_features=25, normalize_coefs=False)
     else:
         fig, ax = plot_feature_importance(model_importances, train_x.columns.values, show_n_features=5)
     plt.show()

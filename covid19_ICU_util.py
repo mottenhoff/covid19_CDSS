@@ -1,12 +1,14 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-
 from sklearn.model_selection import cross_val_predict
 from sklearn.metrics import roc_auc_score
 
 from covid19_import import import_study_report_structure
 from unit_lookup import get_unit_lookup_dict
+from error_replacements import get_global_fix_dict
+from error_replacements import get_column_fix_dict
+from error_replacements import get_specific_fix_dict
 
 IS_MEASURED_COLUMNS = ['baby_ARI', 'Haemoglobin_1', 'WBC_3', 'Lymphocyte_2', 'Neutrophil_1', 'Platelets_1', 'APT_APTR_2',
                        'INR_2', 'ALT_SGPT_2', 'Total_Bilirubin_3', 'AST_SGOT_2', 'Glucose_1', 'Blood_Urea_Nitrogen_1',
@@ -58,7 +60,7 @@ def count_occurrences(col, record_ids, reset_count=False, start_count_at=1):
             unique_ids = ids.unique()
             for i in unique_ids[unique_ids != 0]:
                 new_col[ids==i] = np.arange(start_count_at, counts[i]+start_count_at)
-        else:
+        else:     
             new_col[col_slice!=0] = np.arange(start_count_at, counts[1:].sum()+start_count_at)
 
         new_cols += [new_col]
@@ -234,32 +236,34 @@ def select_x_y(data, outcomes, used_columns, remove_no_outcome=True,
     return x, y, outcome_name
 
 def fix_single_errors(data):
+    ''' Replaces values on the global dataframe,
+    per column or per column and record Id.
+    The values to replace and new values are 
+    located in error_replacement.py
+
+    input:
+        data: pd.Dataframe
+    
+    output:
+        data: pd.Dataframe
+    '''
 
     # Global fix
-    data = data.replace('11-11-1111', None)
-    data = data.mask(data=='', None)
+    for value_to_replace, replacement in get_global_fix_dict().items():
+        data = data.mask(data==value_to_replace, replacement)
 
-    values_to_replace = ['Missing (asked but unknown)', 'Missing (measurement failed)',
-                         'Missing (not applicable)', 'Missing (not done)'] + \
-                         ['##USER_MISSING_{}##'.format(i) for i in [95, 96, 97, 98, 99]]
-    for value in values_to_replace:
-        data = data.replace(value, None)
+    # Column fix 
+    for column, replacement_pairs in get_column_fix_dict().items():
+        for pair in replacement_pairs:
+            data.loc[:, column] = data.loc[:, column] \
+                                      .replace(pair[0], pair[1])
 
     # Specific fix
-    data.loc[:, 'Enrolment_date'] = data.loc[:, 'Enrolment_date'].replace('24-02-1960', '24-02-2020')
-    data.loc[:, 'admission_dt'] = data.loc[:, 'admission_dt'].replace('19-03-0202', '19-03-2020')
-    data.loc[:, 'admission_facility_dt'] = data.loc[:, 'admission_facility_dt'].replace('01-01-2998', None)
-    data.loc[:, 'age'] = data.loc[:, 'age'].replace('14-09-2939', '14-09-1939')
-    data.loc[:, 'specify_Acute_Respiratory_Distress_Syndrome_1_1'] = data.loc[:, 'specify_Acute_Respiratory_Distress_Syndrome_1_1'] \
-                                                                         .replace('Covid-19 associated', None)
-    data.loc[:, 'specify_Acute_Respiratory_Distress_Syndrome_1_1'] = data.loc[:, 'specify_Acute_Respiratory_Distress_Syndrome_1_1'] \
-                                                                         .replace('Hypoxomie wv invasieve beademing', None)
-    data.loc[:, 'oxygentherapy_1'] = data.loc[:, 'oxygentherapy_1'].replace(-98, None)
-    data.loc[:, 'Smoking'] = data.loc[:, 'Smoking'].replace(-99, None)
-
-    mask = data['Record Id'].isin(['120007', '130032'])
-    data.loc[mask, 'assessment_dt'] = data.loc[mask, 'assessment_dt'].replace('20-02-2020', '20-03-2020')
-
+    for record_id, values in get_specific_fix_dict().items():
+        for column, replace_values in values.items():
+            for pair in replace_values:
+                data.loc[data['Record Id']==record_id, column] = data.loc[data['Record Id']==record_id, column] \
+                                                                     .replace(pair[0], pair[1])   
     return data
 
 def transform_binary_features(data, data_struct):
@@ -454,6 +458,8 @@ def transform_time_features(data, data_struct):
     data['days_at_mc'] = count_occurrences(data['dept_cat_2'], data['Record Id'], reset_count=False, start_count_at=1)
     data['days_at_icu'] = count_occurrences(data['dept_cat_3'], data['Record Id'], reset_count=False, start_count_at=1)
 
+    # pd.concat([data['Record Id'], data['admission_dt'], data['assessment_dt'], days_in_current_hosp, data['dept_cat_3'], data['days_at_icu']], axis=1).to_excel('tmp.xlsx')
+
     cols_to_drop = [col for col in data.columns if col in date_cols] # TODO: Select dynamically
     data = data.drop(cols_to_drop, axis=1)
 
@@ -523,9 +529,6 @@ def select_variables(data, data_struct, variables_to_include_dict):
     variables_to_include += ['Record Id']
     variables_to_include = is_in_columns(variables_to_include, data)
     return data.loc[:, variables_to_include]
-
-def remove_columns_wo_information(data, data_struct):
-    pass
 
 def plot_model_results(aucs, classifier='Logistic regression', outcome='ICU admission'):
     fig, ax = plt.subplots(1, 1)
