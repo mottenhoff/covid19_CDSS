@@ -19,19 +19,17 @@ Perform all steps listed here to complete setup
 1) Fill in paths to API-credentials and/or path to files in `covid19_createconfig.py`. Do not push this file filled in to master.
 2) Run `covid19_createconfig.py`
 
+## Running analysis
+1) Change parameters at the bottom of `covid19_ICU_admission.py __main__` to set:
+    a) The prediction goal (`goal`)
+    b) variables to include in the prediction (`variables_to_include`). These are based on the variables names used in Castor and `data_struct`
+    c) The `model` to use, these are classes stored in `.\Classifiers`. 
 
-## Retrieving data and running analysis
+2) Run the file from an editor or command line `python covid19_ICU_admission.py` 
 
-### Retrieving data
-1) In `covid19_ICU_admission.py __main__` set save to True. This will save 3 files: 1) all data directly from database. 2) Preprocessed data. 3) preprocessed data with outcome measure
-2) run `python covid19_ICU_admission.py`
+### Adding new model
+Add new models by using the blueprint in `.\Classifiers\classifier_blueprint.py`. Read the comments within the file carefully and do NOT change the prewritten variabals. DO NOT edit the blueprint file but copy it.
 
-NOTE: To select specific data groups, make changes in `feature_selection()`. As example the function `select_baseline_data()` is implemented to select only date from baseline.
-
-### Run analysis
-`python covid19_ICU_admission.py`, set save=False in `python __main__`.
-
-Please note that currently the last daily assessment is selected. Change this is at `data.groupby().SUMMARIZE_FN()` in `feature_selection()` 
 
 ### Using castor_api (standalone)
 See https://github.com/wouterpotters/castor-python
