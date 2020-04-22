@@ -28,7 +28,7 @@ Perform all steps listed here to complete setup
 2. Run the file from an editor or command line `python covid19_ICU_admission.py` 
 
 ### Adding new model
-Add new models by using the blueprint in `.\Classifiers\classifier_blueprint.py`. Read the comments within the file carefully and do NOT change the prewritten variabals. DO NOT edit the blueprint file but copy it.
+Add new models by using the blueprint in `.\Classifiers\classifier_blueprint.py`. Read the comments within the file carefully and do NOT change the prewritten variables. DO NOT edit the blueprint file but copy it.
 
 
 ### Using castor_api (standalone)
