@@ -20,15 +20,15 @@ Perform all steps listed here to complete setup
 2) Run `covid19_createconfig.py`
 
 ## Running analysis
-1) Change parameters at the bottom of `covid19_ICU_admission.py __main__` to set:
-    a) The prediction goal (`goal`)
-    b) variables to include in the prediction (`variables_to_include`). These are based on the variables names used in Castor and `data_struct`
-    c) The `model` to use, these are classes stored in `.\Classifiers`. 
+1. Change parameters at the bottom of `covid19_ICU_admission.py __main__` to set:
+    + The prediction goal (`goal`)
+    + Variables to include in the prediction (`variables_to_include`). These are based on the variables names used in Castor and `data_struct`
+    + The `model` to use, these are classes stored in `.\Classifiers`. 
 
-2) Run the file from an editor or command line `python covid19_ICU_admission.py` 
+2. Run the file from an editor or command line `python covid19_ICU_admission.py` 
 
 ### Adding new model
-Add new models by using the blueprint in `.\Classifiers\classifier_blueprint.py`. Read the comments within the file carefully and do NOT change the prewritten variabals. DO NOT edit the blueprint file but copy it.
+Add new models by using the blueprint in `.\Classifiers\classifier_blueprint.py`. Read the comments within the file carefully and do NOT change the prewritten variables. DO NOT edit the blueprint file but copy it.
 
 
 ### Using castor_api (standalone)
