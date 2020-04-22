@@ -44,12 +44,16 @@ from covid19_ICU_util import select_variables
 from covid19_ICU_util import plot_feature_importance
 from covid19_ICU_util import explore_data
 
+
 # classifiers
 from logreg import LogReg
 from gradboost import train_gradient_boosting
 
-is_in_columns = lambda var_list, data: [v for v in var_list if v in data.columns]
+# data
+from get_feature_set import get_feature_set
 
+
+is_in_columns = lambda var_list, data: [v for v in var_list if v in data.columns]
 
 def load_data_api(path_credentials):
 
@@ -250,16 +254,18 @@ if __name__ == "__main__":
 
     ## Comment out the preferred goal
     # goal = 'ICU admission'
-    # goal = 'Mortality'
-    goal = 'Duration of stay at ICU'
+    goal = 'Mortality'
+    # goal = 'Duration of stay at ICU'
+
 
     ## Select which variables to include here
     variables_to_include = {
-        'Form Collection Name': ['BASELINE', 'HOSPITAL ADMISSION'],  # groups
+        'Form Collection Name': [],  # groups
         'Form Name':            [],  # variable subgroups
-        'Field Variable Name':  []  # single variables
-    }
-
+        'Field Variable Name':  ['days_since_onset', 'age_yrs']
+                                + ['ethnic_cat_'+str(i) for i in range(1, 11)]
+                                + get_feature_set()  # single variables
+    }                           
     model = LogReg() # Initialize one of the model in .\Classifiers
 
     ### END PARAMETERS ###
@@ -275,7 +281,7 @@ if __name__ == "__main__":
     x, y, data = prepare_for_learning(data, data_struct,
                                       variables_to_include, goal)
 
-    # Comment if survival analysis
+    # Y = [event, days_to_event]. Select first column for logreg (or similar)
     y = y.iloc[:, 0] # FIXME: handle different inputs per model
 
     scores = []

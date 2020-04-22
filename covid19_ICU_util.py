@@ -284,6 +284,13 @@ def fix_single_errors(data):
     return data
 
 def transform_binary_features(data, data_struct):
+    '''
+    
+    
+    '''
+
+
+
     value_na = None
     dict_yes_no = {0:0, 1:1, 2:0, 3:value_na, 9:value_na, 9999: value_na}
     dict_yp = {0:0, 1:1, 2:.5, 3:0, 4:value_na} # [1, 2, 3, 4 ] --> [1, .5, 0, -1]
