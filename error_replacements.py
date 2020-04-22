@@ -1,4 +1,11 @@
 def get_global_fix_dict():
+    ''' Return a dictionary with 
+    value_to_replace: replacement pairs
+
+    input: None
+    output: dict
+    '''
+
     return {
         '': None,
         '11-11-1111': None,
@@ -14,6 +21,14 @@ def get_global_fix_dict():
     }
 
 def get_column_fix_dict():
+    ''' Returns a dictioary with 
+    replacement pairs for different
+    columns
+
+    input: None
+    output: dict
+    
+    '''
     return {
         'oxygentherapy_1': [[-98, None]],
         'Smoking': [[-99, None]]
@@ -25,6 +40,8 @@ def get_specific_fix_dict():
     <record_id>: {'column_1': [[value_1, replacement_1], [value_2, replacement_2]],
                   'column_2': [[value_1, replacement_1], [value_2, replacement_2]]}
     
+    input: None
+    output: dict
     '''
     return {
         '110023': {'assessment_dt': [['01-01-2020', '01-04-2020']]},

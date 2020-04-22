@@ -52,7 +52,6 @@ def get_all_field_information(path_to_creds):
 
     return data_struct
 
-
 def count_occurrences(col, record_ids, reset_count=False, start_count_at=1):
     # Make counter of occurences in binary column
     # NOTE: Make sure to supply sorted array
@@ -81,7 +80,6 @@ def count_occurrences(col, record_ids, reset_count=False, start_count_at=1):
 
     new_col = pd.concat(new_cols, axis=0)
     return new_col
-
 
 def calculate_outcomes(data, data_struct):
     # CATEGORY EXPLANATION
@@ -176,7 +174,6 @@ def calculate_outcomes(data, data_struct):
     used_columns = [col for col in data.columns if 'Outcome' in col] # Keep track of var
     return df_outcomes, used_columns
 
-
 def select_x_y(data, outcomes, used_columns, remove_no_outcome=True,
                goal=None):
     x = data.drop(used_columns, axis=1)
@@ -187,7 +184,7 @@ def select_x_y(data, outcomes, used_columns, remove_no_outcome=True,
     #       Y = ICU_admitted at sometime
     #       X = All data before ICU admission
     #           Ideally data at admission
-    if goal == 'icu_admission':
+    if goal == 'ICU admission':
         outcome_name = 'Patient is ICU admitted at some time during the whole hospital admission'
         y_event = pd.Series(None, index=data.index)
         y_duration = outcomes.loc[:, 'Days until ICU admission']
@@ -203,7 +200,7 @@ def select_x_y(data, outcomes, used_columns, remove_no_outcome=True,
     # Prediction 2: Which factors predict mortality at t=21
     #       Y = Dead/Alive
     #       X = All data before ICU admission
-    elif goal == 'mortality':
+    elif goal == 'Mortality':
         outcome_name = 'Patient has died'
         y_event = pd.Series(None, index=data.index)
         y_duration = outcomes.loc[:, 'Days until death']
@@ -219,7 +216,7 @@ def select_x_y(data, outcomes, used_columns, remove_no_outcome=True,
     # Prediction 3b: Which factors predict which patients are still at ICU at 21 days
     #       Y = [Left_ICU, duration]
     #       X = All data before ICU admission (or at ICU admission)
-    elif goal == 'duration_of_stay_at_icu':
+    elif goal == 'Duration of stay at ICU':
         ### Survival analysis - Time until leaving ICU
         # Survival analysis
         outcome_name = 'Leaving ICU dead or alive and the duration until event.'
@@ -239,7 +236,7 @@ def select_x_y(data, outcomes, used_columns, remove_no_outcome=True,
         y_duration = pd.Series(None, index=y_event.index, name='duration')
         # Should be first day of ICU admission to outcome
         y_duration[y_event == 1] = data.loc[y_event == 1,
-                                            'days_until_outcome_3wk']
+                                           'days_until_outcome_3wk']
         y_duration[y_event == 0] = data.loc[y_event == 0, 'days_at_icu']
         y = pd.concat([y_event, y_duration], axis=1)
 
@@ -253,7 +250,6 @@ def select_x_y(data, outcomes, used_columns, remove_no_outcome=True,
     y = y.loc[~has_any_nan]
 
     return x, y, outcome_name
-
 
 def fix_single_errors(data):
     ''' Replaces values on the global dataframe,
@@ -282,10 +278,10 @@ def fix_single_errors(data):
     for record_id, values in get_specific_fix_dict().items():
         for column, replace_values in values.items():
             for pair in replace_values:
-                data.loc[data['Record Id']==record_id, column] = data.loc[data['Record Id']==record_id, column] \
-                                                                     .replace(pair[0], pair[1])   
+                data.loc[data['Record Id']==record_id, column] \
+                    = data.loc[data['Record Id']==record_id, column] \
+                          .replace(pair[0], pair[1])   
     return data
-
 
 def transform_binary_features(data, data_struct):
     value_na = None
@@ -313,26 +309,38 @@ def transform_binary_features(data, data_struct):
 
     # NOTE in current implementation all unknowns are caught by is_yes_no
     # Find all answers with Unknown (cardiac variables)
-    if_unknown = lambda x: 1 if (type(x)==list) and (("Unknown" in x or "unknown" in x) and ("Yes" in x)) else 0
+    if_unknown = lambda x: 1 if (type(x)==list) \
+                             and (("Unknown" in x or "unknown" in x) \
+                             and ("Yes" in x)) \
+                             else 0
     has_unknown = data_struct['Option Name'].apply(if_unknown) == 1
     vars_yes_unknown = is_in_columns(data_struct.loc[has_unknown, 'Field Variable Name'].to_list(), data)
     data.loc[:, vars_yes_unknown] = data.loc[:, vars_yes_unknown].fillna(9999).astype(int).applymap(lambda x: dict_yu.get(x))
 
     # Hand code some other variables
     other_radio_vars = ['Bacteria', 'Smoking', 'CT_thorax_performed', 'facility_transfer', 'culture']
-    data.loc[:, 'Bacteria'].fillna(3).astype(int).apply(lambda x: dict_yes_no.get(x))
-    data.loc[:, 'Smoking'].fillna(4).astype(int).apply(lambda x: dict_smoke.get(x))
-    data.loc[:, 'CT_thorax_performed'].fillna(3).astype(int).apply(lambda x: {0:0, 1:0, 2:1, 3:0}.get(x))
-    data.loc[:, 'facility_transfer'].fillna(3).astype(int).apply(lambda x: dict_yes_no.get(x))
-    data.loc[:, 'culture'].fillna(1).astype(int).apply(lambda x: {0:0, 1:0, 2:1, 3:2}.get(x))
+    data.loc[:, 'Bacteria'].fillna(3) \
+                           .astype(int) \
+                           .apply(lambda x: dict_yes_no.get(x))
+    data.loc[:, 'Smoking'].fillna(4) \
+                          .astype(int) \
+                          .apply(lambda x: dict_smoke.get(x))
+    data.loc[:, 'CT_thorax_performed'].fillna(3) \
+                                      .astype(int) \
+                                      .apply(lambda x: {0:0, 1:0, 2:1, 3:0}.get(x))
+    data.loc[:, 'facility_transfer'].fillna(3) \
+                                    .astype(int) \
+                                    .apply(lambda x: dict_yes_no.get(x))
+    data.loc[:, 'culture'].fillna(1) \
+                          .astype(int) \
+                          .apply(lambda x: {0:0, 1:0, 2:1, 3:2}.get(x))
 
     unit_dict, _ = get_unit_lookup_dict()
     vars_units = data_struct.loc[(data_struct['Field Type'] == 'radio') & \
-                                 data_struct['Field Variable Name']\
-                                     .isin(unit_dict.keys()),
+                                  data_struct['Field Variable Name'].isin(unit_dict.keys()),
                                  'Field Variable Name'].to_list()
-    data_struct.loc[data_struct.loc[:, 'Field Variable Name']\
-                    .isin(vars_units), 'Field Type'] = 'unit'
+    data_struct.loc[data_struct.loc[:, 'Field Variable Name'] \
+                               .isin(vars_units), 'Field Type'] = 'unit'
 
     # All other variables
     handled_vars = vars_yes_no + vars_yes_probable + other_radio_vars \
@@ -343,7 +351,6 @@ def transform_binary_features(data, data_struct):
                     'Field Type'] = 'category_1'
 
     return data, data_struct
-
 
 def transform_categorical_features(data, data_struct):
     ''' Create dummyvariables for category variables,
@@ -398,7 +405,6 @@ def transform_categorical_features(data, data_struct):
 
     return data, data_struct
 
-
 def transform_numeric_features(data, data_struct):
     # Calculates all variables to the same unit,
     #   according to a handmade mapping in unit_lookup.py
@@ -410,24 +416,25 @@ def transform_numeric_features(data, data_struct):
 
     for col in numeric_columns:
         unit_col = var_numeric[col]
-        data[unit_col] = data[unit_col].fillna(-1).astype(int)\
-            .apply(lambda x: unit_dict[unit_col].get(x))
+        data[unit_col] = data[unit_col] \
+                            .fillna(-1) \
+                            .astype(int) \
+                            .apply(lambda x: unit_dict[unit_col].get(x))
         if unit_col in ['units_lymph', 'units_neutro']:
             has_999 = data[unit_col] == -999
-            data.loc[has_999, unit_col] = data.loc[has_999, wbc_value_study]\
-                .astype(float).div(100)
+            data.loc[has_999, unit_col] = data.loc[has_999, wbc_value_study] \
+                                              .astype(float).div(100)
         elif unit_col in ['lymph_units_1', 'neutro_units_2']:
             has_999 = data[unit_col] == -999
-            data.loc[has_999, unit_col] = data.loc[has_999, wbc_value_report]\
-                .astype(float).div(100)
+            data.loc[has_999, unit_col] = data.loc[has_999, wbc_value_report] \
+                                              .astype(float).div(100)
         has_value = data[col].notna()
         data.loc[has_value, col] = data.loc[has_value, col].astype(float) \
-            * data.loc[has_value, unit_col].astype(float)
+                            * data.loc[has_value, unit_col].astype(float)
 
     data = data.drop(is_in_columns(unit_dict.keys(), data), axis=1)
 
     return data, data_struct
-
 
 def transform_time_features(data, data_struct):
     '''
@@ -521,7 +528,6 @@ def transform_time_features(data, data_struct):
 
     return data, data_struct
 
-
 def transform_string_features(data, data_struct):
     # TODO: Why it med_specify not in data_struct?
 
@@ -543,7 +549,6 @@ def transform_string_features(data, data_struct):
                   index=data_struct.columns), ignore_index=True)
     return data, data_struct
 
-
 def transform_calculated_features(data, data_struct):
     struct_calc = data_struct.loc[data_struct['Field Type']=='calculation', :]
 
@@ -553,7 +558,6 @@ def transform_calculated_features(data, data_struct):
                     if c not in ['discharge_live_3wk', 'discharge_live_6wk']]
     data = data.drop(cols_to_drop, axis=1)
     return data, data_struct
-
 
 def select_data(data, data_struct):
     cols_to_keep = [col for col in data.columns
@@ -569,7 +573,6 @@ def select_data(data, data_struct):
     # data.loc[data['whole_admission_yes_no_1'] == 1, blood_cols] = None
 
     return data, data_struct
-
 
 def select_variables(data, data_struct, variables_to_include_dict):
     # Get all variables
@@ -592,50 +595,6 @@ def select_variables(data, data_struct, variables_to_include_dict):
     variables_to_include = is_in_columns(variables_to_include, data)
     return data.loc[:, variables_to_include]
 
-def plot_model_results(aucs, classifier='Logistic regression', outcome='ICU admission'):
-    fig, ax = plt.subplots(1, 1)
-    ax.plot(aucs)
-    ax.set_title('{} - {}\nROC AUC // Avg: {:.3f}'
-                 .format(classifier, outcome, sum(aucs)/max(len(aucs), 1)))
-    ax.axhline(sum(aucs)/max(len(aucs), 1), color='g', linewidth=1)
-    ax.axhline(.5, color='r', linewidth=1)
-    ax.set_ylim(0, 1)
-    ax.legend(['ROC AUC', 'Average',  'Chance level'], bbox_to_anchor=(1, 0.5))
-    fig.savefig('Performance_roc_auc.png')
-    return fig, ax
-
-
-def plot_model_weights(coefs, intercepts, field_names, show_n_features=10,
-                       normalize_coefs=False):
-    show_n_features = coefs.shape[1] if show_n_features is None \
-        else show_n_features
-    coefs = np.array(coefs).squeeze()
-    intercepts = np.array(intercepts).squeeze()
-
-    coefs = (coefs-coefs.mean(axis=0))/coefs.std(axis=0) if normalize_coefs \
-        else coefs
-
-    avg_coefs = coefs.mean(axis=0)
-    var_coefs = coefs.var(axis=0) if not normalize_coefs else None
-
-    idx_n_max_values = abs(avg_coefs).argsort()[-show_n_features:]
-    n_bars = np.arange(coefs.shape[1])
-    bar_labels = [''] * n_bars.size
-    for idx in idx_n_max_values:
-        bar_labels[idx] = field_names[idx]
-
-    bar_width = .5  # bar width
-    fig, ax = plt.subplots()
-    ax.barh(n_bars, avg_coefs, bar_width,
-            xerr=var_coefs, label='Weight')
-    ax.set_yticks(n_bars)
-    ax.set_yticklabels(bar_labels, fontdict={'fontsize': 6})
-    ax.set_xlabel('Weight')
-    ax.set_title('Logistic regression - Average weight value')
-    fig.savefig('Average_weight_variance.png')
-    return fig, ax
-
-
 def plot_feature_importance(importances, features, show_n_features=5):
     show_n_features = features.shape[0] if not show_n_features \
         else show_n_features
@@ -647,7 +606,6 @@ def plot_feature_importance(importances, features, show_n_features=5):
     fig.savefig('Average_feature_importance.png')
 
     return fig, ax
-
 
 def explore_data(x, y):
     data = pd.concat([x, y], axis=1)
