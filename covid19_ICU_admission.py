@@ -94,7 +94,6 @@ def load_data_api(path_credentials):
 
     return df_study, df_report, data_struct
 
-
 def load_data(path_to_creds):
     ''' Loads data and combines the different
     returned dataframes.
@@ -122,7 +121,6 @@ def load_data(path_to_creds):
                                 None: "EMPTY_COLUMN_NAME"})
 
     return data, data_struct
-
 
 def preprocess(data, data_struct):
     ''' Processed the data per datatype.'''
@@ -283,6 +281,10 @@ if __name__ == "__main__":
 
     # Y = [event, days_to_event]. Select first column for logreg (or similar)
     # y = y.iloc[:, 0] # FIXME: handle different inputs per model
+    y = y.iloc[:, 2]
+    has_y = y.notna()
+    x = x.loc[has_y, :]
+    y = y.loc[has_y]
 
     scores = []
     repetitions = 100
