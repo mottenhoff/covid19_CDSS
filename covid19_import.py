@@ -213,8 +213,7 @@ def import_data(path_to_api_creds=None):
     study_data['Record ID'] = study_data['Record ID'].astype(str)
     study_data_filtered = study_data[
         study_data['Form Type'].isin(['Study'])
-        & (~study_data['Record ID'].str.match('^ARCHIVED-.*'))
-        & (~study_data['Record ID'].str.match('000001'))] \
+        & (~study_data['Record ID'].str.match('^ARCHIVED-.*'))] \
         .filter(['Record ID', 'Field ID', 'Form Type', 'Value', 'Date'],
                 axis=1)
 
