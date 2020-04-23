@@ -50,7 +50,8 @@ def import_data_by_record(path_to_api_creds=None):
 
     df_study, df_structure_study, df_report, df_structure_report,\
         df_optiongroups_structure = \
-        c.records_reports_all(report_names=['Daily'])
+        c.records_reports_all(report_names=['Daily'],
+                              add_including_center=True)
 
     # remove test institute and archived (deleted) records
     test_inst = [i for i in c.request_institutes()
@@ -212,8 +213,7 @@ def import_data(path_to_api_creds=None):
     study_data['Record ID'] = study_data['Record ID'].astype(str)
     study_data_filtered = study_data[
         study_data['Form Type'].isin(['Study'])
-        & (~study_data['Record ID'].str.match('^ARCHIVED-.*'))
-        & (~study_data['Record ID'].str.match('000001'))] \
+        & (~study_data['Record ID'].str.match('^ARCHIVED-.*'))] \
         .filter(['Record ID', 'Field ID', 'Form Type', 'Value', 'Date'],
                 axis=1)
 

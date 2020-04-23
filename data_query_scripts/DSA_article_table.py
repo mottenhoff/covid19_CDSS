@@ -18,7 +18,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), './../'))
 from unit_lookup import get_unit_lookup_dict  # noqa: E402
 from covid19_ICU_admission import load_data, preprocess  # noqa: E402
-from covid19_ICU_util import calculate_outcomes_12_d21  # noqa: E402
+from covid19_ICU_util import calculate_outcomes  # noqa: E402
 
 
 def get_units(cols_input):
@@ -315,7 +315,7 @@ def create_table_for_variables_outcomes(df_variable_columns):
         if c1 == 'age':
             c = 'age_yrs'
         elif c1 == 'gender':
-            data['gender_male'] = data['gender_cat_1']
+            data['gender_male'] = data['gender'] == '1'
             c = 'gender_male'
 
         else:
@@ -422,19 +422,21 @@ def create_table_for_variables_outcomes(df_variable_columns):
 
 # % load data and preprocess
 config = configparser.ConfigParser()
-config.read('../user_settings.ini') # create this once using and never upload
+config.read('../user_settings.ini')  # create this once using and never upload
 
 path_creds = config['CastorCredentials']['local_private_path']
 
 data, data_struct = load_data(path_creds)
 data, data_struct = preprocess(data, data_struct)
 
-outcomes, used_columns = calculate_outcomes_12_d21(data, data_struct)
+outcomes, used_columns = calculate_outcomes(data, data_struct)
+outcomes = outcomes[outcomes.columns[0:12]]
 data = pd.concat([data, outcomes], axis=1)
 
 data = data.groupby(by='Record Id', axis=0).last()
 
-outcomes = data[outcomes.columns]
+# %%
+outcomes = data[outcomes.columns[0:12]]
 
 excel_file = os.path.join(config['CastorCredentials']['local_private_path'],'tabellen_manuscript.xlsx')
 excel_file_source_variables = os.path.join(config['CastorCredentials']['local_private_path'],'tabellen_manuscript_inclusions.xlsx')
