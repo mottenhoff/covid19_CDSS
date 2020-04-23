@@ -250,7 +250,7 @@ def evaluate_model(model, clf, datasets, scores):
 
 
 if __name__ == "__main__":
-    ### START PARAMETERS ###
+    ##### START PARAMETERS #####
 
     ## Comment out the preferred goal
     # goal = 'ICU admission'
@@ -268,7 +268,7 @@ if __name__ == "__main__":
     }                           
     model = LogReg() # Initialize one of the model in .\Classifiers
 
-    ### END PARAMETERS ###
+    ##### END PARAMETERS #####
 
 
     config = configparser.ConfigParser()
@@ -282,7 +282,7 @@ if __name__ == "__main__":
                                       variables_to_include, goal)
 
     # Y = [event, days_to_event]. Select first column for logreg (or similar)
-    y = y.iloc[:, 0] # FIXME: handle different inputs per model
+    # y = y.iloc[:, 0] # FIXME: handle different inputs per model
 
     scores = []
     repetitions = 100

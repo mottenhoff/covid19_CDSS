@@ -184,71 +184,69 @@ def select_x_y(data, outcomes, used_columns, remove_no_outcome=True,
     #       Y = ICU_admitted at sometime
     #       X = All data before ICU admission
     #           Ideally data at admission
-    if goal == 'ICU admission':
-        outcome_name = 'Patient is ICU admitted at some time during the whole hospital admission'
-        y_event = pd.Series(None, index=data.index)
-        y_duration = outcomes.loc[:, 'Days until ICU admission']
-        y_event.loc[y_duration.notna()] = 1
-        has_not_been_icu = outcomes.loc[:, ['Levend ontslagen en niet heropgenomen - waarvan niet opgenomen geweest op IC',
-                                            'Levend dag 21 maar nog in het ziekenhuis - niet op IC geweest',
-                                            'Dood op dag 21 - niet op IC geweest']].any(axis=1)
-        y_duration.loc[has_not_been_icu] = data.loc[has_not_been_icu, 'days_since_admission_current_hosp']
-        y_event.loc[has_not_been_icu] = 0
-        y = pd.concat([y_event, y_duration], axis=1)
-        y.columns = ['event', 'duration']
+    
+    outcome_name = 'Patient is ICU admitted at some time during the whole hospital admission'
+    y_event = pd.Series(None, index=data.index)
+    y_duration = outcomes.loc[:, 'Days until ICU admission']
+    y_event.loc[y_duration.notna()] = 1
+    has_not_been_icu = outcomes.loc[:, ['Levend ontslagen en niet heropgenomen - waarvan niet opgenomen geweest op IC',
+                                        'Levend dag 21 maar nog in het ziekenhuis - niet op IC geweest',
+                                        'Dood op dag 21 - niet op IC geweest']].any(axis=1)
+    y_duration.loc[has_not_been_icu] = data.loc[has_not_been_icu, 'days_since_admission_current_hosp']
+    y_event.loc[has_not_been_icu] = 0
+    y1 = pd.concat([y_event, y_duration], axis=1)
+    y1.columns = ['event_icu_adm', 'duration_icu_adm']
 
     # Prediction 2: Which factors predict mortality at t=21
     #       Y = Dead/Alive
     #       X = All data before ICU admission
-    elif goal == 'Mortality':
-        outcome_name = 'Patient has died'
-        y_event = pd.Series(None, index=data.index)
-        y_duration = outcomes.loc[:, 'Days until death']
-        y_event.loc[y_duration.notna()] = 1
-        has_not_died = outcomes.loc[:, ['Levend ontslagen en niet heropgenomen - totaal',
-                                        'Levend dag 21 maar nog in het ziekenhuis - totaal']].any(axis=1)
-        y_duration.loc[has_not_died] = data.loc[has_not_died, 'days_since_admission_current_hosp']
-        y_event.loc[has_not_died] = 0
-        y = pd.concat([y_event, y_duration], axis=1)
-        y.columns = ['event', 'duration']
+    outcome_name = 'Patient has died'
+    y_event = pd.Series(None, index=data.index)
+    y_duration = outcomes.loc[:, 'Days until death']
+    y_event.loc[y_duration.notna()] = 1
+    has_not_died = outcomes.loc[:, ['Levend ontslagen en niet heropgenomen - totaal',
+                                'Levend dag 21 maar nog in het ziekenhuis - totaal']].any(axis=1)
+    y_duration.loc[has_not_died] = data.loc[has_not_died, 'days_since_admission_current_hosp']
+    y_event.loc[has_not_died] = 0
+    y2 = pd.concat([y_event, y_duration], axis=1)
+    y2.columns = ['event_mortality', 'duration_mortality']
 
     # Prediction 3a: Which factors predict duration of ICU admission
     # Prediction 3b: Which factors predict which patients are still at ICU at 21 days
     #       Y = [Left_ICU, duration]
     #       X = All data before ICU admission (or at ICU admission)
-    elif goal == 'Duration of stay at ICU':
-        ### Survival analysis - Time until leaving ICU
-        # Survival analysis
-        outcome_name = 'Leaving ICU dead or alive and the duration until event.'
-        y_event = pd.Series(None, index=x.index, name='event').reset_index(drop=True)
 
-        # Event happened
-        y_event.loc[outcomes.loc[:, ['Levend ontslagen en niet heropgenomen - waarvan opgenomen geweest op IC', \
-                                     'Dood op dag 21 - op IC geweest']].any(axis=1)] = 1
+    ### Survival analysis - Time until leaving ICU
+    # Survival analysis
+    outcome_name = 'Leaving ICU dead or alive and the duration until event.'
+    y_event = pd.Series(None, index=x.index, name='event_icu_stay').reset_index(drop=True)
 
-        # No event happened yet
-        is_at_icu = data.loc[:, 'days_at_icu'].notna()
-        has_no_outcome = outcomes.loc[:, 'Onbekend (alle patiënten zonder outcome)'] == 1
-        has_icu_outcome = outcomes.loc[:, 'Levend dag 21 maar nog in het ziekenhuis - waarvan nu nog op IC'] == 1
-        y_event.loc[(is_at_icu & has_no_outcome) | has_icu_outcome] = 0
+    # Event happened
+    y_event.loc[outcomes.loc[:, ['Levend ontslagen en niet heropgenomen - waarvan opgenomen geweest op IC', \
+                                    'Dood op dag 21 - op IC geweest']].any(axis=1)] = 1
 
-        # Time to event
-        y_duration = pd.Series(None, index=y_event.index, name='duration')
-        # Should be first day of ICU admission to outcome
-        y_duration[y_event == 1] = data.loc[y_event == 1,
-                                           'days_until_outcome_3wk']
-        y_duration[y_event == 0] = data.loc[y_event == 0, 'days_at_icu']
-        y = pd.concat([y_event, y_duration], axis=1)
+    # No event happened yet
+    is_at_icu = data.loc[:, 'days_at_icu'].notna()
+    has_no_outcome = outcomes.loc[:, 'Onbekend (alle patiënten zonder outcome)'] == 1
+    has_icu_outcome = outcomes.loc[:, 'Levend dag 21 maar nog in het ziekenhuis - waarvan nu nog op IC'] == 1
+    y_event.loc[(is_at_icu & has_no_outcome) | has_icu_outcome] = 0
+
+    # Time to event
+    y_duration = pd.Series(None, index=y_event.index, name='duration_icu_stay')
+    # Should be first day of ICU admission to outcome
+    y_duration[y_event == 1] = data.loc[y_event == 1, 'days_until_outcome_3wk']
+    y_duration[y_event == 0] = data.loc[y_event == 0, 'days_at_icu']
+    y3 = pd.concat([y_event, y_duration], axis=1)
+
 
     # Prediction 4: Which factors predict mono- or multi-organ failure at t=21
     # TODO
-    if goal == 4:
-        pass
 
-    has_any_nan = y.isna().any(axis=1)
-    x = x.loc[~has_any_nan, :]
-    y = y.loc[~has_any_nan]
-
+    # has_any_nan = y.isna().any(axis=1)
+    # x = x.loc[~has_any_nan, :]
+    # y = y.loc[~has_any_nan]
+    outcome_name = 'Combined outcome'
+    y = pd.concat([y1, y2, y3], axis=1)
     return x, y, outcome_name
 
 def fix_single_errors(data):
