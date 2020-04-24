@@ -40,6 +40,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import cross_val_predict
+from sklearn.metrics import auc as auc_calc
 from sklearn.metrics import roc_curve
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import confusion_matrix
@@ -66,7 +67,7 @@ class LogReg:
             'pca_n_components': 10,
 
             'select_features': False,
-            'n_best_features': 5,
+            'n_best_features': 10,
             'plot_feature_graph': True,
             
             'grid_search': False
@@ -86,6 +87,9 @@ class LogReg:
         self.coefs = []
         self.intercepts = []
         self.n_best_features = []
+
+        self.learn_size = []
+
 
     def train(self, datasets):
         ''' Initialize, train and predict a classifier.
@@ -116,6 +120,9 @@ class LogReg:
         train_y = datasets['train_y']
         test_y = datasets['test_y']
 
+        self.learn_size += [{'tr_x': train_x.shape, 'tr_y': train_y.shape,
+                            'te_x': test_x.shape, 'te_y': test_y.shape}]
+
         n_best_features = self.model_args['n_best_features']
         plot_feature_graph = self.model_args['plot_feature_graph']
 
@@ -134,6 +141,8 @@ class LogReg:
                 self.importances = self.feature_contribution(clf, train_x, train_y, 
                                                         plot_graph=plot_feature_graph)
                 self.n_best_features = np.argsort(self.importances)[-n_best_features:]
+                print('Select {} best features:\n{}'.format(self.model_args['n_best_features'], 
+                                                            list(train_x.columns[self.n_best_features])))
             train_x = train_x.iloc[:, self.n_best_features]
             test_x = test_x.iloc[:, self.n_best_features]
 
@@ -306,20 +315,22 @@ class LogReg:
 
         thrs = np.asarray(thresholds)
 
-        fprs = np.array([div(i[1], i[1]+i[0]) for cm in cms for i in cm]).reshape((100, 50))
+        fprs = np.array([div(i[1], i[1]+i[0]) for cm in cms for i in cm]).reshape((len(self.learn_size), 50))
         fprs_mean = fprs.mean(axis=0)
         fprs_std = fprs.std(axis=0)
         fprs_ci = (fprs_std / sqrt(fprs.shape[0])) * 1.96
 
-        sens = np.array([div(i[3], i[3]+i[2]) for cm in cms for i in cm]).reshape((100, 50))
+        sens = np.array([div(i[3], i[3]+i[2]) for cm in cms for i in cm]).reshape((len(self.learn_size), 50))
         sens_mean = sens.mean(axis=0)
         sens_std = sens.std(axis=0)
         sens_ci = (sens_std / sqrt(sens.shape[0])) * 1.96
 
-        spec = np.array([div(i[0], i[0]+i[1]) for cm in cms for i in cm]).reshape((100, 50))
+        spec = np.array([div(i[0], i[0]+i[1]) for cm in cms for i in cm]).reshape((len(self.learn_size), 50))
         spec_mean = spec.mean(axis=0)
         spec_std = spec.std(axis=0)
         spec_ci = (spec_std / sqrt(spec.shape[0])) * 1.96
+
+        auc_mean = auc_calc(fprs_mean, sens_mean)
 
         plt.close('all')
         fig, ax = plt.subplots()
@@ -339,10 +350,11 @@ class LogReg:
         fig.savefig('sensitivity_vs_specificity.png')
 
         fig, ax = plt.subplots()
-        ax.plot(sens_mean, spec_mean)
-        ax.set_title('Average ROC curve')
-        ax.set_xlabel('Sensitivity [TPR]')
-        ax.set_ylabel('Specificity [TNR]')
+        ax.step(fprs_mean, sens_mean, color='b')
+        ax.plot([0, 1], [0, 1], color='k')
+        ax.set_title('Average ROC curve\n AUC: {:.3f}'.format(auc_mean))
+        ax.set_xlabel('Fall-Out [FPR]')
+        ax.set_ylabel('Sensitivity [TPR]')
         fig.savefig('average_roc.png')
 
     def plot_model_weights(self, feature_labels, show_n_features=10,
@@ -352,11 +364,15 @@ class LogReg:
         coefs = np.array(coefs).squeeze()
         intercepts = np.array(intercepts).squeeze()
 
+        if len(coefs.shape) <= 1:
+            return
+
         show_n_features = coefs.shape[1] if show_n_features is None else show_n_features
 
         coefs = (coefs-coefs.mean(axis=0))/coefs.std(axis=0) if normalize_coefs else coefs
 
         avg_coefs = abs(coefs.mean(axis=0))
+        
         var_coefs = coefs.var(axis=0) if not normalize_coefs else None
 
         idx_sorted = avg_coefs.argsort()
@@ -364,13 +380,16 @@ class LogReg:
 
         bar_width = .5  # bar width
         fig, ax = plt.subplots()
-        ax.barh(n_bars, avg_coefs[idx_sorted], bar_width,
-                xerr=var_coefs, label='Weight')
+        if normalize_coefs:
+            ax.barh(n_bars, avg_coefs[idx_sorted], bar_width, label='Weight [normalized]')
+        else:
+            ax.barh(n_bars, avg_coefs[idx_sorted], bar_width, xerr=var_coefs[idx_sorted], label='Weight')
+        
         ax.set_yticks(n_bars)
         ax.set_yticklabels(feature_labels[idx_sorted], fontdict={'fontsize': 6})
         ax.set_xlabel('Weight')
         ax.set_title('Logistic regression - Average weight value')
-        fig.savefig('Average_weight_variance.png')
+        fig.savefig('Average_weight_variance.png', figsize=(1280, 960), dpi=200)
         return fig, ax
 
 

@@ -588,9 +588,11 @@ def select_variables(data, data_struct, variables_to_include_dict):
     # Get all variables
     variables_to_include = []
     for k, v in variables_to_include_dict.items():
+        if k == 'Field Variable Name':
+            variables_to_include += variables_to_include_dict[k]
         variables_to_include += data_struct.loc[data_struct[k].isin(v),
                                                 'Field Variable Name']\
-                                               .to_list()
+                                           .to_list()
     # get unique values and check if in data.columns
     variables_to_include = list(np.unique(variables_to_include))
 

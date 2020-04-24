@@ -176,7 +176,7 @@ def prepare_for_learning(data, data_struct, variables_to_incl, goal,
 
     return x, y, data
 
-def train_and_predict(x, y, model, test_size=0.2):
+def train_and_predict(x, y, model, rep, type='subsamp', type_col=None, test_size=0.2):
     ''' Splits data into train and test set using
     monte carlo subsampling method, i.e., n random
     train/test splits using equal class balance.
@@ -203,11 +203,20 @@ def train_and_predict(x, y, model, test_size=0.2):
             Probability prediction of the trained
             clf on test y. 
     '''
-
-
-    train_x, test_x, train_y, test_y = train_test_split(x, y,
-                                                        test_size=test_size,
-                                                        stratify=y)
+    
+    if type=='loho':
+        # Leave-one-hospital-out cross-validation
+        test_hosp = type_col.unique()[rep]
+        is_test_hosp = type_col == test_hosp
+        train_x = x.loc[~is_test_hosp, :]
+        train_y = y.loc[~is_test_hosp]
+        test_x = x.loc[is_test_hosp, :]
+        test_y = y.loc[is_test_hosp]
+    else:
+        # Default to random subsampling
+        train_x, test_x, train_y, test_y = train_test_split(x, y,
+                                                            test_size=test_size,
+                                                            stratify=y)
     datasets = {"train_x": train_x, "test_x": test_x,
                 "train_y": train_y, "test_y": test_y}
 
@@ -257,13 +266,15 @@ if __name__ == "__main__":
 
 
     ## Select which variables to include here
+    # TODO: add n_comorbities
     variables_to_include = {
         'Form Collection Name': [],  # groups
         'Form Name':            [],  # variable subgroups
-        'Field Variable Name':  ['days_since_onset', 'age_yrs']
+        'Field Variable Name':  ['hospital', 'days_since_onset', 'age_yrs']
                                 + ['ethnic_cat_'+str(i) for i in range(1, 11)]
                                 + get_feature_set()  # single variables
-    }                           
+    }
+    train_test_split = 'loho'  #opts: loho, rss
     model = LogReg() # Initialize one of the model in .\Classifiers
 
     ##### END PARAMETERS #####
@@ -281,15 +292,25 @@ if __name__ == "__main__":
 
     # Y = [event, days_to_event]. Select first column for logreg (or similar)
     # y = y.iloc[:, 0] # FIXME: handle different inputs per model
+    hospital = x['hospital']
+    x = x.drop('hospital', axis=1)
     y = y.iloc[:, 2]
     has_y = y.notna()
     x = x.loc[has_y, :]
     y = y.loc[has_y]
 
+    if train_test_split == 'loho':
+        # Leave-one-hospital-out
+        repetitions = hospital.unique().size
+    else:
+        # Random Subsampling
+        repetitions = 100
+        
     scores = []
-    repetitions = 100
     for rep in range(repetitions):
-        clf, datasets, test_y_hat = train_and_predict(x, y, model)
+        clf, datasets, test_y_hat = train_and_predict(x, y, model, rep, 
+                                                      type=train_test_split, 
+                                                      type_col=hospital)
         score = score_prediction(model, clf, datasets, 
                                  test_y_hat, rep)
         scores.append(score)
