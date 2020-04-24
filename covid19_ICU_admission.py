@@ -50,7 +50,12 @@ from logreg import LogReg
 from gradboost import train_gradient_boosting
 
 # data
-from get_feature_set import get_feature_set
+from get_feature_set import get_1_premorbid
+from get_feature_set import get_2_clinical_presentation
+from get_feature_set import get_3_laboratory_radiology_findings
+from get_feature_set import get_4_premorbid_clinical_representation
+from get_feature_set import get_5_premorbid_clin_rep_lab_rad
+from get_feature_set import get_6_all
 
 
 is_in_columns = lambda var_list, data: [v for v in var_list if v in data.columns]
@@ -90,7 +95,7 @@ def load_data_api(path_credentials):
                    'Field Variable Name', 'Field Label', 'Field Type',
                    'Option Name', 'Option Value']
     data_struct = get_all_field_information(path_credentials)
-    data_struct = data_struct.loc[:, var_columns]
+    data_struct = data_struct.loc[:, var_columns].reset_index(drop=True)
 
     return df_study, df_report, data_struct
 
@@ -141,7 +146,8 @@ def preprocess(data, data_struct):
 
     return data, data_struct
 
-def prepare_for_learning(data, data_struct, variables_to_incl, goal, 
+def prepare_for_learning(data, data_struct, variables_to_incl,
+                         variables_to_exclude, goal, 
                          group_by_record=True, use_outcome=None, 
                          additional_fn=None):
 
@@ -161,20 +167,23 @@ def prepare_for_learning(data, data_struct, variables_to_incl, goal,
                                     goal=goal)
 
     # Select variables to include in prediction
+    variables_to_incl['Field Variable Name'] += ['hospital']
     x = select_variables(x, data_struct, variables_to_incl)
+
     # Select variables to exclude
-    # TODO: used_columns (can't include columns used to calculate the outcome)
-    #       any other columns
+    x = x.drop(is_in_columns(variables_to_exclude, x), axis=1)    
 
     # Remove columns without information
+    hospital = x.loc[:, 'hospital']
+    x = x.drop('hospital', axis=1)
     x = x.loc[:, x.nunique() > 1]  # Remove columns without information
     x = x.fillna(0)  # Fill missing values with 0 (0==missing or no asik)
-
+    x = x.astype(float)
     print('LOG: Using <{}> as y.'.format(outcome_name))
     print('LOG: Selected {} variables for predictive model'
           .format(x.columns.size))
 
-    return x, y, data
+    return x, y, data, hospital
 
 def train_and_predict(x, y, model, rep, type='subsamp', type_col=None, test_size=0.2):
     ''' Splits data into train and test set using
@@ -254,52 +263,26 @@ def score_prediction(model, clf, datasets, test_y_hat, rep):
 def evaluate_model(model, clf, datasets, scores):
     model.evaluate(clf, datasets, scores)
 
-
-
-if __name__ == "__main__":
-    ##### START PARAMETERS #####
-
-    ## Comment out the preferred goal
-    # goal = 'ICU admission'
-    goal = 'Mortality'
-    # goal = 'Duration of stay at ICU'
-
-
-    ## Select which variables to include here
-    # TODO: add n_comorbities
-    variables_to_include = {
-        'Form Collection Name': [],  # groups
-        'Form Name':            [],  # variable subgroups
-        'Field Variable Name':  ['hospital', 'days_since_onset', 'age_yrs']
-                                + ['ethnic_cat_'+str(i) for i in range(1, 11)]
-                                + get_feature_set()  # single variables
-    }
-    train_test_split = 'loho'  #opts: loho, rss
-    model = LogReg() # Initialize one of the model in .\Classifiers
-
-    ##### END PARAMETERS #####
-
-
+def run(goal, variables_to_include, variables_to_exclude, 
+        train_test_split_method, model):
     config = configparser.ConfigParser()
     config.read('user_settings.ini')
     path_creds = config['CastorCredentials']['local_private_path']
+
     model.goal = goal
 
     data, data_struct = load_data(path_creds)
     data, data_struct = preprocess(data, data_struct)
-    x, y, data = prepare_for_learning(data, data_struct,
-                                      variables_to_include, goal)
-
+    x, y, data, hospital = prepare_for_learning(data, data_struct,
+                                                variables_to_include,
+                                                variables_to_exclude, goal)
     # Y = [event, days_to_event]. Select first column for logreg (or similar)
-    # y = y.iloc[:, 0] # FIXME: handle different inputs per model
-    hospital = x['hospital']
-    x = x.drop('hospital', axis=1)
-    y = y.iloc[:, 2]
+    y = y.iloc[:, 2] # FIXME: handle different inputs per model
     has_y = y.notna()
     x = x.loc[has_y, :]
     y = y.loc[has_y]
 
-    if train_test_split == 'loho':
+    if train_test_split_method == 'loho':
         # Leave-one-hospital-out
         repetitions = hospital.unique().size
     else:
@@ -309,8 +292,8 @@ if __name__ == "__main__":
     scores = []
     for rep in range(repetitions):
         clf, datasets, test_y_hat = train_and_predict(x, y, model, rep, 
-                                                      type=train_test_split, 
-                                                      type_col=hospital)
+                                                        type=train_test_split_method, 
+                                                        type_col=hospital)
         score = score_prediction(model, clf, datasets, 
                                  test_y_hat, rep)
         scores.append(score)
@@ -318,3 +301,42 @@ if __name__ == "__main__":
     evaluate_model(model, clf, datasets, scores)
 
     plt.show()
+
+
+if __name__ == "__main__":
+    ##### START PARAMETERS #####
+
+    # Choose the goal the model should predict
+    # Options:
+    #   ICU admission
+    #   Mortality
+    #   Duration of stay at ICU
+    goal = 'Mortality'
+
+
+    # Add all 'Field Variable Name' from data_struct to
+    # INCLUDE variables from analysis
+    #  NOTE: See get_feature_set.py for preset selections
+    variables_to_include = {
+        'Form Collection Name': [],  # groups
+        'Form Name':            [],  # variable subgroups
+        'Field Variable Name': get_2_clinical_presentation() # single variables
+    }
+    
+    # Add all 'Field Variable Name' from data_struct to
+    # EXCLUDE variables from analysis
+    variables_to_exclude = ['microbiology_worker']
+
+    # Options:
+    #   loho: Leave-one-hospital-out
+    #   rss: random subsampling
+    train_test_split_method = 'rss' 
+
+    # Options:
+    #   see .\Classifiers
+    model = LogReg()
+
+    ##### END PARAMETERS #####
+
+    run(goal, variables_to_include, variables_to_exclude,
+        train_test_split_method, model)
