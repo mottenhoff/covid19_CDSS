@@ -288,12 +288,7 @@ def fix_single_errors(data):
 
 def transform_binary_features(data, data_struct):
     '''
-    
-    
     '''
-
-
-
     value_na = None
     dict_yes_no = {0:0, 1:1, 2:0, 3:value_na, 9:value_na, 9999: value_na}
     dict_yp = {0:0, 1:1, 2:.5, 3:0, 4:value_na} # [1, 2, 3, 4 ] --> [1, .5, 0, -1]
@@ -329,21 +324,21 @@ def transform_binary_features(data, data_struct):
 
     # Hand code some other variables
     other_radio_vars = ['Bacteria', 'Smoking', 'CT_thorax_performed', 'facility_transfer', 'culture']
-    data.loc[:, 'Bacteria'].fillna(3) \
-                           .astype(int) \
-                           .apply(lambda x: dict_yes_no.get(x))
-    data.loc[:, 'Smoking'].fillna(4) \
-                          .astype(int) \
-                          .apply(lambda x: dict_smoke.get(x))
-    data.loc[:, 'CT_thorax_performed'].fillna(3) \
-                                      .astype(int) \
-                                      .apply(lambda x: {0:0, 1:0, 2:1, 3:0}.get(x))
-    data.loc[:, 'facility_transfer'].fillna(3) \
-                                    .astype(int) \
-                                    .apply(lambda x: dict_yes_no.get(x))
-    data.loc[:, 'culture'].fillna(1) \
-                          .astype(int) \
-                          .apply(lambda x: {0:0, 1:0, 2:1, 3:2}.get(x))
+    data.loc[:, 'Bacteria'] = data.loc[:, 'Bacteria'].fillna(3) \
+                                                     .astype(int) \
+                                                     .apply(lambda x: dict_yes_no.get(x))
+    data.loc[:, 'Smoking'] = data.loc[:, 'Smoking'].fillna(4) \
+                                                   .astype(int) \
+                                                   .apply(lambda x: dict_smoke.get(x))
+    data.loc[:, 'CT_thorax_performed'] = data.loc[:, 'CT_thorax_performed'].fillna(3) \
+                                                                           .astype(int) \
+                                                                           .apply(lambda x: {0:0, 1:0, 2:1, 3:0}.get(x))
+    data.loc[:, 'facility_transfer'] = data.loc[:, 'facility_transfer'].fillna(3) \
+                                                                       .astype(int) \
+                                                                       .apply(lambda x: dict_yes_no.get(x))
+    data.loc[:, 'culture'] = data.loc[:, 'culture'].fillna(1) \
+                                                   .astype(int) \
+                                                   .apply(lambda x: {0:0, 1:0, 2:1, 3:2}.get(x))
 
     unit_dict, _ = get_unit_lookup_dict()
     vars_units = data_struct.loc[(data_struct['Field Type'] == 'radio') & \
@@ -358,7 +353,7 @@ def transform_binary_features(data, data_struct):
     vars_other = is_in_columns([v for v in radio_fields
                                 if v not in handled_vars], data)
     data_struct.loc[data_struct['Field Variable Name'].isin(vars_other),
-                    'Field Type'] = 'category_1'
+                    'Field Type'] = 'category'
 
     return data, data_struct
 
@@ -368,22 +363,25 @@ def transform_categorical_features(data, data_struct):
     '''
     # # Get all information about category variables
     # NOTE: only transform categorical variables with multi answers -> Checkbox
-    is_category = data_struct['Field Type'].isin(['category, dropdown'])
+    is_category = data_struct.loc[:, 'Field Type'].isin(['category', 'dropdown'])
     data_struct.loc[is_category, 'Field Type'] = 'category'
-    is_one_hot_encoded = data_struct['Field Type'].isin(['checkbox']) | \
-        data_struct['Field Variable Name'].isin(['dept', 'Outcome'])
-    data_struct.loc[is_one_hot_encoded, 'Field Type']\
-        = 'category_one_not_encoded'
 
-    cat_struct = data_struct.loc[is_one_hot_encoded,
+    # Extract variables that can contain multiple answers OR need to be
+    #   dummified to be used in a later stage
+    is_one_hot_encoded = data_struct['Field Type'].isin(['checkbox']) | \
+                         data_struct['Field Variable Name'].isin(['dept', 'Outcome'])
+    data_struct.loc[is_one_hot_encoded, 'Field Type'] = 'category_one_not_encoded'
+
+    cat_struct_ohe = data_struct.loc[is_one_hot_encoded,
                                  ['Field Variable Name', 'Option Name',
                                   'Option Value']]
-    category_columns = is_in_columns(cat_struct['Field Variable Name'], data)
+    category_columns_ohe = is_in_columns(cat_struct_ohe['Field Variable Name'], data)
 
     get_name = lambda c, v: '{:s}_cat_{:s}'.format(col, str(v))
 
+    # Dummify variables
     dummies_list = []
-    for col in category_columns:
+    for col in category_columns_ohe:
         # Get all unique categories in the column
         unique_categories = pd.unique([cat for value in data[col].values
                                        for cat in str(value).split(';')])
@@ -410,8 +408,14 @@ def transform_categorical_features(data, data_struct):
 
         dummies_list += [dummies]
 
+    # Change all other categories to int
+    # cat_single_answer = is_in_columns(data_struct.loc[data_struct['Field Type']=='category', \
+    #                                                   'Field Variable Name'], data)
+
+    # data.loc[:, cat_single_answer] = pd.to_numeric(data.loc[:, cat_single_answer])
+
     data = pd.concat([data] + dummies_list, axis=1)
-    data = data.drop(category_columns, axis=1)
+    data = data.drop(category_columns_ohe, axis=1)
 
     return data, data_struct
 
@@ -590,21 +594,20 @@ def select_variables(data, data_struct, variables_to_include_dict):
     for k, v in variables_to_include_dict.items():
         if k == 'Field Variable Name':
             variables_to_include += variables_to_include_dict[k]
-        variables_to_include += data_struct.loc[data_struct[k].isin(v),
-                                                'Field Variable Name']\
-                                           .to_list()
-    # get unique values and check if in data.columns
-    variables_to_include = list(np.unique(variables_to_include))
+        else:
+            variables_to_include += data_struct.loc[data_struct[k].isin(v),
+                                                   'Field Variable Name'] \
+                                               .to_list()
 
     # Retrieve the corresponding categorical 1-hot encoded column names
     category_vars = data_struct.loc[data_struct['Field Type'] == 'category',
-                                    'Field Variable Name'].to_list()
+                                'Field Variable Name'].to_list()
     variables_to_include += [c for var in variables_to_include
-                             for c in data.columns
-                             if (var in category_vars) and (var in c)]
+                                for c in data.columns
+                                if (var in category_vars) and (var in c)]
 
     variables_to_include += ['Record Id']
-    variables_to_include = is_in_columns(variables_to_include, data)
+    variables_to_include = list(np.unique(is_in_columns(variables_to_include, data)))
     return data.loc[:, variables_to_include]
 
 def plot_feature_importance(importances, features, show_n_features=5):
