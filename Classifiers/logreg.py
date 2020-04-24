@@ -64,7 +64,7 @@ class LogReg:
         self.goal = None
         self.model_args = {
             'apply_pca': True,
-            'pca_n_components': 10,
+            'pca_n_components': 3,
 
             'select_features': False,
             'n_best_features': 10,
@@ -372,7 +372,6 @@ class LogReg:
         coefs = (coefs-coefs.mean(axis=0))/coefs.std(axis=0) if normalize_coefs else coefs
 
         avg_coefs = abs(coefs.mean(axis=0))
-        
         var_coefs = coefs.var(axis=0) if not normalize_coefs else None
 
         idx_sorted = avg_coefs.argsort()
@@ -381,14 +380,14 @@ class LogReg:
         bar_width = .5  # bar width
         fig, ax = plt.subplots()
         if normalize_coefs:
-            ax.barh(n_bars, avg_coefs[idx_sorted], bar_width, label='Weight [normalized]')
+            ax.barh(n_bars, avg_coefs[idx_sorted], bar_width, label='Weight')
+            ax.set_title('Logistic regression - Average weight value [Normalized]')
         else:
+            ax.set_title('Logistic regression - Average weight value')
             ax.barh(n_bars, avg_coefs[idx_sorted], bar_width, xerr=var_coefs[idx_sorted], label='Weight')
-        
         ax.set_yticks(n_bars)
         ax.set_yticklabels(feature_labels[idx_sorted], fontdict={'fontsize': 6})
         ax.set_xlabel('Weight')
-        ax.set_title('Logistic regression - Average weight value')
         fig.savefig('Average_weight_variance.png', figsize=(1280, 960), dpi=200)
         return fig, ax
 
