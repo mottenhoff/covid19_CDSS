@@ -35,8 +35,8 @@ is_in_columns = lambda var_list, data: [v for v in var_list if v in data.columns
 def get_all_field_information(path_to_creds):
     study_struct, reports_struct, \
         optiongroups_struct = import_study_report_structure(path_to_creds)
-    answeroptions = pd.pivot_table(optiongroups_struct, 
-                                   index='Option Group Id', 
+    answeroptions = pd.pivot_table(optiongroups_struct,
+                                   index='Option Group Id',
                                    values=['Option Name','Option Value'],
                                    aggfunc=lambda x:list(x))
     study_struct_withoptions = pd.merge(study_struct, answeroptions,
@@ -45,7 +45,7 @@ def get_all_field_information(path_to_creds):
                                         right_on='Option Group Id')
     reports_struct_withoptions = pd.merge(reports_struct, answeroptions,
                                           how='left',
-                                          left_on='Field Option Group', 
+                                          left_on='Field Option Group',
                                           right_on='Option Group Id')
 
     data_struct = pd.concat([study_struct_withoptions, reports_struct_withoptions], axis=0)
@@ -73,7 +73,7 @@ def count_occurrences(col, record_ids, reset_count=False, start_count_at=1):
             unique_ids = ids.unique()
             for i in unique_ids[unique_ids != 0]:
                 new_col[ids==i] = np.arange(start_count_at, counts[i]+start_count_at)
-        else:     
+        else:
             new_col[col_slice!=0] = np.arange(start_count_at, counts[1:].sum()+start_count_at)
 
         new_cols += [new_col]
@@ -105,6 +105,10 @@ def calculate_outcomes(data, data_struct):
     is_first_day_at_icu = data.loc[:, 'days_at_icu']==1
     days_until_icu = pd.Series(None, index=data.index)
     days_until_icu.loc[is_first_day_at_icu] = data.loc[is_first_day_at_icu, 'days_since_admission_current_hosp']
+
+    is_discharged = data.loc[:, ['Outcome_cat_1','Outcome_cat_5','Outcome_cat_6']].any(axis=1)
+    days_until_discharge = pd.Series(None, index=data.index)
+    days_until_discharge.loc[is_discharged] = data.loc[is_discharged, 'days_until_outcome_3wk']
 
     has_died = data.loc[:, ['Outcome_cat_7','Outcome_cat_8']].any(axis=1)
     days_until_death = pd.Series(None, index=data.index)
@@ -163,12 +167,15 @@ def calculate_outcomes(data, data_struct):
     outcome_14 = pd.Series(name= 'Total days at ICU',
                            data=  data.loc[:, 'days_at_icu'].groupby(by=data.loc[:, 'Record Id']).transform(lambda x: max(x)))
 
+    outcome_15 = pd.Series(name= 'Days until discharge',
+                           data=  data.loc[:, 'days_until_discharge'].groupby(by=data.loc[:, 'Record Id']).transform(lambda x: max(x)))
+
     # TODO: Outcome 15 --> Include patients with outcome
 
 
     df_outcomes = pd.concat([outcome_0, outcome_1, outcome_2, outcome_3, outcome_4, outcome_5,
                              outcome_6, outcome_7, outcome_8, outcome_9, outcome_10, outcome_11,
-                             outcome_12, outcome_13, outcome_14], axis=1)
+                             outcome_12, outcome_13, outcome_14, outcome_15], axis=1)
 
      # used_columns = ['days_at_icu', 'dept_cat_3'] + \
     used_columns = [col for col in data.columns if 'Outcome' in col] # Keep track of var
@@ -183,7 +190,7 @@ def select_x_y(data, outcomes, used_columns, remove_no_outcome=True,
     #       Y = ICU_admitted at sometime
     #       X = All data before ICU admission
     #           Ideally data at admission
-    
+
     outcome_name = 'Patient is ICU admitted at some time during the whole hospital admission'
     y_event = pd.Series(0, index=data.index)
     y_duration = pd.Series(None, index=data.index)
@@ -257,12 +264,12 @@ def select_x_y(data, outcomes, used_columns, remove_no_outcome=True,
 def fix_single_errors(data):
     ''' Replaces values on the global dataframe,
     per column or per column and record Id.
-    The values to replace and new values are 
+    The values to replace and new values are
     located in error_replacement.py
 
     input:
         data: pd.Dataframe
-    
+
     output:
         data: pd.Dataframe
     '''
@@ -271,7 +278,7 @@ def fix_single_errors(data):
     for value_to_replace, replacement in get_global_fix_dict().items():
         data = data.mask(data==value_to_replace, replacement)
 
-    # Column fix 
+    # Column fix
     for column, replacement_pairs in get_column_fix_dict().items():
         for pair in replacement_pairs:
             data.loc[:, column] = data.loc[:, column] \
@@ -283,7 +290,7 @@ def fix_single_errors(data):
             for pair in replace_values:
                 data.loc[data['Record Id']==record_id, column] \
                     = data.loc[data['Record Id']==record_id, column] \
-                          .replace(pair[0], pair[1])   
+                          .replace(pair[0], pair[1])
     return data
 
 def transform_binary_features(data, data_struct):
