@@ -110,6 +110,10 @@ def calculate_outcomes(data, data_struct):
     days_until_death = pd.Series(None, index=data.index)
     days_until_death.loc[has_died] = data.loc[has_died, 'days_until_outcome_3wk']
 
+    is_discharged = data.loc[:, ['Outcome_cat_1', 'Outcome_cat_5', 'Outcome_cat_6']].any(axis=1)
+    days_until_discharge = pd.Series(None, index=data.index)
+    days_until_discharge.loc[is_discharged] = data.loc[is_discharged, 'days_until_outcome_3wk']
+
     outcome_icu_any = data['days_at_icu'] > 0
     outcome_icu_any = outcome_icu_any.groupby(by=data['Record Id']).transform(lambda x: 1 if x.any() else 0)
 
@@ -163,12 +167,15 @@ def calculate_outcomes(data, data_struct):
     outcome_14 = pd.Series(name= 'Total days at ICU',
                            data=  data.loc[:, 'days_at_icu'].groupby(by=data.loc[:, 'Record Id']).transform(lambda x: max(x)))
 
-    # TODO: Outcome 15 --> Include patients with outcome
+    outcome_15 = pd.Series(name= 'Days until discharge',
+                           data=  days_until_discharge.groupby(by=data.loc[:, 'Record Id']) \
+                                                      .transform(lambda x: max(x)))
 
+    # TODO: Outcome 16 --> Include patients with outcome
 
     df_outcomes = pd.concat([outcome_0, outcome_1, outcome_2, outcome_3, outcome_4, outcome_5,
                              outcome_6, outcome_7, outcome_8, outcome_9, outcome_10, outcome_11,
-                             outcome_12, outcome_13, outcome_14], axis=1)
+                             outcome_12, outcome_13, outcome_14, outcome_15], axis=1)
 
      # used_columns = ['days_at_icu', 'dept_cat_3'] + \
     used_columns = [col for col in data.columns if 'Outcome' in col] # Keep track of var
