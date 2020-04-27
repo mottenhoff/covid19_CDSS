@@ -48,3 +48,18 @@ for col in data.columns.to_list():
     if type(data[col][0]) is float:
         z = stats.zscore(data[col])
         print(data['Record Id'][abs(z) > 3])
+
+
+# %% find data with < 10 results per category
+for col in data:
+    un = data[col].unique()
+    if len(un) == 3:
+        if all([type(u) != str for u in un]):
+            unfloat = un[~np.isnan(un)]
+            if len(unfloat) == 2:
+                opt1 = np.nansum(data[col] == unfloat[0])
+                opt2 = np.nansum(data[col] == unfloat[1])
+                if opt1 < 10 or opt2 < 10:
+                    print('\'' + col + '\',')
+
+# %%
