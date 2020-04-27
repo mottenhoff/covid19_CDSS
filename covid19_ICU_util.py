@@ -175,7 +175,7 @@ def calculate_outcomes(data, data_struct):
 
     df_outcomes = pd.concat([outcome_0, outcome_1, outcome_2, outcome_3, outcome_4, outcome_5,
                              outcome_6, outcome_7, outcome_8, outcome_9, outcome_10, outcome_11,
-                             outcome_12, outcome_13, outcome_14], axis=1)
+                             outcome_12, outcome_13, outcome_14, outcome_15], axis=1)
 
      # used_columns = ['days_at_icu', 'dept_cat_3'] + \
     used_columns = [col for col in data.columns if 'Outcome' in col] # Keep track of var
