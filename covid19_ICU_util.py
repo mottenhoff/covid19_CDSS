@@ -106,7 +106,7 @@ def calculate_outcomes(data, data_struct):
     days_until_icu = pd.Series(None, index=data.index)
     days_until_icu.loc[is_first_day_at_icu] = data.loc[is_first_day_at_icu, 'days_since_admission_current_hosp']
 
-    is_discharged = data.loc[:, ['Outcome_cat_1','Outcome_cat_5','Outcome_cat_6']].any(axis=1)
+    is_discharged = data.loc[:, ['Outcome_cat_1', 'Outcome_cat_5', 'Outcome_cat_6']].any(axis=1)
     days_until_discharge = pd.Series(None, index=data.index)
     days_until_discharge.loc[is_discharged] = data.loc[is_discharged, 'days_until_outcome_3wk']
 
@@ -168,7 +168,8 @@ def calculate_outcomes(data, data_struct):
                            data=  data.loc[:, 'days_at_icu'].groupby(by=data.loc[:, 'Record Id']).transform(lambda x: max(x)))
 
     outcome_15 = pd.Series(name= 'Days until discharge',
-                           data=  data.loc[:, 'days_until_discharge'].groupby(by=data.loc[:, 'Record Id']).transform(lambda x: max(x)))
+                           data=  days_until_discharge.groupby(by=data.loc[:, 'Record Id']) \
+                                                      .transform(lambda x: max(x)))
 
     # TODO: Outcome 15 --> Include patients with outcome
 
