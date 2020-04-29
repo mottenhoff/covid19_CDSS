@@ -163,8 +163,7 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
                    .last() \
                    .reset_index(drop=True)
 
-    x, y, outcome_name = select_x_y(data, outcomes, used_columns,
-                                    goal=goal)
+    x, y, all_outcomes = select_x_y(data, outcomes, used_columns, goal)
 
     # Select variables to include in prediction
     variables_to_incl['Field Variable Name'] += ['hospital']
@@ -179,9 +178,15 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
     x = x.loc[:, x.nunique() > 1]  # Remove columns without information
     x = x.fillna(0)  # Fill missing values with 0 (0==missing or no asik)
     x = x.astype(float)
-    print('LOG: Using <{}> as y.'.format(outcome_name))
+    print('LOG: Using <{}:{}> as y.'.format(goal[0], goal[1]))
     print('LOG: Selected {} variables for predictive model'
           .format(x.columns.size))
+
+    # Remove samples with missing y
+    if goal[0] != 'survival':
+        has_y = y.notna()
+        x = x.loc[has_y, :]
+        y = y.loc[has_y]
 
     return x, y, data, hospital
 
@@ -276,11 +281,6 @@ def run(goal, variables_to_include, variables_to_exclude,
     x, y, data, hospital = prepare_for_learning(data, data_struct,
                                                 variables_to_include,
                                                 variables_to_exclude, goal)
-    # Y = [event, days_to_event]. Select first column for logreg (or similar)
-    y = y.iloc[:, 2] # FIXME: handle different inputs per model
-    has_y = y.notna()
-    x = x.loc[has_y, :]
-    y = y.loc[has_y]
 
     if train_test_split_method == 'loho':
         # Leave-one-hospital-out
@@ -307,11 +307,25 @@ if __name__ == "__main__":
     ##### START PARAMETERS #####
 
     # Choose the goal the model should predict
+    #
+    # This a list with two items:
+    #   goal = [type of model, prediction goal] 
     # Options:
-    #   ICU admission
-    #   Mortality
-    #   Duration of stay at ICU
-    goal = 'Mortality'
+    #   model_types:
+    #       classification
+    #           mortality_all
+    #           mortality_with_outcome         
+    #       survival
+    #           icu_admission
+    #           mortality_all
+    #           icu_discharge
+    #           all_outcomes
+    #           
+    # example:
+    #   goal = ['survival', 'icu_discharge']
+    #
+    # For more info: please check covid19_ICU_util.py:select_x_y()
+    goal = ['classification', 'mortality_with_outcome']
 
 
     # Add all 'Field Variable Name' from data_struct to
