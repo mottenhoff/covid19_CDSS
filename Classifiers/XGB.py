@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Apr 30 13:25:50 2020
+
+@author: laramos
+"""
+
 ''' 
 DO NOT OVERWRITE THIS FILE, MAKE A COPY TO EDIT!
 
@@ -30,6 +37,9 @@ Datasets:   dictionary containin all training and test sets:
             input for train, score or evaluate
 '''
 from math import sqrt
+from xgboost import XGBClassifier
+import shap
+from sklearn.model_selection import RandomizedSearchCV 
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -51,7 +61,7 @@ from sklearn.exceptions import ConvergenceWarning
 # warnings.filterwarnings(action='ignore', category=ConvergenceWarning)
 
 
-class LogReg:
+class XGB:
 
     def __init__(self):
         ''' Initialize model.
@@ -70,7 +80,7 @@ class LogReg:
             'n_best_features': 10,
             'plot_feature_graph': True,
             
-            'grid_search': False
+            'grid_search': True
         }
         
         self.score_args = {
@@ -127,13 +137,12 @@ class LogReg:
         plot_feature_graph = self.model_args['plot_feature_graph']
 
         # Add engineered features:
-        train_x, test_x = self.add_engineered_features(train_x, test_x)
+        #train_x, test_x = self.add_engineered_features(train_x, test_x)
 
         # Initialize Classifier
         # clf = LogisticRegression(solver='lbfgs', penalty='l2', #class_weight='balanced', 
         #                         max_iter=200, random_state=0) # small dataset: solver='lbfgs'. multiclass: solver='lbgfs'
-        clf = LogisticRegression(solver='saga', penalty='elasticnet', #class_weight='balanced', 
-                                 l1_ratio=.5, max_iter=200, random_state=0)
+        clf = XGBClassifier(random_state=0)
 
         # Model and feature selection
         if self.model_args['select_features']:
@@ -147,16 +156,34 @@ class LogReg:
             test_x = test_x.iloc[:, self.n_best_features]
 
         if self.model_args['grid_search']:
+            print("Doing grid search for best parameters!")
             self.grid = {
-                'l1_ratio': [i/10 for i in range(0, 11, 1)]
-            }
-
+                'learning_rate': ([0.1, 0.01, 0.001]),
+                #'gamma': ([100,10,1, 0.1, 0.01, 0.001]),                  
+                #'max_depth':    ([3,5,10,15]),
+                #'subsample ':    ([0.5,1]),
+                #'reg_lambda ':  [1,10,100],
+                #'alpha ':   [1,10,100],
+                'n_estimators':([100,300,500]),
+                'min_child_weight': [1, 5, 10],
+                'gamma': [0, 0.5, 1, 1.5, 2, 5],
+                'subsample': [0.7, 0.8, 0.9, 1.0],
+                'colsample_bytree': [0.3,0.4,0.5,0.6,0.7,0.8],
+                'max_depth': [3, 5, 7, 9, 10]}
+            clf_grid =  RandomizedSearchCV(clf, self.grid, cv=3,random_state=0,
+                           scoring='roc_auc',n_jobs=-2)
+                                                  
+            clf_grid.fit(train_x, train_y)
+            
+            clf = clf_grid.best_estimator_
+        else:
     
-        clf.fit(train_x, train_y)  # Model
+            clf.fit(train_x, train_y)  # Model
+   
         test_y_hat = clf.predict_proba(test_x) # Predict
         
-        self.coefs.append(clf.coef_)
-        self.intercepts.append(clf.intercept_)
+        #self.coefs.append(clf.coef_)
+        #self.intercepts.append(clf.intercept_)
 
         datasets = {"train_x": train_x,
                     "test_x": test_x,
@@ -229,9 +256,10 @@ class LogReg:
         thresholds = [score['thr'] for score in scores]
         self.analyse_fpr(cms, thresholds)
         fig, ax = self.plot_model_results([score['roc_auc'] for score in scores])
-        fig2, ax2 = self.plot_model_weights(datasets['test_x'].columns,
-                                            show_n_features=self.evaluation_args['show_n_features'],
-                                            normalize_coefs=self.evaluation_args['normalize_coefs'])
+        fig2 = self.plot_model_weights(clf,datasets['train_x'])
+        #fig2, ax2 = self.plot_model_weights(datasets['test_x'].columns,
+        #                                    show_n_features=self.evaluation_args['show_n_features'],
+        #                                    normalize_coefs=self.evaluation_args['normalize_coefs'])
 
     def add_engineered_features(self, train_x, test_x):
         ''' Generate and add features'''
@@ -299,7 +327,7 @@ class LogReg:
         fig, ax = plt.subplots(1, 1)
         ax.plot(aucs)
         ax.set_title('{} - {}\nROC AUC: {:.3f} +- {:.3f} (95% CI)'
-                     .format('LogReg', self.goal, avg, sem*1.96))
+                     .format('XGB', self.goal, avg, sem*1.96))
         ax.axhline(sum(aucs)/max(len(aucs), 1), color='g', linewidth=1)
         ax.axhline(.5, color='r', linewidth=1)
         ax.set_ylim(0, 1)
@@ -357,39 +385,10 @@ class LogReg:
         ax.set_ylabel('Sensitivity [TPR]')
         fig.savefig('average_roc.png')
 
-    def plot_model_weights(self, feature_labels, show_n_features=10,
-                           normalize_coefs=False):
-        coefs = self.coefs
-        intercepts = self.intercepts
-        coefs = np.array(coefs).squeeze()
-        intercepts = np.array(intercepts).squeeze()
-
-        if len(coefs.shape) <= 1:
-            return
-
-        show_n_features = coefs.shape[1] if show_n_features is None else show_n_features
-
-        coefs = (coefs-coefs.mean(axis=0))/coefs.std(axis=0) if normalize_coefs else coefs
-
-        avg_coefs = abs(coefs.mean(axis=0))
-        var_coefs = coefs.var(axis=0) if not normalize_coefs else None
-
-        idx_sorted = avg_coefs.argsort()
-        n_bars = np.arange(coefs.shape[1])                
-
-        bar_width = .5  # bar width
-        fig, ax = plt.subplots()
-        if normalize_coefs:
-            ax.barh(n_bars, avg_coefs[idx_sorted], bar_width, label='Weight')
-            ax.set_title('Logistic regression - Average weight value [Normalized]')
-        else:
-            ax.set_title('Logistic regression - Average weight value')
-            ax.barh(n_bars, avg_coefs[idx_sorted], bar_width, xerr=var_coefs[idx_sorted], label='Weight')
-        ax.set_yticks(n_bars)
-        ax.set_yticklabels(feature_labels[idx_sorted], fontdict={'fontsize': 6})
-        ax.set_xlabel('Weight')
-        fig.savefig('Average_weight_variance.png', figsize=(1280, 960), dpi=200)
-        return fig, ax
+    def plot_model_weights(self, clf, train_x):
+        shap_values = shap.TreeExplainer(clf).shap_values(train_x)
+        shap.summary_plot(shap_values, train_x)
+        
 
 
 def get_metrics(lst):

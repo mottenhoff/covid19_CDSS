@@ -6,9 +6,9 @@ Please do not use without permission
 '''
 # Builtin libs
 import configparser
+
 import pickle
 import os
-import os.path
 import sys
 path_to_classifiers = r'./Classifiers/'
 # path_to_settings = r'./' # TODO: add settings
@@ -49,6 +49,7 @@ from covid19_ICU_util import explore_data
 # classifiers
 from logreg import LogReg
 from gradboost import train_gradient_boosting
+from XGB import XGB
 
 # data
 from get_feature_set import get_1_premorbid
@@ -270,13 +271,11 @@ def evaluate_model(model, clf, datasets, scores):
     model.evaluate(clf, datasets, scores)
 
 def run(goal, variables_to_include, variables_to_exclude,
-        train_test_split_method, model_class, 
-        save_figures=False, save_path=''):
+        train_test_split_method, model):
     config = configparser.ConfigParser()
     config.read('user_settings.ini')
     path_creds = config['CastorCredentials']['local_private_path']
 
-    model = model_class()
     model.goal = goal
 
     data, data_struct = load_data(path_creds)
@@ -284,8 +283,6 @@ def run(goal, variables_to_include, variables_to_exclude,
     x, y, data, hospital = prepare_for_learning(data, data_struct,
                                                 variables_to_include,
                                                 variables_to_exclude, goal)
-    
-    model.save_path = '{}_n{}_y{}'.format(save_path, y.size, y.sum())
 
     if train_test_split_method == 'loho':
         # Leave-one-hospital-out
@@ -304,11 +301,10 @@ def run(goal, variables_to_include, variables_to_exclude,
         scores.append(score)
 
     evaluate_model(model, clf, datasets, scores)
-    
-    if not save_figures:
-        plt.show()
 
-    print('\n', flush=True)
+    plt.show()
+    return(x)
+
 
 if __name__ == "__main__":
     ##### START PARAMETERS #####
@@ -333,24 +329,15 @@ if __name__ == "__main__":
     #
     # For more info: please check covid19_ICU_util.py:select_x_y()
     goal = ['classification', 'mortality_with_outcome']
-    
-    save_figures = True
+
 
     # Add all 'Field Variable Name' from data_struct to
     # INCLUDE variables from analysis
     #  NOTE: See get_feature_set.py for preset selections
-    feature_opts = {'pm': get_1_premorbid(),
-                    'cp': get_2_clinical_presentation(),
-                    'lab': get_3_laboratory_radiology_findings(),
-                    'pm_cp': get_4_premorbid_clinical_representation(),
-                    'all': get_5_premorbid_clin_rep_lab_rad()}
-
-    cv_opts = ['rss', 'loho']
-
     variables_to_include = {
         'Form Collection Name': [],  # groups
         'Form Name':            [],  # variable subgroups
-        'Field Variable Name': [] # single variables
+        'Field Variable Name': get_2_clinical_presentation() # single variables
     }
 
     # Add all 'Field Variable Name' from data_struct to
@@ -364,18 +351,10 @@ if __name__ == "__main__":
 
     # Options:
     #   see .\Classifiers
-    model = LogReg # NOTE: do not initialize model here,
-                   #       but supply the class (i.e. omit
-                   #       the parentheses) 
+    #model = LogReg()
+    model = XGB()
 
     ##### END PARAMETERS #####
-    if not os.path.exists(r'./results'):
-        os.mkdir(r'./results')
-    
-    for train_test_split_method in cv_opts:
-        for feat_name, features in feature_opts.items():
-            variables_to_include['Field Variable Name'] += features
-            save_path = './results/{}_{}'.format(train_test_split_method, feat_name)
-            run(goal, variables_to_include, variables_to_exclude,
-                train_test_split_method, model,
-                save_figures=save_figures, save_path=save_path)
+
+    x = run(goal, variables_to_include, variables_to_exclude,
+        train_test_split_method, model)
