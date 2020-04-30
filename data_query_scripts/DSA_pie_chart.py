@@ -6,9 +6,13 @@ Created on Mon Apr 27 09:33:09 2020
 @author: wouterpotters
 """
 import configparser
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), './../'))
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+
 from covid19_ICU_admission import load_data, preprocess, calculate_outcomes
 
 plt.rcParams["font.family"] = "Times New Roman"
@@ -37,12 +41,15 @@ translate = {'Levend ontslagen en niet heropgenomen - totaal': 'Levend ontslagen
              'Dood - totaal': 'Overleden',
              'Onbekend (alle patiënten zonder outcome)': 'Overige'}
 
-colors = [(71/255, 209/255, 71/255),
-          (25/255, 102/255, 25/255),
-          (230/255, 0/255, 0/255),
-          (.8, .8, .8)]
+colors = [(100/255, 189/255, 232/255),
+          (0/255, 163/255, 222/255),
+          (209/255, 80/255, 56/255),
+          (153/255, 153/255, 153/255)]
 
 data.rename(columns=translate, inplace=True)
+
+data.drop(index=data.index[[d in ['VieCuri', 'Isala'] for d in data['hospital']]], inplace=True)
+
 
 # Pie chart, where the slices will be ordered and plotted counter-clockwise:
 labels = list(translate.values())
@@ -55,7 +62,7 @@ fig1, ax1 = plt.subplots()
 wedgeprops = {'linewidth': 3, 'edgecolor': (.2, .2, .2), 'linewidth':2}
 patches, texts, autotexts = ax1.pie(sizes, explode=explode,
                                     labels=labels_w_count, autopct='%1.1f%%',
-                                    shadow=False, startangle=90,
+                                    shadow=False, startangle=45,
                                     labeldistance=1.17, pctdistance=0.75,
                                     colors=colors, wedgeprops=wedgeprops)
 [t.set_fontsize(14) for t in texts]
@@ -68,8 +75,8 @@ titledict = {'fontsize': 18,
              'fontweight': 'bold',
              'verticalalignment': 'baseline',
              'horizontalalignment': 'center'}
-plt.title('COVID-PREDICT cohort op t = 21 dagen (n='+str(len(outcomes))+')',fontdict=titledict)
+# plt.title('COVID-PREDICT cohort op t = 21 dagen (n='+str(len(data))+')',fontdict=titledict)
 plt.tight_layout()
-plt.savefig('pie_chart.png', format='png', dpi=300, pad_inches=0, bbox_inches='tight')
+plt.savefig('pie_chart_ntvg.png', format='png', dpi=300, pad_inches=0, bbox_inches='tight', figsize=(20,20))
 plt.show()
 
