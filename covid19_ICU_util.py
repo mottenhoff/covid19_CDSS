@@ -125,36 +125,47 @@ def calculate_outcomes(data, data_struct):
     outcome_0 = pd.Series(name= 'Totaal',
                           data=  True, index=data.index)
 
+    # Discharged alive and not readmitted to hospital TOTAL
     outcome_1 = pd.Series(name= 'Levend ontslagen en niet heropgenomen - totaal',
                           data=  data.loc[:, get_outcome_columns([1, 5, 6])].any(axis=1))
 
+    # Discharged alive and not readmitted to hospital - never admitted to ICU
     outcome_2 = pd.Series(name= 'Levend ontslagen en niet heropgenomen - waarvan niet opgenomen geweest op IC',
                           data=  outcome_1 & outcome_icu_never)
 
+    # Discharged alive and not readmitted to hospital - part of which admitted to ICU
     outcome_3 = pd.Series(name= 'Levend ontslagen en niet heropgenomen - waarvan opgenomen geweest op IC',
                           data=  outcome_1 & outcome_icu_ever)
 
+    # Still in the hospital at day 21 TOTAL
     outcome_4 = pd.Series(name= 'Levend dag 21 maar nog in het ziekenhuis - totaal',
                           data=  data.loc[:, get_outcome_columns([2,3])].any(axis=1))
 
+    # Still in the hospital at day 21 - never admitted to ICU
     outcome_5 = pd.Series(name= 'Levend dag 21 maar nog in het ziekenhuis - niet op IC geweest',
                           data=  outcome_4 & outcome_icu_never)
 
+    # Still in the hospital at day 21 - and discharged from ICU
     outcome_6 = pd.Series(name= 'Levend dag 21 maar nog in het ziekenhuis - op IC geweest',
                           data=  outcome_4 & outcome_icu_ever)
 
+    # Still in the hospital at day 21 - and still on the ICU
     outcome_7 = pd.Series(name= 'Levend dag 21 maar nog in het ziekenhuis - waarvan nu nog op IC',
                           data=  outcome_4 & outcome_icu_now)
 
+    # Death (or palliative discharge) TOTAL
     outcome_8 = pd.Series(name= 'Dood - totaal',
                           data=  has_died)
 
+    # Death (or palliative discharge) - never admitted to ICU
     outcome_9 = pd.Series(name= 'Dood op dag 21 - niet op IC geweest',
                           data=  outcome_8 & outcome_icu_never)
 
+    # Death (or palliative discharge) - was admitted to the ICU
     outcome_10 = pd.Series(name= 'Dood op dag 21 - op IC geweest',
                            data=  outcome_8 & outcome_icu_ever)
 
+    # No outcome present for t=21 days (yet)
     outcome_11 = pd.Series(name= 'Onbekend (alle patiënten zonder outcome)',
                            data=  has_unknown_outcome | has_no_outcome)
 
