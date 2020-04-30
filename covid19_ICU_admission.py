@@ -42,6 +42,7 @@ from covid19_ICU_util import select_data
 from covid19_ICU_util import calculate_outcomes
 from covid19_ICU_util import select_x_y
 from covid19_ICU_util import select_variables
+from covid19_ICU_util import impute_missing_values
 from covid19_ICU_util import plot_feature_importance
 from covid19_ICU_util import explore_data
 
@@ -177,7 +178,12 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
     hospital = x.loc[:, 'hospital']
     x = x.drop('hospital', axis=1)
     x = x.loc[:, x.nunique() > 1]  # Remove columns without information
+
+    x = impute_missing_values(x, data_struct)
+    
     x = x.fillna(0)  # Fill missing values with 0 (0==missing or no asik)
+    
+    
     x = x.astype(float)
     print('LOG: Using <{}:{}> as y.'.format(goal[0], goal[1]))
     print('LOG: Selected {} variables for predictive model'
@@ -374,8 +380,14 @@ if __name__ == "__main__":
     
     for train_test_split_method in cv_opts:
         for feat_name, features in feature_opts.items():
-            variables_to_include['Field Variable Name'] += features
+            vars_to_include = {
+                'Form Collection Name': [],  # groups
+                'Form Name':            [],  # variable subgroups
+                'Field Variable Name': [] # single variables
+            }
+            # single variables #FIXME: this is terrible
+            vars_to_include['Field Variable Name'] += features
             save_path = './results/{}_{}'.format(train_test_split_method, feat_name)
-            run(goal, variables_to_include, variables_to_exclude,
+            run(goal, vars_to_include, variables_to_exclude,
                 train_test_split_method, model,
                 save_figures=save_figures, save_path=save_path)
