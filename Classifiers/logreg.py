@@ -90,6 +90,8 @@ class LogReg:
 
         self.learn_size = []
 
+        self.save_path = ''
+
 
     def train(self, datasets):
         ''' Initialize, train and predict a classifier.
@@ -304,7 +306,7 @@ class LogReg:
         ax.axhline(.5, color='r', linewidth=1)
         ax.set_ylim(0, 1)
         ax.legend(['ROC AUC', 'Average',  'Chance level'], bbox_to_anchor=(1, 0.5))
-        fig.savefig('Performance_roc_auc.png', dpi=1024)
+        fig.savefig(self.save_path +'_Performance_roc_auc.png', dpi=1024)
 
         return fig, ax
 
@@ -338,7 +340,7 @@ class LogReg:
         ax.set_xlabel('Probability Threshold')
         ax.set_ylabel('False Positive Rate')
         ax.set_title('Mean false positive rate per threshold.\nErrorbar = 95% confidence interval')
-        fig.savefig('False_positive_rate.png')
+        fig.savefig(self.save_path + '_False_positive_rate.png')
 
         fig, ax = plt.subplots()
         ax.errorbar(thrs[0], sens_mean, yerr=sens_ci, color='b', ecolor='k', label='Sensitivity')
@@ -347,7 +349,7 @@ class LogReg:
         ax.set_xlabel('Threshold')
         ax.set_ylabel('Sensitiviy[TPR] / Specificity [TNR]')
         ax.set_title('Mean sensitivity and specitivity.\nErrorbar = 95% confidence interval')
-        fig.savefig('sensitivity_vs_specificity.png')
+        fig.savefig(self.save_path +'_sensitivity_vs_specificity.png')
 
         fig, ax = plt.subplots()
         ax.step(fprs_mean, sens_mean, color='b')
@@ -355,7 +357,7 @@ class LogReg:
         ax.set_title('Average ROC curve\n AUC: {:.3f}'.format(auc_mean))
         ax.set_xlabel('Fall-Out [FPR]')
         ax.set_ylabel('Sensitivity [TPR]')
-        fig.savefig('average_roc.png')
+        fig.savefig(self.save_path +'_average_roc.png')
 
     def plot_model_weights(self, feature_labels, show_n_features=10,
                            normalize_coefs=False):
@@ -388,7 +390,7 @@ class LogReg:
         ax.set_yticks(n_bars)
         ax.set_yticklabels(feature_labels[idx_sorted], fontdict={'fontsize': 6})
         ax.set_xlabel('Weight')
-        fig.savefig('Average_weight_variance.png', figsize=(1280, 960), dpi=200)
+        fig.savefig(self.save_path +'_Average_weight_variance.png', figsize=(1280, 960), dpi=200)
         return fig, ax
 
 

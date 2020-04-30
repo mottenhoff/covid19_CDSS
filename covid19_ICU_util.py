@@ -216,7 +216,6 @@ def get_classification_outcomes(data, outcomes):
 
     return y_dict
 
-
 def get_survival_analysis_outcomes(data, outcomes):
     y_dict = {}
 
@@ -280,7 +279,6 @@ def get_survival_analysis_outcomes(data, outcomes):
                                         y_dict['icu_discharge']],
                                        axis=1)
     return y_dict
-
 
 def fix_single_errors(data):
     ''' Replaces values on the global dataframe,
@@ -641,8 +639,7 @@ def select_variables(data, data_struct, variables_to_include_dict):
     return data.loc[:, variables_to_include]
 
 def plot_feature_importance(importances, features, show_n_features=5):
-    show_n_features = features.shape[0] if not show_n_features \
-        else show_n_features
+    show_n_features = features.shape[0] if not show_n_features else show_n_features
 
     fig, ax = plt.subplots()
     ax.set_title('Average feature importance')
