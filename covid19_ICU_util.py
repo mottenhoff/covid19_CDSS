@@ -651,6 +651,29 @@ def select_variables(data, data_struct, variables_to_include_dict):
     variables_to_include = list(np.unique(is_in_columns(variables_to_include, data)))
     return data.loc[:, variables_to_include]
 
+def impute_missing_values(data, data_struct):
+
+    # Categorical --> Most prevalent class
+    vars_categorical = is_in_columns(data_struct.loc[data_struct['Field Type']=='category', 'Field Variable Name'].to_list(), data)
+    data.loc[:, vars_categorical] = data.loc[:, vars_categorical] \
+                                        .fillna(data.loc[:, vars_categorical] \
+                                                    .mode().iloc[0])
+
+    # Numeric --> Median value
+    vars_numeric = is_in_columns(data_struct.loc[data_struct['Field Type']=='numeric', 'Field Variable Name'].to_list(), data)
+    data.loc[:, vars_numeric] = data.loc[:, vars_numeric] \
+                                    .fillna(data.loc[:, vars_numeric] \
+                                                .median())
+
+    # Binary (and all else) --> 0
+    data = data.fillna(0)
+
+    return data
+
+    
+
+
+
 def plot_feature_importance(importances, features, show_n_features=5):
     show_n_features = features.shape[0] if not show_n_features \
         else show_n_features

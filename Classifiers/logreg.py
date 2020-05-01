@@ -304,7 +304,11 @@ class LogReg:
         ax.axhline(.5, color='r', linewidth=1)
         ax.set_ylim(0, 1)
         ax.legend(['ROC AUC', 'Average',  'Chance level'], bbox_to_anchor=(1, 0.5))
+
         fig.savefig('Performance_roc_auc.png', dpi=1024)
+
+        fig.savefig(self.save_path +'_Performance_roc_auc_{}_{}.png'.format(avg, sem*1.96), dpi=1024)
+
 
         return fig, ax
 
