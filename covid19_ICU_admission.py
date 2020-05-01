@@ -176,14 +176,14 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
 
     # Remove columns without information
     hospital = x.loc[:, 'hospital']
-    x = x.drop('hospital', axis=1)
+    records = x.loc[:, 'Record Id']
+    x = x.drop(['hospital','Record Id'], axis=1)
     x = x.loc[:, x.nunique() > 1]  # Remove columns without information
 
     x = impute_missing_values(x, data_struct)
-    
+
     x = x.fillna(0)  # Fill missing values with 0 (0==missing or no asik)
-    
-    
+
     x = x.astype(float)
     print('LOG: Using <{}:{}> as y.'.format(goal[0], goal[1]))
     print('LOG: Selected {} variables for predictive model'
@@ -195,7 +195,7 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
         x = x.loc[has_y, :]
         y = y.loc[has_y]
 
-    return x, y, data, hospital
+    return x, y, data, hospital, records
 
 def train_and_predict(x, y, model, rep, type='subsamp', type_col=None, test_size=0.2):
     ''' Splits data into train and test set using
@@ -276,7 +276,7 @@ def evaluate_model(model, clf, datasets, scores):
     model.evaluate(clf, datasets, scores)
 
 def run(goal, variables_to_include, variables_to_exclude,
-        train_test_split_method, model_class, 
+        train_test_split_method, model_class,
         save_figures=False, save_path=''):
     config = configparser.ConfigParser()
     config.read('user_settings.ini')
@@ -287,10 +287,10 @@ def run(goal, variables_to_include, variables_to_exclude,
 
     data, data_struct = load_data(path_creds)
     data, data_struct = preprocess(data, data_struct)
-    x, y, data, hospital = prepare_for_learning(data, data_struct,
+    x, y, data, hospital, records = prepare_for_learning(data, data_struct,
                                                 variables_to_include,
                                                 variables_to_exclude, goal)
-    
+
     model.save_path = '{}_n{}_y{}'.format(save_path, y.size, y.sum())
 
     if train_test_split_method == 'loho':
@@ -310,7 +310,7 @@ def run(goal, variables_to_include, variables_to_exclude,
         scores.append(score)
 
     evaluate_model(model, clf, datasets, scores)
-    
+
     if not save_figures:
         plt.show()
 
@@ -322,24 +322,24 @@ if __name__ == "__main__":
     # Choose the goal the model should predict
     #
     # This a list with two items:
-    #   goal = [type of model, prediction goal] 
+    #   goal = [type of model, prediction goal]
     # Options:
     #   model_types:
     #       classification
     #           mortality_all
-    #           mortality_with_outcome         
+    #           mortality_with_outcome
     #       survival
     #           icu_admission
     #           mortality_all
     #           icu_discharge
     #           all_outcomes
-    #           
+    #
     # example:
     #   goal = ['survival', 'icu_discharge']
     #
     # For more info: please check covid19_ICU_util.py:select_x_y()
     goal = ['classification', 'mortality_with_outcome']
-    
+
     save_figures = True
 
     # Add all 'Field Variable Name' from data_struct to
@@ -372,12 +372,12 @@ if __name__ == "__main__":
     #   see .\Classifiers
     model = LogReg # NOTE: do not initialize model here,
                    #       but supply the class (i.e. omit
-                   #       the parentheses) 
+                   #       the parentheses)
 
     ##### END PARAMETERS #####
     if not os.path.exists(r'./results'):
         os.mkdir(r'./results')
-    
+
     for train_test_split_method in cv_opts:
         for feat_name, features in feature_opts.items():
             vars_to_include = {
