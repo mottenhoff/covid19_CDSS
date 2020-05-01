@@ -151,7 +151,7 @@ def preprocess(data, data_struct):
 def prepare_for_learning(data, data_struct, variables_to_incl,
                          variables_to_exclude, goal,
                          group_by_record=True, use_outcome=None,
-                         additional_fn=None):
+                         additional_fn=None, use_imputation=True):
 
     outcomes, used_columns = calculate_outcomes(data, data_struct)
     data = pd.concat([data, outcomes], axis=1)
@@ -180,7 +180,8 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
     x = x.drop(['hospital','Record Id'], axis=1)
     x = x.loc[:, x.nunique() > 1]  # Remove columns without information
 
-    x = impute_missing_values(x, data_struct)
+    if use_imputation:
+        x = impute_missing_values(x, data_struct)
 
     x = x.fillna(0)  # Fill missing values with 0 (0==missing or no asik)
 
