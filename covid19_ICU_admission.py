@@ -163,7 +163,7 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
                            .reset_index(drop=True)
         data = data.groupby(by='Record Id', axis=0) \
                    .last() \
-                   .reset_index(drop=True)
+                   .reset_index(drop=False)
 
     x, y, all_outcomes = select_x_y(data, outcomes, used_columns, goal)
 
