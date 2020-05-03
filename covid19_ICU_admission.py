@@ -79,8 +79,8 @@ def load_data_api(path_credentials):
         df_study, df_structure, df_report, df_report_structure, \
             df_optiongroup_structure = import_data_by_record(path_credentials)
 
-        path_credentials = os.path.join(path_credentials, 'saveddata.pkl')
-        with open(path_credentials, 'wb') as f:
+        path_load = os.path.join(path_credentials, 'saveddata.pkl')
+        with open(path_load, 'wb') as f:
             pickle.dump([df_study, df_structure, df_report,
                          df_report_structure, df_optiongroup_structure], f)
 
