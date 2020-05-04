@@ -575,13 +575,16 @@ def transform_time_features(data, data_struct):
 
     # Add the new variables to the struct dataframe, so that they can be selected later on
     new_vars = pd.concat(
-        [pd.Series(['Study', 'BASELINE', 'DEMOGRAPHICS', 'age_yrs', None, 'numeric', None, None])] +
-        [pd.Series(['Study', 'HOSPITAL ADMISSION', 'ONSET & ADMISSION', var, None, 'numeric', None, None]) \
-                    for var in ['days_since_onset', 'days_since_admission_current_hosp', 'days_since_admission_first_hosp']] +
-        [pd.Series(['Study', 'OUTCOME', 'OUTCOME', var, None, 'numeric', None, None]) \
-                    for var in ['days_until_outcome_3wk', 'days_until_outcome_6wk']] +
-        [pd.Series(['Report', 'Daily case record form', 'Respiratory assessment', var, None, 'numeric', None, None]) \
-                    for var in ['days_at_ward', 'days_at_mc', 'days_at_icu']], axis=1).T
+        [pd.Series(['Study', 'BASELINE', 'DEMOGRAPHICS', 'age_yrs', 'Age', 'numeric', None, None])] +
+        [pd.Series(['Study', 'HOSPITAL ADMISSION', 'ONSET & ADMISSION', 'days_since_onset', 'Days since disease onset', 'numeric', None, None])] +
+        [pd.Series(['Study', 'HOSPITAL ADMISSION', 'ONSET & ADMISSION', 'days_since_admission_current_hosp', 'Days since admission at current hospital', 'numeric', None, None])] +
+        [pd.Series(['Study', 'HOSPITAL ADMISSION', 'ONSET & ADMISSION', 'days_since_admission_first_hosp', 'Days since admission at first known hospital', 'numeric', None, None])] +
+        [pd.Series(['Study', 'OUTCOME', 'OUTCOME', 'days_until_outcome_3wk', 'Days until outcome within 21 days', 'numeric', None, None])] +
+        [pd.Series(['Study', 'OUTCOME', 'OUTCOME', 'days_until_outcome_6wk', 'Days until outcome within 42 days', 'numeric', None, None])] +    
+        [pd.Series(['Report', 'Daily case record form', 'Respiratory assessment', 'days_at_ward', 'Days at hospital ward', 'numeric', None, None])] +
+        [pd.Series(['Report', 'Daily case record form', 'Respiratory assessment', 'days_at_mc', 'Days at medium care', 'numeric', None, None])] +
+        [pd.Series(['Report', 'Daily case record form', 'Respiratory assessment', 'days_at_icu', 'Days at intensive care', 'numeric', None, None])],
+        axis=1).T
     new_vars.columns = data_struct.columns
     data_struct = data_struct.append(new_vars)
 
