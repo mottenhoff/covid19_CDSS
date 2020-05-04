@@ -58,7 +58,7 @@ from get_feature_set import get_3_laboratory_radiology_findings
 from get_feature_set import get_4_premorbid_clinical_representation
 from get_feature_set import get_5_premorbid_clin_rep_lab_rad
 from get_feature_set import get_6_all
-from XGB import XGB
+
 
 is_in_columns = lambda var_list, data: [v for v in var_list if v in data.columns]
 
@@ -372,8 +372,8 @@ if __name__ == "__main__":
 
     # Options:
     #   see .\Classifiers
-    #model = LogReg # NOTE: do not initialize model here,
-    model = XGB               #       but supply the class (i.e. omit
+    model = LogReg # NOTE: do not initialize model here,
+                   #       but supply the class (i.e. omit
                    #       the parentheses)
 
     ##### END PARAMETERS #####
