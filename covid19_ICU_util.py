@@ -97,7 +97,13 @@ def calculate_outcomes(data, data_struct):
     #                   9) Unknown
     #                  10) Discharged to home and re-admitted
 
+    #FIXME: terrible hack
     get_outcome_columns = lambda x: ['{}_{}'.format(str_, i) for i in x for str_ in ['Outcome_cat']]
+    all_outcomes = get_outcome_columns(range(1,11))
+    for outcome in all_outcomes:
+        if outcome not in data.columns:
+            data[outcome] = 0
+    #FIXME: END
 
     has_unknown_outcome = data[get_outcome_columns([4,9,10])].any(axis=1)
     has_no_outcome = ~data[get_outcome_columns([1,2,3,4,5,6,7,8,9,10])].any(axis=1)
@@ -607,7 +613,7 @@ def transform_string_features(data, data_struct):
 
     data_struct = data_struct.append(
         pd.Series(['Study', 'BASELINE', 'CO-MORBIDITIES',
-                   'uses_n_medicine', None, 'numeric', None, None],
+                   'uses_n_medicine', 'Number of different medicine patient uses', 'numeric', None, None],
                   index=data_struct.columns), ignore_index=True)
     return data, data_struct
 
