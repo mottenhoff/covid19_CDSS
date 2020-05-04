@@ -36,15 +36,14 @@ outcomes[['Levend ontslagen en niet heropgenomen - totaal',
           'Dood - totaal',
           'Onbekend (alle patiënten zonder outcome)']]
 
-translate = {'Levend ontslagen en niet heropgenomen - totaal': 'Levend ontslagen',
-             'Levend dag 21 maar nog in het ziekenhuis - totaal': 'Levend in het ziekenhuis',
-             'Dood - totaal': 'Overleden',
-             'Onbekend (alle patiënten zonder outcome)': 'Overige'}
-
-colors = [(100/255, 189/255, 232/255),
-          (0/255, 163/255, 222/255),
-          (209/255, 80/255, 56/255),
-          (153/255, 153/255, 153/255)]
+translate = {'Levend ontslagen en niet heropgenomen - totaal': 'Discharged alive',
+             'Levend dag 21 maar nog in het ziekenhuis - totaal': 'Alive in hospital',
+             'Dood - totaal': 'Diseased',
+             'Onbekend (alle patiënten zonder outcome)': 'Other'}
+colors = [(41/255, 110/255, 187/255),
+          (67/255, 135/255, 213/255),
+          (230/255, 0/255, 0/255),
+          (211/255, 225/255, 245/255)]
 
 data.rename(columns=translate, inplace=True)
 
@@ -75,8 +74,8 @@ titledict = {'fontsize': 18,
              'fontweight': 'bold',
              'verticalalignment': 'baseline',
              'horizontalalignment': 'center'}
-# plt.title('COVID-PREDICT cohort op t = 21 dagen (n='+str(len(data))+')',fontdict=titledict)
+plt.title('COVID-PREDICT cohort at t = 21 days (n='+str(len(data))+')',fontdict=titledict)
 plt.tight_layout()
-plt.savefig('pie_chart_ntvg.png', format='png', dpi=300, pad_inches=0, bbox_inches='tight', figsize=(20,20))
+plt.savefig('pie_chart.png', format='png', dpi=300, pad_inches=0, bbox_inches='tight', figsize=(20,20))
 plt.show()
 

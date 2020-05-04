@@ -28,7 +28,7 @@ notnone = [a is not None for a in aa[1]]
 checkthese = aa[notnone]
 
 cc = checkthese[checkthese[1].str.contains('[a-zA-Z,><\s]')]
-cc =checkthese[[float(c) < 10 for c in checkthese[1]]]
+cc = checkthese[[float(c) < 10 for c in checkthese[1]]]
 for c in cc[1].to_list():
     c1 = cc[cc[0] == c]
     print(c1[0],': ',c1[1])
