@@ -293,6 +293,7 @@ def run(goal, variables_to_include, variables_to_exclude,
                                                 variables_to_exclude, goal)
 
     model.save_path = '{}_n{}_y{}'.format(save_path, y.size, y.sum())
+    model.data_struct = data_struct
 
     if train_test_split_method == 'loho':
         # Leave-one-hospital-out
@@ -304,8 +305,8 @@ def run(goal, variables_to_include, variables_to_exclude,
     scores = []
     for rep in range(repetitions):
         clf, datasets, test_y_hat = train_and_predict(x, y, model, rep,
-                                                        type=train_test_split_method,
-                                                        type_col=hospital)
+                                                      type=train_test_split_method,
+                                                      type_col=hospital)
         score = score_prediction(model, clf, datasets,
                                  test_y_hat, rep)
         scores.append(score)
