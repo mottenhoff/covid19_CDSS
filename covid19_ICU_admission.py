@@ -2,7 +2,8 @@
 @author: Maarten Ottenhoff
 @email: m.ottenhoff@maastrichtuniversity.nl
 
-Please do not use without permission
+Please do not use without explicit metioning
+of the original authors.
 '''
 # Builtin libs
 import configparser
@@ -45,7 +46,6 @@ from covid19_ICU_util import select_variables
 from covid19_ICU_util import impute_missing_values
 from covid19_ICU_util import plot_feature_importance
 from covid19_ICU_util import explore_data
-
 
 # classifiers
 from logreg import LogReg
@@ -348,10 +348,11 @@ if __name__ == "__main__":
     feature_opts = {'pm': get_1_premorbid(),
                     'cp': get_2_clinical_presentation(),
                     'lab': get_3_laboratory_radiology_findings(),
-                    'pm_cp': get_4_premorbid_clinical_representation(),
+                    'pmcp': get_4_premorbid_clinical_representation(),
                     'all': get_5_premorbid_clin_rep_lab_rad()}
 
     cv_opts = ['rss', 'loho']
+
 
     variables_to_include = {
         'Form Collection Name': [],  # groups

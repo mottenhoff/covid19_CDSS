@@ -202,6 +202,12 @@ def select_x_y(data, outcomes, used_columns,
 
     y = outcomes_dict[goal[0]][goal[1]]
 
+    # TEMP select (Non-ICU patients)
+    # ICU pts:
+    # was_icu = outcomes.iloc[:, [3, 6, 10, 12, 14]].any(axis=1)
+    # y[was_icu] = None # ONLY INCLUDE NON ICU PATIENTS
+    # y[~was_icu] = None # ONLY INCLUDE ICU PATIENTS
+
     return x, y, outcomes_dict
 
 def get_classification_outcomes(data, outcomes):
@@ -667,10 +673,6 @@ def impute_missing_values(data, data_struct):
     data = data.fillna(0)
 
     return data
-
-    
-
-
 
 def plot_feature_importance(importances, features, show_n_features=5):
     show_n_features = features.shape[0] if not show_n_features else show_n_features
