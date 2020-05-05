@@ -97,7 +97,13 @@ def calculate_outcomes(data, data_struct):
     #                   9) Unknown
     #                  10) Discharged to home and re-admitted
 
+    #FIXME: terrible hack
     get_outcome_columns = lambda x: ['{}_{}'.format(str_, i) for i in x for str_ in ['Outcome_cat']]
+    all_outcomes = get_outcome_columns(range(1,11))
+    for outcome in all_outcomes:
+        if outcome not in data.columns:
+            data[outcome] = 0
+    #FIXME: END
 
     has_unknown_outcome = data[get_outcome_columns([4,9,10])].any(axis=1)
     has_no_outcome = ~data[get_outcome_columns([1,2,3,4,5,6,7,8,9,10])].any(axis=1)
@@ -201,6 +207,12 @@ def select_x_y(data, outcomes, used_columns,
     outcomes_dict['survival'] = get_survival_analysis_outcomes(x, outcomes)
 
     y = outcomes_dict[goal[0]][goal[1]]
+
+    # TEMP select (Non-ICU patients)
+    # ICU pts:
+    # was_icu = outcomes.iloc[:, [3, 6, 10, 12, 14]].any(axis=1)
+    # y[was_icu] = None # ONLY INCLUDE NON ICU PATIENTS
+    # y[~was_icu] = None # ONLY INCLUDE ICU PATIENTS
 
     return x, y, outcomes_dict
 
@@ -569,13 +581,16 @@ def transform_time_features(data, data_struct):
 
     # Add the new variables to the struct dataframe, so that they can be selected later on
     new_vars = pd.concat(
-                  [pd.Series(['Study', 'BASELINE', 'DEMOGRAPHICS', 'age_yrs', None, 'datetime', None, None])] +
-                  [pd.Series(['Study', 'HOSPITAL ADMISSION', 'ONSET & ADMISSION', var, None, 'datetime', None, None]) \
-                              for var in ['days_since_onset', 'days_since_admission_current_hosp', 'days_since_admission_first_hosp']] +
-                  [pd.Series(['Study', 'OUTCOME', 'OUTCOME', var, None, 'datetime', None, None]) \
-                              for var in ['days_until_outcome_3wk', 'days_until_outcome_6wk']] +
-                  [pd.Series(['Report', 'Daily case record form', 'Respiratory assessment', var, None, 'datetime', None, None]) \
-                              for var in ['days_at_ward', 'days_at_mc', 'days_at_icu']], axis=1).T
+        [pd.Series(['Study', 'BASELINE', 'DEMOGRAPHICS', 'age_yrs', 'Age', 'numeric', None, None])] +
+        [pd.Series(['Study', 'HOSPITAL ADMISSION', 'ONSET & ADMISSION', 'days_since_onset', 'Days since disease onset', 'numeric', None, None])] +
+        [pd.Series(['Study', 'HOSPITAL ADMISSION', 'ONSET & ADMISSION', 'days_since_admission_current_hosp', 'Days since admission at current hospital', 'numeric', None, None])] +
+        [pd.Series(['Study', 'HOSPITAL ADMISSION', 'ONSET & ADMISSION', 'days_since_admission_first_hosp', 'Days since admission at first known hospital', 'numeric', None, None])] +
+        [pd.Series(['Study', 'OUTCOME', 'OUTCOME', 'days_until_outcome_3wk', 'Days until outcome within 21 days', 'numeric', None, None])] +
+        [pd.Series(['Study', 'OUTCOME', 'OUTCOME', 'days_until_outcome_6wk', 'Days until outcome within 42 days', 'numeric', None, None])] +    
+        [pd.Series(['Report', 'Daily case record form', 'Respiratory assessment', 'days_at_ward', 'Days at hospital ward', 'numeric', None, None])] +
+        [pd.Series(['Report', 'Daily case record form', 'Respiratory assessment', 'days_at_mc', 'Days at medium care', 'numeric', None, None])] +
+        [pd.Series(['Report', 'Daily case record form', 'Respiratory assessment', 'days_at_icu', 'Days at intensive care', 'numeric', None, None])],
+        axis=1).T
     new_vars.columns = data_struct.columns
     data_struct = data_struct.append(new_vars)
 
@@ -598,7 +613,7 @@ def transform_string_features(data, data_struct):
 
     data_struct = data_struct.append(
         pd.Series(['Study', 'BASELINE', 'CO-MORBIDITIES',
-                   'uses_n_medicine', None, 'numeric', None, None],
+                   'uses_n_medicine', 'Number of different medicine patient uses', 'numeric', None, None],
                   index=data_struct.columns), ignore_index=True)
     return data, data_struct
 
@@ -667,10 +682,6 @@ def impute_missing_values(data, data_struct):
     data = data.fillna(0)
 
     return data
-
-    
-
-
 
 def plot_feature_importance(importances, features, show_n_features=5):
     show_n_features = features.shape[0] if not show_n_features else show_n_features
