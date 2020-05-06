@@ -45,6 +45,12 @@ from sklearn.metrics import roc_curve
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import plot_confusion_matrix
+from sklearn.model_selection import StratifiedShuffleSplit
+
+import os
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import GridSearchCV
+from sklearn.impute import SimpleImputer
 
 import warnings
 from sklearn.exceptions import ConvergenceWarning
@@ -64,16 +70,20 @@ class LogReg:
         self.goal = None
         self.data_struct = None
         self.model_args = {
-            'apply_pca': True,
+            'apply_pca': False,
             'pca_n_components': 3,
 
             'select_features': False,
             'n_best_features': 10,
             'plot_feature_graph': True,
             
-            'grid_search': False
+            'grid_search': True
         }
-        
+
+        self.grid = {
+            'LR__l1_ratio': [i / 10 for i in range(0, 11, 1)]
+        }
+
         self.score_args = {
             'plot_n_rocaucs': 10,
             'n_thresholds': 50,
@@ -85,8 +95,6 @@ class LogReg:
             'normalize_coefs': True
         }
 
-
-
         self.coefs = []
         self.intercepts = []
         self.n_best_features = []
@@ -96,7 +104,7 @@ class LogReg:
         self.save_path = ''
         self.fig_size = (1280, 960)
         self.fig_dpi = 600
-        
+        self.random_state = 0
 
     def train(self, datasets):
         ''' Initialize, train and predict a classifier.
@@ -134,35 +142,59 @@ class LogReg:
         plot_feature_graph = self.model_args['plot_feature_graph']
 
         # Add engineered features:
-        train_x, test_x = self.add_engineered_features(train_x, test_x)
+        # TODO add PCA to pipeline
+        # train_x, test_x = self.add_engineered_features(train_x, test_x)
 
         # Initialize Classifier
         # clf = LogisticRegression(solver='lbfgs', penalty='l2', #class_weight='balanced', 
-        #                         max_iter=200, random_state=0) # small dataset: solver='lbfgs'. multiclass: solver='lbgfs'
+        #                         max_iter=200, random_state=self.random_state) # small dataset: solver='lbfgs'. multiclass: solver='lbgfs'
         clf = LogisticRegression(solver='saga', penalty='elasticnet', #class_weight='balanced', 
-                                 l1_ratio=.5, max_iter=200, random_state=0)
+                                 l1_ratio=.5, max_iter=200, random_state=self.random_state)
+
+        # Define pipeline
+        # TODO Remove imputation from preprocessing and handle imputation for categoricals with
+        #  additional missing category
+        steps = [('imputer', SimpleImputer(missing_values=np.nan, strategy='median',
+                                           add_indicator=True)),
+                 ('scaler', StandardScaler()),
+                 ('LR', clf)]
+        pipeline = Pipeline(steps)
 
         # Model and feature selection
+        # TODO ideally also the feature selection would take place within a CV pipeline
         if self.model_args['select_features']:
             if not any(self.n_best_features):
-                self.importances = self.feature_contribution(clf, train_x, train_y, 
-                                                        plot_graph=plot_feature_graph)
+                self.importances = self.feature_contribution(pipeline, train_x, train_y,
+                                                             plot_graph=plot_feature_graph)
                 self.n_best_features = np.argsort(self.importances)[-n_best_features:]
-                print('Select {} best features:\n{}'.format(self.model_args['n_best_features'], 
-                                                            list(train_x.columns[self.n_best_features])))
+                print('Select {} best features:\n{}'.format(self.model_args['n_best_features'],
+                                                            list(train_x.columns[
+                                                                     self.n_best_features])))
             train_x = train_x.iloc[:, self.n_best_features]
             test_x = test_x.iloc[:, self.n_best_features]
 
         if self.model_args['grid_search']:
-            self.grid = {
-                'l1_ratio': [i/10 for i in range(0, 11, 1)]
-            }
+            print("Train classfier using grid search for best parameters.")
 
-        clf.fit(train_x, train_y)  # Model
-        test_y_hat = clf.predict_proba(test_x) # Predict
-        
-        self.coefs.append(clf.coef_)
-        self.intercepts.append(clf.intercept_)
+            cv = StratifiedShuffleSplit(n_splits=5, test_size=0.2, random_state=self.random_state)
+
+            grid = GridSearchCV(pipeline, param_grid=self.grid, cv=cv,
+                                scoring='roc_auc', n_jobs=-2)
+
+            grid.fit(train_x, train_y)
+
+            clf = grid.best_estimator_
+            print("Best estimator: ", clf)
+
+        else:
+            print("Train classifier without optimization.")
+            clf = pipeline
+            clf.fit(train_x, train_y)  # Model
+
+        self.coefs.append(clf.named_steps['LR'].coef_)
+        self.intercepts.append(clf.named_steps['LR'].intercept_)
+
+        test_y_hat = clf.predict_proba(test_x)  # Predict
 
         datasets = {"train_x": train_x,
                     "test_x": test_x,
@@ -173,7 +205,7 @@ class LogReg:
 
     def score(self, clf, datasets, test_y_hat, rep):
         ''' Scores the individual prediction per outcome.
-        NOTE: Be careful with making plots within this 
+        NOTE: Be careful with making plots within this
         function, as this function can be called mutliple
         times. You can use rep as control
 
@@ -185,7 +217,7 @@ class LogReg:
                 training
             test_y_hat:: list
                 List containing probabilities of outcomes.
-        
+
         Output:
             score:: int, float, list
                 Calculated score of test_y_hat prediction.
@@ -202,8 +234,8 @@ class LogReg:
             conf_mats.append(confusion_matrix(datasets['test_y'], y_hat).ravel())
 
         if rep < self.score_args['plot_n_rocaucs']:
-            disp = plot_confusion_matrix(clf, 
-                                         datasets['test_x'], datasets['test_y'], 
+            disp = plot_confusion_matrix(clf,
+                                         datasets['test_x'], datasets['test_y'],
                                          cmap=plt.cm.Blues)
             disp.ax_.set_title('rep={:d} // ROC AUC: {:.3f}'.format(rep, roc_auc))
 
@@ -212,7 +244,7 @@ class LogReg:
             'conf_mats': conf_mats,
             'roc_auc': roc_auc
         }
-        
+
         return score
 
     def evaluate(self, clf, datasets, scores):
@@ -243,7 +275,7 @@ class LogReg:
 
     def add_engineered_features(self, train_x, test_x):
         ''' Generate and add features'''
-        # TODO: Normalize/scale numeric features (also to 0 to 1?)
+        # TODO: Add PCA to preprocessing pipeline to avoid leakage in CV.
         columns = train_x.columns
         train_x = train_x.reset_index(drop=True)
         test_x = test_x.reset_index(drop=True)
@@ -299,87 +331,77 @@ class LogReg:
 
         return importances
 
-    def plot_model_results(self, aucs):#, classifier='Logistic regression', outcome='ICU admission'):
-        
+    def plot_model_results(self,
+                           aucs):
+
         avg = sum(aucs) / max(len(aucs), 1)
-        std = sqrt(sum([(auc-avg)**2 for auc in aucs]) / len(aucs))
+        std = sqrt(sum([(auc - avg) ** 2 for auc in aucs]) / len(aucs))
         sem = std / sqrt(len(aucs))
 
         fig, ax = plt.subplots(1, 1)
         ax.plot(aucs)
-        ax.set_title('{}\nROC AUC: {:.3f} \u00B1 {:.3f} (95% CI)'
-                        .format('Logistic Regression', avg, sem*1.96))
-        ax.axhline(sum(aucs)/max(len(aucs), 1), color='g', linewidth=1)
+        ax.set_title('{} - {}\nROC AUC: {:.3f} +- {:.3f} (95% CI)'
+                     .format('LogisticRegression', self.goal, avg, sem * 1.96))
+        ax.axhline(sum(aucs) / max(len(aucs), 1), color='g', linewidth=1)
         ax.axhline(.5, color='r', linewidth=1)
         ax.set_ylim(0, 1)
-        ax.set_xlabel('Iteration')
-        ax.set_ylabel('AUC')
-        ax.legend(['ROC AUC', 'Average',  'Chance level'], bbox_to_anchor=(1, 0.5))
-        fig.tight_layout()
-        fig.savefig(self.save_path +'_Performance_roc_auc_{}_{}.png'.format(avg, sem*1.96),
-                    figsize=self.fig_size, dpi=self.fig_dpi)
+        ax.legend(['ROC AUC', 'Average', 'Chance level'], bbox_to_anchor=(1, 0.5))
+        fig.savefig(self.save_path + '_LR_Performance_roc_auc_{:.3f}_{:.3f}.png'.format(
+            avg, sem * 1.96), dpi=1024)
 
         return fig, ax
 
     def analyse_fpr(self, cms, thresholds):
         # tn, fp, fn, tp
         # fpr = fp / (fp + tn)
-        div = lambda n, d: n/d if d else 0
+        div = lambda n, d: n / d if d else 0
 
         thrs = np.asarray(thresholds)
 
-        fprs = np.array([div(i[1], i[1]+i[0]) for cm in cms for i in cm]).reshape((len(self.learn_size), 50))
+        fprs = np.array([div(i[1], i[1] + i[0]) for cm in cms for i in cm]).reshape(
+            (len(self.learn_size), 50))
         fprs_mean = fprs.mean(axis=0)
         fprs_std = fprs.std(axis=0)
         fprs_ci = (fprs_std / sqrt(fprs.shape[0])) * 1.96
 
-        sens = np.array([div(i[3], i[3]+i[2]) for cm in cms for i in cm]).reshape((len(self.learn_size), 50))
+        sens = np.array([div(i[3], i[3] + i[2]) for cm in cms for i in cm]).reshape(
+            (len(self.learn_size), 50))
         sens_mean = sens.mean(axis=0)
         sens_std = sens.std(axis=0)
         sens_ci = (sens_std / sqrt(sens.shape[0])) * 1.96
 
-        spec = np.array([div(i[0], i[0]+i[1]) for cm in cms for i in cm]).reshape((len(self.learn_size), 50))
+        spec = np.array([div(i[0], i[0] + i[1]) for cm in cms for i in cm]).reshape(
+            (len(self.learn_size), 50))
         spec_mean = spec.mean(axis=0)
         spec_std = spec.std(axis=0)
         spec_ci = (spec_std / sqrt(spec.shape[0])) * 1.96
 
         auc_mean = auc_calc(fprs_mean, sens_mean)
 
+        plt.close('all')
         fig, ax = plt.subplots()
-        ax.plot(thrs[0], fprs_mean, label='fpr')
-        ax.fill_between(thrs[0], fprs_mean-fprs_ci, fprs_mean+fprs_ci,
-                        color='b', alpha=.1)
-        ax.set_xlabel('Classification Threshold')
+        ax.errorbar(thrs[0], fprs_mean, yerr=fprs_ci, ecolor='k', label='fpr')
+        ax.set_xlabel('Probability Threshold')
         ax.set_ylabel('False Positive Rate')
         ax.set_title('Mean false positive rate per threshold.\nErrorbar = 95% confidence interval')
-        fig.tight_layout()
-        fig.savefig(self.save_path + '_False_positive_rate.png',
-                    figsize=self.fig_size, dpi=self.fig_dpi)
+        fig.savefig(self.save_path + '_LR_False_positive_rate.png')
 
         fig, ax = plt.subplots()
-        ax.plot(thrs[0], sens_mean, color='b', label='Sensitivity')
-        ax.plot(thrs[0], spec_mean, color='r', label='Specificity')
-        ax.fill_between(thrs[0], sens_mean-sens_ci, sens_mean+sens_ci,
-                        color='b', alpha=.1)
-        ax.fill_between(thrs[0], spec_mean-spec_ci, spec_mean+spec_ci,
-                        color='r', alpha=.1)
-        ax.legend(bbox_to_anchor=(1, 0.5))
-        ax.set_xlabel('Classification Threshold')
-        ax.set_ylabel('Sensitiviy (TPR) / Specificity (TNR)')
+        ax.errorbar(thrs[0], sens_mean, yerr=sens_ci, color='b', ecolor='k', label='Sensitivity')
+        ax.errorbar(thrs[0], spec_mean, yerr=spec_ci, color='r', ecolor='k', label='Specificity')
+        ax.legend()
+        ax.set_xlabel('Threshold')
+        ax.set_ylabel('Sensitiviy[TPR] / Specificity [TNR]')
         ax.set_title('Mean sensitivity and specitivity.\nErrorbar = 95% confidence interval')
-        fig.tight_layout()
-        fig.savefig(self.save_path +'_sensitivity_vs_specificity.png',
-                    figsize=self.fig_size, dpi=self.fig_dpi)
+        fig.savefig(self.save_path + '_LR_sensitivity_vs_specificity.png')
 
         fig, ax = plt.subplots()
         ax.step(fprs_mean, sens_mean, color='b')
         ax.plot([0, 1], [0, 1], color='k')
-        ax.set_title('Average ROC curve\nAUC: {:.3f}'.format(auc_mean))
-        ax.set_xlabel('1 - Specificity (FPR)') # Also Fall-Out / False Positive Rate
-        ax.set_ylabel('Sensitivity (TPR)')
-        fig.tight_layout()
-        fig.savefig(self.save_path +'_average_roc.png',
-                    figsize=self.fig_size, dpi=self.fig_dpi)
+        ax.set_title('Average ROC curve\n AUC: {:.3f}'.format(auc_mean))
+        ax.set_xlabel('Fall-Out [FPR]')
+        ax.set_ylabel('Sensitivity [TPR]')
+        fig.savefig(self.save_path + '_LR_average_roc.png')
 
     def plot_model_weights(self, feature_labels, show_n_features=10,
                            normalize_coefs=False):

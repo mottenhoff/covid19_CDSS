@@ -39,7 +39,10 @@ Datasets:   dictionary containin all training and test sets:
 from math import sqrt
 from xgboost import XGBClassifier
 #import shap
-from sklearn.model_selection import RandomizedSearchCV 
+from sklearn.model_selection import RandomizedSearchCV
+from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn.feature_selection import SelectFromModel
+from sklearn.impute import SimpleImputer
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -100,6 +103,19 @@ class XGB:
 
         self.learn_size = []
 
+        self.grid = {
+            'XGB__learning_rate': ([0.1, 0.01, 0.001]),
+            'XGB__gamma': ([0.1, 0.01, 0.001]),
+            'XGB__n_estimators': ([100, 200, 300]),
+            'XGB__subsample': ([0.5, 0.7, 0.9]),
+            'XGB__colsample_bytree': ([0.5, 0.6, 0.7, 0.8]),
+            'XGB__max_depth': ([2, 4, 6])
+        }
+
+        self.save_path = ''
+        self.fig_size = (1280, 960)
+        self.fig_dpi = 600
+        self.random_state = 0
 
     def train(self, datasets):
         ''' Initialize, train and predict a classifier.
@@ -133,46 +149,60 @@ class XGB:
         self.learn_size += [{'tr_x': train_x.shape, 'tr_y': train_y.shape,
                             'te_x': test_x.shape, 'te_y': test_y.shape}]
 
-        #n_best_features = self.model_args['n_best_features']
-        #plot_feature_graph = self.model_args['plot_feature_graph']
+        n_best_features = self.model_args['n_best_features']
+        plot_feature_graph = self.model_args['plot_feature_graph']
 
         #Add engineered features:
-        train_x, test_x = self.add_engineered_features(train_x, test_x)
+        # TODO add PCA to pipeline
+        # train_x, test_x = self.add_engineered_features(train_x, test_x)
 
         # Initialize Classifier
-        # clf = LogisticRegression(solver='lbfgs', penalty='l2', #class_weight='balanced', 
-        #                         max_iter=200, random_state=0) # small dataset: solver='lbfgs'. multiclass: solver='lbgfs'
-        clf = XGBClassifier(random_state=0)
+        clf = XGBClassifier(random_state=self.random_state)
 
-        # print("Doing grid search for best parameters using pipeline!")
-        self.grid = {
-            'XGB__learning_rate': ([0.1, 0.01, 0.001]),
-            'XGB__gamma': ([0.1, 0.01, 0.001]),                  
-            'XGB__n_estimators':([100,200,300]),
-            'XGB__subsample': ([0.5,0.7, 0.9]),
-            'XGB__colsample_bytree': ([0.5,0.6,0.7,0.8]),
-            'XGB__max_depth': ([2,4,6])
-            }
+        # Define Pipeline
+        # TODO Remove imputation from preprocessing and handle imputation for categoricals with
+        #  additional missing category
+        steps = [('imputer', SimpleImputer(missing_values=np.nan, strategy='median',
+                                           add_indicator=True)),
+                 ('scaler', StandardScaler()),
+                 ('XGB', clf)]
+        pipeline = Pipeline(steps)
 
+        # Model and feature selection
+        # TODO ideally also the feature selection would take place within a CV pipeline
+        if self.model_args['select_features']:
+            if not any(self.n_best_features):
+                self.importances = self.feature_contribution(clf, train_x, train_y,
+                                                             plot_graph=plot_feature_graph)
+                self.n_best_features = np.argsort(self.importances)[-n_best_features:]
+                print('Select {} best features:\n{}'.format(self.model_args['n_best_features'],
+                                                            list(train_x.columns[
+                                                                     self.n_best_features])))
+            train_x = train_x.iloc[:, self.n_best_features]
+            test_x = test_x.iloc[:, self.n_best_features]
 
-        grid = RandomizedSearchCV(clf, param_distributions=self.grid, cv=3,scoring='roc_auc',n_jobs=-2,random_state=0)
-        
-        #steps = [('scaler', StandardScaler()), ('XGB', XGBClassifier(random_state=0))]
+        if self.model_args['grid_search']:
+            print("Train classfier using grid search for best parameters.")
 
-        #pipeline = Pipeline(steps)
-    
-#        grid = RandomizedSearchCV(pipeline, param_distributions=self.grid, cv=3,scoring='roc_auc',n_jobs=-2,random_state=0)
+            cv = StratifiedShuffleSplit(n_splits=5, test_size=0.2, random_state=self.random_state)
 
-        
-        grid.fit(train_x, train_y)
-        #print('Best Params:',)
-        
-        clf = grid.best_estimator_
-   
-        test_y_hat = clf.predict_proba(test_x) # Predict
-        
+            grid = RandomizedSearchCV(clf, param_distributions=self.grid,
+                                      cv=cv, scoring='roc_auc', n_jobs=-2,
+                                      random_state=self.random_state)
+
+            grid.fit(train_x, train_y)
+
+            clf = grid.best_estimator_
+            print("Best estimator: ", clf)
+
+        else:
+            print("Train classifier without optimization.")
+            clf = pipeline
+            clf.fit(train_x, train_y)  # Model
+
+        test_y_hat = clf.predict_proba(test_x)  # Predict
+
         self.coefs.append(clf.feature_importances_)
-        #self.intercepts.append(clf.intercept_)
 
         datasets = {"train_x": train_x,
                     "test_x": test_x,
@@ -279,19 +309,29 @@ class XGB:
         return train_x, test_x
 
     def feature_contribution(self, clf, x, y, plot_graph=False, plot_n_features=None,
-                                n_cv=2, method='predict_proba'):
+                             n_cv=2, method='predict_proba'):
+        """Select feature from model internal selection."""
 
         plot_n_features = x.shape[1] if not plot_n_features else plot_n_features
         y_hat = cross_val_predict(clf, x, y, cv=n_cv, method=method)
         baseline_score = roc_auc_score(y, y_hat[:, 1])
 
         importances = np.array([])
-        
-        for col in x.columns:
-            x_tmp = x.drop(col, axis=1)
-            y_hat = cross_val_predict(clf, x_tmp, y, cv=n_cv, method=method)
+
+        # Fit model using each importance as a threshold
+        clf.fit(x, y)
+        thresholds = np.sort(clf.feature_importances_)
+        for thresh in thresholds:
+            # select features using threshold
+            selection = SelectFromModel(clf, threshold=thresh, prefit=True)
+            select_X_train = selection.transform(x)
+            # train model
+            selection_clf = XGBClassifier()
+            y_hat = cross_val_predict(selection_clf, x, y, cv=n_cv, method=method)
             score = roc_auc_score(y, y_hat[:, 1])
             importances = np.append(importances, baseline_score-score)
+            print("Thresh=%.3f, n=%d, roc_auc_score: %.2f%%" % (
+                thresh, select_X_train.shape[1], score * 100.0))
 
         if plot_graph:
             idc = np.argsort(importances)
@@ -300,9 +340,10 @@ class XGB:
             ax.plot(importances[idc[-plot_n_features:]])
             ax.axhline(0, color='k', linewidth=.5)
             ax.set_xticks(np.arange(x.shape[1]))
-            ax.set_xticklabels(columns[-plot_n_features:], rotation=90, fontdict={'fontsize': 6})
+            ax.set_xticklabels(columns[-plot_n_features:], rotation=90, fontdict={ 'fontsize': 6 })
             ax.set_xlabel('Features')
             ax.set_ylabel('Difference with baseline')
+            fig.savefig("feature_contributions.png")
 
         return importances
 
@@ -416,8 +457,7 @@ class XGB:
         #shap.summary_plot(shap_values, train_x,show=False)
         #fig2 = plt.gcf()
         #fig2.savefig(self.save_path +'Shap_importance.png', figsize=(1280, 960), dpi=200)
-        
-        
+
 
 def get_metrics(lst):
     n = len(lst)

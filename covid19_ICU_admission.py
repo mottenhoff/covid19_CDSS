@@ -284,17 +284,16 @@ def run(goal, variables_to_include, variables_to_exclude,
     config.read('user_settings.ini')
     path_creds = config['CastorCredentials']['local_private_path']
 
-    model = model_class()
-    model.goal = goal
-
     data, data_struct = load_data(path_creds)
     data, data_struct = preprocess(data, data_struct)
     x, y, data, hospital, records = prepare_for_learning(data, data_struct,
                                                 variables_to_include,
                                                 variables_to_exclude, goal)
 
-    model.save_path = '{}_n{}_y{}'.format(save_path, y.size, y.sum())
+    model = model_class()
+    model.goal = goal
     model.data_struct = data_struct
+    model.save_path = '{}_n{}_y{}'.format(save_path, y.size, y.sum())
 
     if train_test_split_method == 'loho':
         # Leave-one-hospital-out
