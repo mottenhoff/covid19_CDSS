@@ -62,6 +62,7 @@ class LogReg:
         '''
 
         self.goal = None
+        self.data_struct = None
         self.model_args = {
             'apply_pca': True,
             'pca_n_components': 3,
@@ -74,7 +75,7 @@ class LogReg:
         }
         
         self.score_args = {
-            'plot_n_rocaucs': 5,
+            'plot_n_rocaucs': 10,
             'n_thresholds': 50,
 
         }
@@ -84,6 +85,8 @@ class LogReg:
             'normalize_coefs': True
         }
 
+
+
         self.coefs = []
         self.intercepts = []
         self.n_best_features = []
@@ -91,7 +94,9 @@ class LogReg:
         self.learn_size = []
 
         self.save_path = ''
-
+        self.fig_size = (1280, 960)
+        self.fig_dpi = 600
+        
 
     def train(self, datasets):
         ''' Initialize, train and predict a classifier.
@@ -153,7 +158,6 @@ class LogReg:
                 'l1_ratio': [i/10 for i in range(0, 11, 1)]
             }
 
-    
         clf.fit(train_x, train_y)  # Model
         test_y_hat = clf.predict_proba(test_x) # Predict
         
@@ -227,6 +231,8 @@ class LogReg:
                 List of all scores generated per training
                 iteration.
         '''
+        self.var_dict = dict(zip(self.data_struct['Field Variable Name'], 
+                                 self.data_struct['Field Label']))
         cms = [score['conf_mats'] for score in scores]
         thresholds = [score['thr'] for score in scores]
         self.analyse_fpr(cms, thresholds)
@@ -254,7 +260,7 @@ class LogReg:
         return train_x, test_x
 
     def get_pca(self, train_x, test_x):
-        pca_col_names = ['pc_{:d}'.format(i) for i in range(self.model_args['pca_n_components'])]
+        pca_col_names = ['PC {:d}'.format(i+1) for i in range(self.model_args['pca_n_components'])]
         pca = PCA(n_components=self.model_args['pca_n_components'])
         pca = pca.fit(train_x)
         pcs_train = pd.DataFrame(pca.transform(train_x), columns=pca_col_names)
@@ -289,6 +295,7 @@ class LogReg:
             ax.set_xticklabels(columns[-plot_n_features:], rotation=90, fontdict={'fontsize': 6})
             ax.set_xlabel('Features')
             ax.set_ylabel('Difference with baseline')
+            fig.tight_layout()
 
         return importances
 
@@ -300,13 +307,17 @@ class LogReg:
 
         fig, ax = plt.subplots(1, 1)
         ax.plot(aucs)
-        ax.set_title('{} - {}\nROC AUC: {:.3f} +- {:.3f} (95% CI)'
-                     .format('LogReg', self.goal, avg, sem*1.96))
+        ax.set_title('{}\nROC AUC: {:.3f} \u00B1 {:.3f} (95% CI)'
+                        .format('Logistic Regression', avg, sem*1.96))
         ax.axhline(sum(aucs)/max(len(aucs), 1), color='g', linewidth=1)
         ax.axhline(.5, color='r', linewidth=1)
         ax.set_ylim(0, 1)
+        ax.set_xlabel('Iteration')
+        ax.set_ylabel('AUC')
         ax.legend(['ROC AUC', 'Average',  'Chance level'], bbox_to_anchor=(1, 0.5))
-        fig.savefig(self.save_path +'_Performance_roc_auc_{}_{}.png'.format(avg, sem*1.96), dpi=1024)
+        fig.tight_layout()
+        fig.savefig(self.save_path +'_Performance_roc_auc_{}_{}.png'.format(avg, sem*1.96),
+                    figsize=self.fig_size, dpi=self.fig_dpi)
 
         return fig, ax
 
@@ -334,30 +345,41 @@ class LogReg:
 
         auc_mean = auc_calc(fprs_mean, sens_mean)
 
-        plt.close('all')
         fig, ax = plt.subplots()
-        ax.errorbar(thrs[0], fprs_mean, yerr=fprs_ci, ecolor='k', label='fpr')
-        ax.set_xlabel('Probability Threshold')
+        ax.plot(thrs[0], fprs_mean, label='fpr')
+        ax.fill_between(thrs[0], fprs_mean-fprs_ci, fprs_mean+fprs_ci,
+                        color='b', alpha=.1)
+        ax.set_xlabel('Classification Threshold')
         ax.set_ylabel('False Positive Rate')
         ax.set_title('Mean false positive rate per threshold.\nErrorbar = 95% confidence interval')
-        fig.savefig(self.save_path + '_False_positive_rate.png')
+        fig.tight_layout()
+        fig.savefig(self.save_path + '_False_positive_rate.png',
+                    figsize=self.fig_size, dpi=self.fig_dpi)
 
         fig, ax = plt.subplots()
-        ax.errorbar(thrs[0], sens_mean, yerr=sens_ci, color='b', ecolor='k', label='Sensitivity')
-        ax.errorbar(thrs[0], spec_mean, yerr=spec_ci, color='r', ecolor='k', label='Specificity')
-        ax.legend()
-        ax.set_xlabel('Threshold')
-        ax.set_ylabel('Sensitiviy[TPR] / Specificity [TNR]')
+        ax.plot(thrs[0], sens_mean, color='b', label='Sensitivity')
+        ax.plot(thrs[0], spec_mean, color='r', label='Specificity')
+        ax.fill_between(thrs[0], sens_mean-sens_ci, sens_mean+sens_ci,
+                        color='b', alpha=.1)
+        ax.fill_between(thrs[0], spec_mean-spec_ci, spec_mean+spec_ci,
+                        color='r', alpha=.1)
+        ax.legend(bbox_to_anchor=(1, 0.5))
+        ax.set_xlabel('Classification Threshold')
+        ax.set_ylabel('Sensitiviy (TPR) / Specificity (TNR)')
         ax.set_title('Mean sensitivity and specitivity.\nErrorbar = 95% confidence interval')
-        fig.savefig(self.save_path +'_sensitivity_vs_specificity.png')
+        fig.tight_layout()
+        fig.savefig(self.save_path +'_sensitivity_vs_specificity.png',
+                    figsize=self.fig_size, dpi=self.fig_dpi)
 
         fig, ax = plt.subplots()
         ax.step(fprs_mean, sens_mean, color='b')
         ax.plot([0, 1], [0, 1], color='k')
-        ax.set_title('Average ROC curve\n AUC: {:.3f}'.format(auc_mean))
-        ax.set_xlabel('Fall-Out [FPR]')
-        ax.set_ylabel('Sensitivity [TPR]')
-        fig.savefig(self.save_path +'_average_roc.png')
+        ax.set_title('Average ROC curve\nAUC: {:.3f}'.format(auc_mean))
+        ax.set_xlabel('1 - Specificity (FPR)') # Also Fall-Out / False Positive Rate
+        ax.set_ylabel('Sensitivity (TPR)')
+        fig.tight_layout()
+        fig.savefig(self.save_path +'_average_roc.png',
+                    figsize=self.fig_size, dpi=self.fig_dpi)
 
     def plot_model_weights(self, feature_labels, show_n_features=10,
                            normalize_coefs=False):
@@ -374,23 +396,41 @@ class LogReg:
         coefs = (coefs-coefs.mean(axis=0))/coefs.std(axis=0) if normalize_coefs else coefs
 
         avg_coefs = abs(coefs.mean(axis=0))
-        var_coefs = coefs.var(axis=0) if not normalize_coefs else None
+        mask_not_nan = ~np.isnan(avg_coefs) # Remove non-existent weights
+        avg_coefs = avg_coefs[mask_not_nan]
 
+        var_coefs = coefs.var(axis=0)[mask_not_nan] if not normalize_coefs else None
         idx_sorted = avg_coefs.argsort()
-        n_bars = np.arange(coefs.shape[1])                
+        n_bars = np.arange(avg_coefs.shape[0])                
 
+        labels = [self.var_dict.get(c) for c in feature_labels]
+        has_no_label = labels
+        for i, l in enumerate(labels):
+            if l==None:
+                labels[i] = feature_labels[i]
+            elif 'chronic cardiac disease' in l.lower():
+                labels[i] = 'Chronic Cardiac Disease (Not hypertension)'
+            elif 'home medication' in l.lower():
+                labels[i] = 'Home medication'
+        labels = np.array(labels)
+        fontsize = 5.75 if labels.size < 50 else 5
         bar_width = .5  # bar width
+        
+        
         fig, ax = plt.subplots()
         if normalize_coefs:
             ax.barh(n_bars, avg_coefs[idx_sorted], bar_width, label='Weight')
-            ax.set_title('Logistic regression - Average weight value [Normalized]')
+            ax.set_title('Logistic regression - Average weight value')
         else:
             ax.set_title('Logistic regression - Average weight value')
             ax.barh(n_bars, avg_coefs[idx_sorted], bar_width, xerr=var_coefs[idx_sorted], label='Weight')
         ax.set_yticks(n_bars)
-        ax.set_yticklabels(feature_labels[idx_sorted], fontdict={'fontsize': 6})
-        ax.set_xlabel('Weight')
-        fig.savefig(self.save_path +'_Average_weight_variance.png', figsize=(1280, 960), dpi=200)
+        ax.set_yticklabels(labels[idx_sorted], fontdict={'fontsize': fontsize})
+        ax.set_ylim(n_bars[0]-.5, n_bars[-1]+.5)
+        ax.set_xlabel('Weight{}'.format(' (normalized)' if normalize_coefs else ''))
+        fig.tight_layout()
+        fig.savefig(self.save_path +'_Average_weight_variance.png',
+                    figsize=self.fig_size, dpi=self.fig_dpi)
         return fig, ax
 
 
