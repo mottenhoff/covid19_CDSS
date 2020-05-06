@@ -5,41 +5,41 @@ Created on Thu Apr 30 13:25:50 2020
 @author: laramos
 """
 
-''' 
+'''
 DO NOT OVERWRITE THIS FILE, MAKE A COPY TO EDIT!
 
 This file contains blueprint for the model that is used
-in covid19_ICU_admission.  
+in covid19_ICU_admission.
 This class should take care of training a classifier/regressor,
-scoring each iteration and evaluating post training. 
+scoring each iteration and evaluating post training.
 
-Make sure the names, inputs and outputs of the predefined methods stay 
+Make sure the names, inputs and outputs of the predefined methods stay
 the same!
 
 
 Model parameters:
 Please store all parameters in the defined dicts in __init__().
-This way it is easy to change some parameters without changing 
-the main code and without the need for extra config files. 
+This way it is easy to change some parameters without changing
+the main code and without the need for extra config files.
 
 Most important naming conventions and variables:
 Model:      The whole class in this file. This means that "model" takes
             care of training, scoring and evaluating
 
 Clf:        This is the actually classifier/regressor. It can be for example
-            the trained instance from the Sklearn package 
+            the trained instance from the Sklearn package
             (e.g. LogisticRegression())
 
 Datasets:   dictionary containin all training and test sets:
             train_x, train_y, test_x, test_y, test_y_hat
 
-..._args:   Dictionary that holds the parameters that are used as 
+..._args:   Dictionary that holds the parameters that are used as
             input for train, score or evaluate
 '''
 from math import sqrt
 from xgboost import XGBClassifier
 #import shap
-from sklearn.model_selection import RandomizedSearchCV 
+from sklearn.model_selection import RandomizedSearchCV
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -65,10 +65,10 @@ class XGB:
 
     def __init__(self):
         ''' Initialize model.
-        Save all model parameters here. 
+        Save all model parameters here.
         Please don't change the names of the preset
         parameters, as they might be called outside
-        this class. 
+        this class.
         '''
 
         self.goal = None
@@ -79,10 +79,10 @@ class XGB:
             'select_features': False,
             'n_best_features': 10,
             'plot_feature_graph': True,
-            
+
             'grid_search': True
         }
-        
+
         self.score_args = {
             'plot_n_rocaucs': 5,
             'n_thresholds': 50,
@@ -100,21 +100,20 @@ class XGB:
 
         self.learn_size = []
 
-
     def train(self, datasets):
         ''' Initialize, train and predict a classifier.
         This includes: Feature engineering (i.e. PCA) and
-        selection, training clf, (hyper)parameter optimization, 
+        selection, training clf, (hyper)parameter optimization,
         and a prediction on the test set. Make sure to save
         all variables you want to keep track of in the instance.
 
-        Input: 
+        Input:
             datasets:: dict
                 Contains train and test x, y
-        
+
         Output:
             clf:: instance, dict, list, None
-                Trained classifier/regressor instance, such as 
+                Trained classifier/regressor instance, such as
                 sklearn logistic regression. Is not used
                 outside this file, so can be left empty
             datasets:: dict
@@ -133,57 +132,56 @@ class XGB:
         self.learn_size += [{'tr_x': train_x.shape, 'tr_y': train_y.shape,
                             'te_x': test_x.shape, 'te_y': test_y.shape}]
 
-        #n_best_features = self.model_args['n_best_features']
-        #plot_feature_graph = self.model_args['plot_feature_graph']
+        # n_best_features = self.model_args['n_best_features']
+        # plot_feature_graph = self.model_args['plot_feature_graph']
 
-        #Add engineered features:
+        # Add engineered features:
         train_x, test_x = self.add_engineered_features(train_x, test_x)
 
         # Initialize Classifier
-        # clf = LogisticRegression(solver='lbfgs', penalty='l2', #class_weight='balanced', 
+        # clf = LogisticRegression(solver='lbfgs', penalty='l2', #class_weight='balanced',
         #                         max_iter=200, random_state=0) # small dataset: solver='lbfgs'. multiclass: solver='lbgfs'
         clf = XGBClassifier(random_state=0)
 
         # print("Doing grid search for best parameters using pipeline!")
         self.grid = {
             'XGB__learning_rate': ([0.1, 0.01, 0.001]),
-            'XGB__gamma': ([0.1, 0.01, 0.001]),                  
-            'XGB__n_estimators':([100,200,300]),
-            'XGB__subsample': ([0.5,0.7, 0.9]),
-            'XGB__colsample_bytree': ([0.5,0.6,0.7,0.8]),
-            'XGB__max_depth': ([2,4,6])
+            'XGB__gamma': ([0.1, 0.01, 0.001]),
+            'XGB__n_estimators': ([100, 200, 300]),
+            'XGB__subsample': ([0.5, 0.7, 0.9]),
+            'XGB__colsample_bytree': ([0.5, 0.6, 0.7, 0.8]),
+            'XGB__max_depth': ([2, 4, 6])
             }
 
+        grid = RandomizedSearchCV(clf, param_distributions=self.grid, cv=3,
+                                  scoring='roc_auc', n_jobs=-2, random_state=0)
 
-        grid = RandomizedSearchCV(clf, param_distributions=self.grid, cv=3,scoring='roc_auc',n_jobs=-2,random_state=0)
-        
-        #steps = [('scaler', StandardScaler()), ('XGB', XGBClassifier(random_state=0))]
+        # steps = [('scaler', StandardScaler()), ('XGB', XGBClassifier(random_state=0))]
 
-        #pipeline = Pipeline(steps)
-    
-#        grid = RandomizedSearchCV(pipeline, param_distributions=self.grid, cv=3,scoring='roc_auc',n_jobs=-2,random_state=0)
+        # pipeline = Pipeline(steps)
 
-        
+        # grid = RandomizedSearchCV(pipeline, param_distributions=self.grid, cv=3,scoring='roc_auc',n_jobs=-2,random_state=0)
+
         grid.fit(train_x, train_y)
-        #print('Best Params:',)
-        
+        # print('Best Params:',)
+
         clf = grid.best_estimator_
-   
-        test_y_hat = clf.predict_proba(test_x) # Predict
-        
+
+        test_y_hat = clf.predict_proba(test_x)  # Predict
+
         self.coefs.append(clf.feature_importances_)
-        #self.intercepts.append(clf.intercept_)
+        # self.intercepts.append(clf.intercept_)
 
         datasets = {"train_x": train_x,
                     "test_x": test_x,
                     "train_y": train_y,
                     "test_y": test_y}
-        
+
         return clf, datasets, test_y_hat
 
     def score(self, clf, datasets, test_y_hat, rep):
         ''' Scores the individual prediction per outcome.
-        NOTE: Be careful with making plots within this 
+        NOTE: Be careful with making plots within this
         function, as this function can be called mutliple
         times. You can use rep as control
 
@@ -195,7 +193,7 @@ class XGB:
                 training
             test_y_hat:: list
                 List containing probabilities of outcomes.
-        
+
         Output:
             score:: int, float, list
                 Calculated score of test_y_hat prediction.
@@ -212,8 +210,8 @@ class XGB:
             conf_mats.append(confusion_matrix(datasets['test_y'], y_hat).ravel())
 
         if rep < self.score_args['plot_n_rocaucs']:
-            disp = plot_confusion_matrix(clf, 
-                                         datasets['test_x'], datasets['test_y'], 
+            disp = plot_confusion_matrix(clf,
+                                         datasets['test_x'], datasets['test_y'],
                                          cmap=plt.cm.Blues)
             disp.ax_.set_title('rep={:d} // ROC AUC: {:.3f}'.format(rep, roc_auc))
 
@@ -222,7 +220,7 @@ class XGB:
             'conf_mats': conf_mats,
             'roc_auc': roc_auc
         }
-        
+
         return score
 
     def evaluate(self, clf, datasets, scores):
@@ -245,7 +243,7 @@ class XGB:
         thresholds = [score['thr'] for score in scores]
         self.analyse_fpr(cms, thresholds)
         fig, ax = self.plot_model_results([score['roc_auc'] for score in scores])
-        #fig2 = self.plot_model_weights(clf,datasets['train_x'])
+        # fig2 = self.plot_model_weights(clf,datasets['train_x'])
         fig2, ax2 = self.plot_model_weights(datasets['test_x'].columns,
                                             show_n_features=self.evaluation_args['show_n_features'],
                                             normalize_coefs=self.evaluation_args['normalize_coefs'])
@@ -256,7 +254,7 @@ class XGB:
         columns = train_x.columns
         test_x = test_x.reset_index(drop=True)
 
-        #scaler = MinMaxScaler().fit(train_x)
+        # scaler = MinMaxScaler().fit(train_x)
         scaler = StandardScaler().fit(train_x)
         train_x = pd.DataFrame(scaler.transform(train_x), columns=columns)
         test_x = pd.DataFrame(scaler.transform(test_x), columns=columns)
@@ -279,14 +277,14 @@ class XGB:
         return train_x, test_x
 
     def feature_contribution(self, clf, x, y, plot_graph=False, plot_n_features=None,
-                                n_cv=2, method='predict_proba'):
+                             n_cv=2, method='predict_proba'):
 
         plot_n_features = x.shape[1] if not plot_n_features else plot_n_features
         y_hat = cross_val_predict(clf, x, y, cv=n_cv, method=method)
         baseline_score = roc_auc_score(y, y_hat[:, 1])
 
         importances = np.array([])
-        
+
         for col in x.columns:
             x_tmp = x.drop(col, axis=1)
             y_hat = cross_val_predict(clf, x_tmp, y, cv=n_cv, method=method)
@@ -306,8 +304,8 @@ class XGB:
 
         return importances
 
-    def plot_model_results(self, aucs):#, classifier='Logistic regression', outcome='ICU admission'):
-        
+    def plot_model_results(self, aucs):  # , classifier='Logistic regression', outcome='ICU admission'):
+
         avg = sum(aucs) / max(len(aucs), 1)
         std = sqrt(sum([(auc-avg)**2 for auc in aucs]) / len(aucs))
         sem = std / sqrt(len(aucs))
@@ -320,7 +318,7 @@ class XGB:
         ax.axhline(.5, color='r', linewidth=1)
         ax.set_ylim(0, 1)
         ax.legend(['ROC AUC', 'Average',  'Chance level'], bbox_to_anchor=(1, 0.5))
-        fig.savefig(self.save_path +'_XGB_Performance_roc_auc_{}_{}.png'.format(avg, sem*1.96), dpi=1024)
+        fig.savefig(self.save_path + '_XGB_Performance_roc_auc_{}_{}.png'.format(avg, sem*1.96), dpi=1024)
 
         return fig, ax
 
@@ -363,7 +361,7 @@ class XGB:
         ax.set_xlabel('Threshold')
         ax.set_ylabel('Sensitiviy[TPR] / Specificity [TNR]')
         ax.set_title('Mean sensitivity and specitivity.\nErrorbar = 95% confidence interval')
-        fig.savefig(self.save_path +'_XGB_sensitivity_vs_specificity.png')
+        fig.savefig(self.save_path + '_XGB_sensitivity_vs_specificity.png')
 
         fig, ax = plt.subplots()
         ax.step(fprs_mean, sens_mean, color='b')
@@ -371,14 +369,14 @@ class XGB:
         ax.set_title('Average ROC curve\n AUC: {:.3f}'.format(auc_mean))
         ax.set_xlabel('Fall-Out [FPR]')
         ax.set_ylabel('Sensitivity [TPR]')
-        fig.savefig(self.save_path +'_XGB_average_roc.png')
+        fig.savefig(self.save_path + '_XGB_average_roc.png')
 
     def plot_model_weights(self, feature_labels, show_n_features=10,
                            normalize_coefs=False):
         coefs = self.coefs
-        #intercepts = self.intercepts
+        # intercepts = self.intercepts
         coefs = np.array(coefs).squeeze()
-        #intercepts = np.array(intercepts).squeeze()
+        # intercepts = np.array(intercepts).squeeze()
 
         if len(coefs.shape) <= 1:
             return
@@ -391,7 +389,7 @@ class XGB:
         var_coefs = coefs.var(axis=0) if not normalize_coefs else None
 
         idx_sorted = avg_coefs.argsort()
-        n_bars = np.arange(coefs.shape[1])                
+        n_bars = np.arange(coefs.shape[1])
 
         bar_width = .5  # bar width
         fig, ax = plt.subplots()
@@ -404,20 +402,20 @@ class XGB:
         ax.set_yticks(n_bars)
         ax.set_yticklabels(feature_labels[idx_sorted], fontdict={'fontsize': 6})
         ax.set_xlabel('Weight')
-        fig.savefig(self.save_path +'_XGB_Average_weight_variance.png', figsize=(1280, 960), dpi=200)
+        fig.savefig(self.save_path + '_XGB_Average_weight_variance.png', figsize=(1280, 960), dpi=200)
         return fig, ax
-        
-#        scaler = clf['scaler']
-#        train_x = scaler.transform(train_x)
-        #shap_values = shap.TreeExplainer(clf).shap_values(train_x)
-        #shap.summary_plot(shap_values, train_x, plot_type="bar",show=False)
-        #fig1 = plt.gcf()
-        #fig1.savefig(self.save_path +'Shap_bar_importance.png', figsize=(1280, 960), dpi=200)
-        #shap.summary_plot(shap_values, train_x,show=False)
-        #fig2 = plt.gcf()
-        #fig2.savefig(self.save_path +'Shap_importance.png', figsize=(1280, 960), dpi=200)
-        
-        
+
+        # scaler = clf['scaler']
+        # train_x = scaler.transform(train_x)
+
+        # shap_values = shap.TreeExplainer(clf).shap_values(train_x)
+        # shap.summary_plot(shap_values, train_x, plot_type="bar",show=False)
+        # fig1 = plt.gcf()
+        # fig1.savefig(self.save_path +'Shap_bar_importance.png', figsize=(1280, 960), dpi=200)
+        # shap.summary_plot(shap_values, train_x,show=False)
+        # fig2 = plt.gcf()
+        # fig2.savefig(self.save_path +'Shap_importance.png', figsize=(1280, 960), dpi=200)
+
 
 def get_metrics(lst):
     n = len(lst)
@@ -433,10 +431,6 @@ def get_metrics(lst):
             'std': std,
             'sem': sem,
             'ci': ci}
-
-
-
-
 
     # def analyse_fpr(self, fprs):
     #     means = [fpr.mean() for fpr in fprs]
