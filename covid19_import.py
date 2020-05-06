@@ -57,7 +57,7 @@ def import_data_by_record(path_to_api_creds=None):
     test_inst = [i for i in c.request_institutes()
                  if 'test' in i['name'].lower()][0]
     test_records = [r['record_id'] for r in c.request_study_records(
-        institute=test_inst['institute_id'])]
+        institute_id=test_inst['institute_id'])]
     test_records += [r['record_id'] for r in c.request_study_records()
                      if r['archived'] == 1]
 

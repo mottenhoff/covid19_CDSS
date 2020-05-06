@@ -63,6 +63,7 @@ from get_feature_set import get_6_all
 
 is_in_columns = lambda var_list, data: [v for v in var_list if v in data.columns]
 
+
 def load_data_api(path_credentials):
 
     # Try loading objects from disk file; delete saveddata.pkl to force reload
@@ -102,6 +103,7 @@ def load_data_api(path_credentials):
 
     return df_study, df_report, data_struct
 
+
 def load_data(path_to_creds):
     ''' Loads data and combines the different
     returned dataframes.
@@ -130,6 +132,7 @@ def load_data(path_to_creds):
 
     return data, data_struct
 
+
 def preprocess(data, data_struct):
     ''' Processed the data per datatype.'''
 
@@ -148,6 +151,7 @@ def preprocess(data, data_struct):
     data, data_struct = select_data(data, data_struct)
 
     return data, data_struct
+
 
 def prepare_for_learning(data, data_struct, variables_to_incl,
                          variables_to_exclude, goal,
@@ -178,7 +182,7 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
     # Remove columns without information
     hospital = x.loc[:, 'hospital']
     records = x.loc[:, 'Record Id']
-    x = x.drop(['hospital','Record Id'], axis=1)
+    x = x.drop(['hospital', 'Record Id'], axis=1)
     x = x.loc[:, x.nunique() > 1]  # Remove columns without information
 
     if use_imputation:
@@ -198,6 +202,7 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
         y = y.loc[has_y]
 
     return x, y, data, hospital, records
+
 
 def train_and_predict(x, y, model, rep, type='subsamp', type_col=None, test_size=0.2):
     ''' Splits data into train and test set using
@@ -227,7 +232,7 @@ def train_and_predict(x, y, model, rep, type='subsamp', type_col=None, test_size
             clf on test y.
     '''
 
-    if type=='loho':
+    if type == 'loho':
         # Leave-one-hospital-out cross-validation
         test_hosp = type_col.unique()[rep]
         is_test_hosp = type_col == test_hosp
@@ -245,6 +250,7 @@ def train_and_predict(x, y, model, rep, type='subsamp', type_col=None, test_size
 
     clf, datasets, test_y_hat = model.train(datasets)
     return clf, datasets, test_y_hat
+
 
 def score_prediction(model, clf, datasets, test_y_hat, rep):
     ''' Wrapper for scoring individual predictions made
@@ -274,8 +280,10 @@ def score_prediction(model, clf, datasets, test_y_hat, rep):
     score = model.score(clf, datasets, test_y_hat, rep)
     return score
 
+
 def evaluate_model(model, clf, datasets, scores):
     model.evaluate(clf, datasets, scores)
+
 
 def run(goal, variables_to_include, variables_to_exclude,
         train_test_split_method, model_class,
@@ -290,8 +298,9 @@ def run(goal, variables_to_include, variables_to_exclude,
     data, data_struct = load_data(path_creds)
     data, data_struct = preprocess(data, data_struct)
     x, y, data, hospital, records = prepare_for_learning(data, data_struct,
-                                                variables_to_include,
-                                                variables_to_exclude, goal)
+                                                         variables_to_include,
+                                                         variables_to_exclude,
+                                                         goal)
 
     model.save_path = '{}_n{}_y{}'.format(save_path, y.size, y.sum())
     model.data_struct = data_struct
@@ -318,6 +327,7 @@ def run(goal, variables_to_include, variables_to_exclude,
         plt.show()
 
     print('\n', flush=True)
+
 
 if __name__ == "__main__":
     ##### START PARAMETERS #####
@@ -356,11 +366,10 @@ if __name__ == "__main__":
 
     cv_opts = ['loho'] #'rss', 'loho']
 
-
     variables_to_include = {
         'Form Collection Name': [],  # groups
         'Form Name':            [],  # variable subgroups
-        'Field Variable Name': [] # single variables
+        'Field Variable Name': []  # single variables
     }
 
     # Add all 'Field Variable Name' from data_struct to
@@ -374,10 +383,9 @@ if __name__ == "__main__":
 
     # Options:
     #   see .\Classifiers
-    # model = XGB
-    model = LogReg # NOTE: do not initialize model here,
-    #                #       but supply the class (i.e. omit
-    #                #       the parentheses)
+    model = LogReg  # NOTE: do not initialize model here,
+                    #       but supply the class (i.e. omit
+                    #       the parentheses)
 
     ##### END PARAMETERS #####
     if not os.path.exists(r'./results'):
@@ -388,7 +396,7 @@ if __name__ == "__main__":
             vars_to_include = {
                 'Form Collection Name': [],  # groups
                 'Form Name':            [],  # variable subgroups
-                'Field Variable Name': [] # single variables
+                'Field Variable Name': []  # single variables
             }
             # single variables #FIXME: this is terrible
             vars_to_include['Field Variable Name'] += features
