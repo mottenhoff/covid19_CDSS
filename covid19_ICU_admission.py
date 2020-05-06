@@ -285,12 +285,8 @@ def score_prediction(model, clf, datasets, test_y_hat, rep):
 def evaluate_model(model, clf, datasets, scores):
     model.evaluate(clf, datasets, scores)
 
-<<<<<<< HEAD
-def run(data, data_struct, goal, variables_to_include, variables_to_exclude,
-=======
 
 def run(goal, variables_to_include, variables_to_exclude,
->>>>>>> ebafd536b04a368ee663fd6ae813a052087b0190
         train_test_split_method, model_class,
         save_figures=False, save_path='', save_prediction=False):
     model = model_class()
@@ -302,9 +298,12 @@ def run(goal, variables_to_include, variables_to_exclude,
                                                          variables_to_exclude,
                                                          goal)
 
-    model.save_path = '{}_n{}_y{}'.format(save_path, y.size, y.sum())
+    model = model_class()
+    model.goal = goal
     model.data_struct = data_struct
+    model.save_path = '{}_n{}_y{}'.format(save_path, y.size, y.sum())
     model.save_prediction = save_prediction
+
 
     if train_test_split_method == 'loho':
         # Leave-one-hospital-out
@@ -366,20 +365,11 @@ if __name__ == "__main__":
                     'pmcp': get_4_premorbid_clinical_representation(),
                     'all':  get_5_premorbid_clin_rep_lab_rad()}    
 
-<<<<<<< HEAD
     # Options:
     #   loho: Leave-one-hospital-out
     #   rss: random subsampling
     cv_opts = ['loho']
-=======
-    cv_opts = ['loho'] #'rss', 'loho']
 
-    variables_to_include = {
-        'Form Collection Name': [],  # groups
-        'Form Name':            [],  # variable subgroups
-        'Field Variable Name': []  # single variables
-    }
->>>>>>> ebafd536b04a368ee663fd6ae813a052087b0190
 
     # Add all 'Field Variable Name' from data_struct to
     # EXCLUDE variables from analysis
