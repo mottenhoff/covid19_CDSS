@@ -210,8 +210,11 @@ class LogReg:
         score = {
             'thr': thresholds,
             'conf_mats': conf_mats,
-            'roc_auc': roc_auc
-        }
+            'roc_auc': roc_auc,
+            'x': datasets['test_x'],
+            'y': datasets['test_y'],
+            'y_hat': test_y_hat
+            }
         
         return score
 
@@ -240,6 +243,7 @@ class LogReg:
         fig2, ax2 = self.plot_model_weights(datasets['test_x'].columns,
                                             show_n_features=self.evaluation_args['show_n_features'],
                                             normalize_coefs=self.evaluation_args['normalize_coefs'])
+        self.save_prediction(scores)
 
     def add_engineered_features(self, train_x, test_x):
         ''' Generate and add features'''
@@ -433,6 +437,15 @@ class LogReg:
                     figsize=self.fig_size, dpi=self.fig_dpi)
         return fig, ax
 
+    def save_prediction(self, scores):
+        x = pd.concat([score['x'] for score in scores], axis=0).reset_index(drop=True)
+        y_hat = pd.concat([pd.Series(score['y_hat']) for score in scores], axis=0).reset_index(drop=True)
+        y = pd.concat([score['y'] for score in scores], axis=0).reset_index(drop=True)
+
+        filename = self.save_path + '_Prediction.pkl'
+        pd.DataFrame(pd.concat([x, y, y_hat], axis=1), 
+                    columns=list(x.columns)+['y', 'y_hat']) \
+          .to_pickle(filename)
 
 def get_metrics(lst):
     n = len(lst)
