@@ -35,8 +35,8 @@ is_in_columns = lambda var_list, data: [v for v in var_list if v in data.columns
 def get_all_field_information(path_to_creds):
     study_struct, reports_struct, \
         optiongroups_struct = import_study_report_structure(path_to_creds)
-    answeroptions = pd.pivot_table(optiongroups_struct, 
-                                   index='Option Group Id', 
+    answeroptions = pd.pivot_table(optiongroups_struct,
+                                   index='Option Group Id',
                                    values=['Option Name','Option Value'],
                                    aggfunc=lambda x:list(x))
     study_struct_withoptions = pd.merge(study_struct, answeroptions,
@@ -45,7 +45,7 @@ def get_all_field_information(path_to_creds):
                                         right_on='Option Group Id')
     reports_struct_withoptions = pd.merge(reports_struct, answeroptions,
                                           how='left',
-                                          left_on='Field Option Group', 
+                                          left_on='Field Option Group',
                                           right_on='Option Group Id')
 
     data_struct = pd.concat([study_struct_withoptions, reports_struct_withoptions], axis=0)
@@ -73,7 +73,7 @@ def count_occurrences(col, record_ids, reset_count=False, start_count_at=1):
             unique_ids = ids.unique()
             for i in unique_ids[unique_ids != 0]:
                 new_col[ids==i] = np.arange(start_count_at, counts[i]+start_count_at)
-        else:     
+        else:
             new_col[col_slice!=0] = np.arange(start_count_at, counts[1:].sum()+start_count_at)
 
         new_cols += [new_col]
@@ -222,7 +222,7 @@ def get_classification_outcomes(data, outcomes):
     # 1) Binary death or alive
     #       Death (=1): Outcome death or palliative care at t=21
     #       Alive (=0): ~death
-    
+
     y = pd.Series(0, index=data.index)
     y.loc[outcomes.loc[:, 'Dood - totaal'] ==1] = 1
     y_dict['mortality_all'] = y
@@ -261,19 +261,19 @@ def get_survival_analysis_outcomes(data, outcomes):
     # 2) Event (=1): Death
     #    Duration (event=1): days until death
     #             (event=0): days since admission in current hospital
-    #                        TODO: Think about same exclusion at classification[y2] 
+    #                        TODO: Think about same exclusion at classification[y2]
     outcome_name = 'Patient has died'
 
     event = pd.Series(0, index=data.index)
     duration = outcomes.loc[:, 'Days until death']
     event.loc[duration.notna()] = 1
     duration.loc[duration.isna()] = data.loc[duration.isna(), 'days_since_admission_current_hosp']
-    
+
     y = pd.concat([event, duration], axis=1)
     y.columns = ['event_mortality', 'duration_mortality']
     y_dict['mortality_all'] = y
 
-    
+
     # 3) Event (=1): Discharged from ICU death or alive
     #          (=0): Admitted to ICU and still there
     #    Duration (=1): Days until ICU discharge
@@ -286,7 +286,7 @@ def get_survival_analysis_outcomes(data, outcomes):
 
     # No event happened yet
     is_at_icu = data.loc[:, 'days_at_icu'].notna()
-    has_no_outcome = outcomes.loc[:, 'Onbekend (alle patiënten zonder outcome)'] == 1 
+    has_no_outcome = outcomes.loc[:, 'Onbekend (alle patiënten zonder outcome)'] == 1
     has_icu_outcome = outcomes.loc[:, 'Levend dag 21 maar nog in het ziekenhuis - waarvan nu nog op IC'] == 1
     event.loc[(is_at_icu & has_no_outcome) | has_icu_outcome] = 0
 
@@ -306,12 +306,12 @@ def get_survival_analysis_outcomes(data, outcomes):
 def fix_single_errors(data):
     ''' Replaces values on the global dataframe,
     per column or per column and record Id.
-    The values to replace and new values are 
+    The values to replace and new values are
     located in error_replacement.py
 
     input:
         data: pd.Dataframe
-    
+
     output:
         data: pd.Dataframe
     '''
@@ -320,7 +320,7 @@ def fix_single_errors(data):
     for value_to_replace, replacement in get_global_fix_dict().items():
         data = data.mask(data==value_to_replace, replacement)
 
-    # Column fix 
+    # Column fix
     for column, replacement_pairs in get_column_fix_dict().items():
         for pair in replacement_pairs:
             data.loc[:, column] = data.loc[:, column] \
@@ -332,7 +332,7 @@ def fix_single_errors(data):
             for pair in replace_values:
                 data.loc[data['Record Id']==record_id, column] \
                     = data.loc[data['Record Id']==record_id, column] \
-                          .replace(pair[0], pair[1])   
+                          .replace(pair[0], pair[1])
     return data
 
 def transform_binary_features(data, data_struct):
@@ -418,7 +418,7 @@ def transform_categorical_features(data, data_struct):
     # Extract variables that can contain multiple answers OR need to be
     #   dummified to be used in a later stage
     vars_to_dummy = ['oxygen_saturation_on', 'dept', 'Outcome']
-    
+
     is_one_hot_encoded = data_struct['Field Type'].isin(['checkbox']) | \
                          data_struct['Field Variable Name'].isin(vars_to_dummy)
     data_struct.loc[is_one_hot_encoded, 'Field Type'] = 'category_one_not_encoded'
@@ -508,7 +508,6 @@ def transform_time_features(data, data_struct):
     TODO: Select time variables dynamically and update them in data_struct
     '''
     date_cols = ['Enrolment_date',	        # First patient presentation at (any) hospital AND report date (?)
-                 'age',	                    # Date of birth
                  'onset_dt',                # Disease onset
                  'admission_dt',            # Admission date at current hospital
                  'time_admission',          # Admission time at current hospital
@@ -535,7 +534,6 @@ def transform_time_features(data, data_struct):
     # ReInotropes_duration = Inotropes_last - inotroped_first
     most_recent_date = format_dt(data['assessment_dt'])         #most_recent_date = max(format_dt(data['Outcome_dt']), format_dt(data['assessment_dt']))
 
-    age =                   (most_recent_date - format_dt(data['age'])).dt.days // 365
     days_since_onset =      (most_recent_date - format_dt(data['onset_dt'])).dt.days
     days_in_current_hosp =  (most_recent_date - format_dt(data['admission_dt'])).dt.days
     days_since_first_hosp = (most_recent_date - format_dt(data['admission_facility_dt'])).dt.days
@@ -557,11 +555,11 @@ def transform_time_features(data, data_struct):
     # TODO: Days until readmission
     # TODO: Days Inotropes
 
-    df_time_feats = pd.concat([age, days_since_onset, days_in_current_hosp, days_since_first_hosp,
+    df_time_feats = pd.concat([days_since_onset, days_in_current_hosp, days_since_first_hosp,
                                days_untreated, days_until_outcome_3wk, days_until_outcome_6wk,
                                days_since_ICU_admission, days_since_ICU_discharge,
                                days_since_MC_admission, days_since_MC_discharge], axis=1)
-    df_time_feats.columns = ['age_yrs', 'days_since_onset', 'days_since_admission_current_hosp',
+    df_time_feats.columns = ['days_since_onset', 'days_since_admission_current_hosp',
                              'days_since_admission_first_hosp', 'days_untreated', 'days_until_outcome_3wk',
                              'days_until_outcome_6wk', 'days_since_icu_admission', 'days_since_icu_discharge',
                              'days_since_mc_admission', 'days_since_mc_discharge']
@@ -581,12 +579,11 @@ def transform_time_features(data, data_struct):
 
     # Add the new variables to the struct dataframe, so that they can be selected later on
     new_vars = pd.concat(
-        [pd.Series(['Study', 'BASELINE', 'DEMOGRAPHICS', 'age_yrs', 'Age', 'numeric', None, None])] +
         [pd.Series(['Study', 'HOSPITAL ADMISSION', 'ONSET & ADMISSION', 'days_since_onset', 'Days since disease onset', 'numeric', None, None])] +
         [pd.Series(['Study', 'HOSPITAL ADMISSION', 'ONSET & ADMISSION', 'days_since_admission_current_hosp', 'Days since admission at current hospital', 'numeric', None, None])] +
         [pd.Series(['Study', 'HOSPITAL ADMISSION', 'ONSET & ADMISSION', 'days_since_admission_first_hosp', 'Days since admission at first known hospital', 'numeric', None, None])] +
         [pd.Series(['Study', 'OUTCOME', 'OUTCOME', 'days_until_outcome_3wk', 'Days until outcome within 21 days', 'numeric', None, None])] +
-        [pd.Series(['Study', 'OUTCOME', 'OUTCOME', 'days_until_outcome_6wk', 'Days until outcome within 42 days', 'numeric', None, None])] +    
+        [pd.Series(['Study', 'OUTCOME', 'OUTCOME', 'days_until_outcome_6wk', 'Days until outcome within 42 days', 'numeric', None, None])] +
         [pd.Series(['Report', 'Daily case record form', 'Respiratory assessment', 'days_at_ward', 'Days at hospital ward', 'numeric', None, None])] +
         [pd.Series(['Report', 'Daily case record form', 'Respiratory assessment', 'days_at_mc', 'Days at medium care', 'numeric', None, None])] +
         [pd.Series(['Report', 'Daily case record form', 'Respiratory assessment', 'days_at_icu', 'Days at intensive care', 'numeric', None, None])],
@@ -595,6 +592,7 @@ def transform_time_features(data, data_struct):
     data_struct = data_struct.append(new_vars)
 
     return data, data_struct
+
 
 def transform_string_features(data, data_struct):
     # TODO: Why it med_specify not in data_struct?
@@ -617,6 +615,7 @@ def transform_string_features(data, data_struct):
                   index=data_struct.columns), ignore_index=True)
     return data, data_struct
 
+
 def transform_calculated_features(data, data_struct):
     struct_calc = data_struct.loc[data_struct['Field Type']=='calculation', :]
 
@@ -626,6 +625,7 @@ def transform_calculated_features(data, data_struct):
                     if c not in ['discharge_live_3wk', 'discharge_live_6wk']]
     data = data.drop(cols_to_drop, axis=1)
     return data, data_struct
+
 
 def select_data(data, data_struct):
     cols_to_keep = [col for col in data.columns
