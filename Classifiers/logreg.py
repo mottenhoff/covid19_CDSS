@@ -96,6 +96,7 @@ class LogReg:
         self.save_path = ''
         self.fig_size = (1280, 960)
         self.fig_dpi = 600
+        self.save_prediction = False
         
 
     def train(self, datasets):
@@ -243,7 +244,8 @@ class LogReg:
         fig2, ax2 = self.plot_model_weights(datasets['test_x'].columns,
                                             show_n_features=self.evaluation_args['show_n_features'],
                                             normalize_coefs=self.evaluation_args['normalize_coefs'])
-        self.save_prediction(scores)
+        if self.save_prediction:
+            self.save_prediction_to_file(scores)
 
     def add_engineered_features(self, train_x, test_x):
         ''' Generate and add features'''
@@ -437,7 +439,7 @@ class LogReg:
                     figsize=self.fig_size, dpi=self.fig_dpi)
         return fig, ax
 
-    def save_prediction(self, scores):
+    def save_prediction_to_file(self, scores):
         x = pd.concat([score['x'] for score in scores], axis=0).reset_index(drop=True)
         y_hat = pd.concat([pd.Series(score['y_hat']) for score in scores], axis=0).reset_index(drop=True)
         y = pd.concat([score['y'] for score in scores], axis=0).reset_index(drop=True)

@@ -182,6 +182,7 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
     x = x.loc[:, x.nunique() > 1]  # Remove columns without information
 
     if use_imputation:
+        # TODO: move inside pipeline
         x = impute_missing_values(x, data_struct)
 
     x = x.fillna(0)  # Fill missing values with 0 (0==missing or no asik)
@@ -277,17 +278,12 @@ def score_prediction(model, clf, datasets, test_y_hat, rep):
 def evaluate_model(model, clf, datasets, scores):
     model.evaluate(clf, datasets, scores)
 
-def run(goal, variables_to_include, variables_to_exclude,
+def run(data, data_struct, goal, variables_to_include, variables_to_exclude,
         train_test_split_method, model_class,
-        save_figures=False, save_path=''):
-    config = configparser.ConfigParser()
-    config.read('user_settings.ini')
-    path_creds = config['CastorCredentials']['local_private_path']
-
+        save_figures=False, save_path='', save_prediction=False):
     model = model_class()
     model.goal = goal
 
-    data, data_struct = load_data(path_creds)
     data, data_struct = preprocess(data, data_struct)
     x, y, data, hospital, records = prepare_for_learning(data, data_struct,
                                                 variables_to_include,
@@ -295,6 +291,7 @@ def run(goal, variables_to_include, variables_to_exclude,
 
     model.save_path = '{}_n{}_y{}'.format(save_path, y.size, y.sum())
     model.data_struct = data_struct
+    model.save_prediction = save_prediction
 
     if train_test_split_method == 'loho':
         # Leave-one-hospital-out
@@ -343,34 +340,26 @@ if __name__ == "__main__":
     # For more info: please check covid19_ICU_util.py:select_x_y()
     goal = ['classification', 'mortality_with_outcome']
 
-    save_figures = False
+    save_figures = True
+    save_prediction = False
 
     # Add all 'Field Variable Name' from data_struct to
     # INCLUDE variables from analysis
     #  NOTE: See get_feature_set.py for preset selections
-    feature_opts = {'pm': get_1_premorbid(),
-                    'cp': get_2_clinical_presentation(),
-                    'lab': get_3_laboratory_radiology_findings(),
+    feature_opts = {'pm':   get_1_premorbid(),
+                    'cp':   get_2_clinical_presentation(),
+                    'lab':  get_3_laboratory_radiology_findings(),
                     'pmcp': get_4_premorbid_clinical_representation(),
-                    'all': get_5_premorbid_clin_rep_lab_rad()}
-
-    cv_opts = ['loho'] #'rss', 'loho']
-
-
-    variables_to_include = {
-        'Form Collection Name': [],  # groups
-        'Form Name':            [],  # variable subgroups
-        'Field Variable Name': [] # single variables
-    }
-
-    # Add all 'Field Variable Name' from data_struct to
-    # EXCLUDE variables from analysis
-    variables_to_exclude = ['microbiology_worker']
+                    'all':  get_5_premorbid_clin_rep_lab_rad()}    
 
     # Options:
     #   loho: Leave-one-hospital-out
     #   rss: random subsampling
-    train_test_split_method = 'loho'
+    cv_opts = ['loho']
+
+    # Add all 'Field Variable Name' from data_struct to
+    # EXCLUDE variables from analysis
+    variables_to_exclude = ['microbiology_worker']
 
     # Options:
     #   see .\Classifiers
@@ -383,6 +372,11 @@ if __name__ == "__main__":
     if not os.path.exists(r'./results'):
         os.mkdir(r'./results')
 
+    config = configparser.ConfigParser()
+    config.read('user_settings.ini')
+    path_creds = config['CastorCredentials']['local_private_path']
+    data, data_struct = load_data(path_creds)
+
     for train_test_split_method in cv_opts:
         for feat_name, features in feature_opts.items():
             vars_to_include = {
@@ -393,6 +387,7 @@ if __name__ == "__main__":
             # single variables #FIXME: this is terrible
             vars_to_include['Field Variable Name'] += features
             save_path = './results/{}_{}'.format(train_test_split_method, feat_name)
-            run(goal, vars_to_include, variables_to_exclude,
+            run(data, data_struct, goal, vars_to_include, variables_to_exclude,
                 train_test_split_method, model,
-                save_figures=save_figures, save_path=save_path)
+                save_figures=save_figures, save_path=save_path,
+                save_prediction=save_prediction)
