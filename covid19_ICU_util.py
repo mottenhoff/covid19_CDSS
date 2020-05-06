@@ -97,7 +97,8 @@ def calculate_outcomes(data, data_struct):
     #                   9) Unknown
     #                  10) Discharged to home and re-admitted
 
-    #FIXME: terrible hack
+    #FIXME: terrible hack (works though)
+    # Adds an empty column with 0 for the outcome that is missing
     get_outcome_columns = lambda x: ['{}_{}'.format(str_, i) for i in x for str_ in ['Outcome_cat']]
     all_outcomes = get_outcome_columns(range(1,11))
     for outcome in all_outcomes:
