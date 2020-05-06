@@ -332,7 +332,7 @@ class LogReg:
         return importances
 
     def plot_model_results(self,
-                           aucs):
+                           aucs):  # , classifier='Logistic regression', outcome='ICU admission'):
 
         avg = sum(aucs) / max(len(aucs), 1)
         std = sqrt(sum([(auc - avg) ** 2 for auc in aucs]) / len(aucs))
@@ -340,14 +340,17 @@ class LogReg:
 
         fig, ax = plt.subplots(1, 1)
         ax.plot(aucs)
-        ax.set_title('{} - {}\nROC AUC: {:.3f} +- {:.3f} (95% CI)'
-                     .format('LogisticRegression', self.goal, avg, sem * 1.96))
+        ax.set_title('{}\nROC AUC: {:.3f} \u00B1 {:.3f} (95% CI)'
+                     .format('Logistic Regression', avg, sem * 1.96))
         ax.axhline(sum(aucs) / max(len(aucs), 1), color='g', linewidth=1)
         ax.axhline(.5, color='r', linewidth=1)
         ax.set_ylim(0, 1)
+        ax.set_xlabel('Iteration')
+        ax.set_ylabel('AUC')
         ax.legend(['ROC AUC', 'Average', 'Chance level'], bbox_to_anchor=(1, 0.5))
-        fig.savefig(self.save_path + '_LR_Performance_roc_auc_{:.3f}_{:.3f}.png'.format(
-            avg, sem * 1.96), dpi=1024)
+        fig.tight_layout()
+        fig.savefig(self.save_path + '_Performance_roc_auc_{}_{}.png'.format(avg, sem * 1.96),
+                    figsize=self.fig_size, dpi=self.fig_dpi)
 
         return fig, ax
 
@@ -378,30 +381,42 @@ class LogReg:
 
         auc_mean = auc_calc(fprs_mean, sens_mean)
 
-        plt.close('all')
         fig, ax = plt.subplots()
-        ax.errorbar(thrs[0], fprs_mean, yerr=fprs_ci, ecolor='k', label='fpr')
-        ax.set_xlabel('Probability Threshold')
+        ax.plot(thrs[0], fprs_mean, label='fpr')
+        ax.fill_between(thrs[0], fprs_mean - fprs_ci, fprs_mean + fprs_ci,
+                        color='b', alpha=.1)
+        ax.set_xlabel('Classification Threshold')
         ax.set_ylabel('False Positive Rate')
-        ax.set_title('Mean false positive rate per threshold.\nErrorbar = 95% confidence interval')
-        fig.savefig(self.save_path + '_LR_False_positive_rate.png')
+        ax.set_title(
+            'Mean false positive rate per threshold.\nErrorbar = 95% confidence interval')
+        fig.tight_layout()
+        fig.savefig(self.save_path + '_False_positive_rate.png',
+                    figsize=self.fig_size, dpi=self.fig_dpi)
 
         fig, ax = plt.subplots()
-        ax.errorbar(thrs[0], sens_mean, yerr=sens_ci, color='b', ecolor='k', label='Sensitivity')
-        ax.errorbar(thrs[0], spec_mean, yerr=spec_ci, color='r', ecolor='k', label='Specificity')
-        ax.legend()
-        ax.set_xlabel('Threshold')
-        ax.set_ylabel('Sensitiviy[TPR] / Specificity [TNR]')
+        ax.plot(thrs[0], sens_mean, color='b', label='Sensitivity')
+        ax.plot(thrs[0], spec_mean, color='r', label='Specificity')
+        ax.fill_between(thrs[0], sens_mean - sens_ci, sens_mean + sens_ci,
+                        color='b', alpha=.1)
+        ax.fill_between(thrs[0], spec_mean - spec_ci, spec_mean + spec_ci,
+                        color='r', alpha=.1)
+        ax.legend(bbox_to_anchor=(1, 0.5))
+        ax.set_xlabel('Classification Threshold')
+        ax.set_ylabel('Sensitiviy (TPR) / Specificity (TNR)')
         ax.set_title('Mean sensitivity and specitivity.\nErrorbar = 95% confidence interval')
-        fig.savefig(self.save_path + '_LR_sensitivity_vs_specificity.png')
+        fig.tight_layout()
+        fig.savefig(self.save_path + '_sensitivity_vs_specificity.png',
+                    figsize=self.fig_size, dpi=self.fig_dpi)
 
         fig, ax = plt.subplots()
         ax.step(fprs_mean, sens_mean, color='b')
         ax.plot([0, 1], [0, 1], color='k')
-        ax.set_title('Average ROC curve\n AUC: {:.3f}'.format(auc_mean))
-        ax.set_xlabel('Fall-Out [FPR]')
-        ax.set_ylabel('Sensitivity [TPR]')
-        fig.savefig(self.save_path + '_LR_average_roc.png')
+        ax.set_title('Average ROC curve\nAUC: {:.3f}'.format(auc_mean))
+        ax.set_xlabel('1 - Specificity (FPR)')  # Also Fall-Out / False Positive Rate
+        ax.set_ylabel('Sensitivity (TPR)')
+        fig.tight_layout()
+        fig.savefig(self.save_path + '_average_roc.png',
+                    figsize=self.fig_size, dpi=self.fig_dpi)
 
     def plot_model_weights(self, feature_labels, show_n_features=10,
                            normalize_coefs=False):
@@ -415,20 +430,20 @@ class LogReg:
 
         show_n_features = coefs.shape[1] if show_n_features is None else show_n_features
 
-        coefs = (coefs-coefs.mean(axis=0))/coefs.std(axis=0) if normalize_coefs else coefs
+        coefs = (coefs - coefs.mean(axis=0)) / coefs.std(axis=0) if normalize_coefs else coefs
 
         avg_coefs = abs(coefs.mean(axis=0))
-        mask_not_nan = ~np.isnan(avg_coefs) # Remove non-existent weights
+        mask_not_nan = ~np.isnan(avg_coefs)  # Remove non-existent weights
         avg_coefs = avg_coefs[mask_not_nan]
 
         var_coefs = coefs.var(axis=0)[mask_not_nan] if not normalize_coefs else None
         idx_sorted = avg_coefs.argsort()
-        n_bars = np.arange(avg_coefs.shape[0])                
+        n_bars = np.arange(avg_coefs.shape[0])
 
         labels = [self.var_dict.get(c) for c in feature_labels]
         has_no_label = labels
         for i, l in enumerate(labels):
-            if l==None:
+            if l == None:
                 labels[i] = feature_labels[i]
             elif 'chronic cardiac disease' in l.lower():
                 labels[i] = 'Chronic Cardiac Disease (Not hypertension)'
@@ -437,41 +452,50 @@ class LogReg:
         labels = np.array(labels)
         fontsize = 5.75 if labels.size < 50 else 5
         bar_width = .5  # bar width
-        
-        
+
         fig, ax = plt.subplots()
         if normalize_coefs:
             ax.barh(n_bars, avg_coefs[idx_sorted], bar_width, label='Weight')
             ax.set_title('Logistic regression - Average weight value')
         else:
             ax.set_title('Logistic regression - Average weight value')
-            ax.barh(n_bars, avg_coefs[idx_sorted], bar_width, xerr=var_coefs[idx_sorted], label='Weight')
+            ax.barh(n_bars, avg_coefs[idx_sorted], bar_width, xerr=var_coefs[idx_sorted],
+                    label='Weight')
         ax.set_yticks(n_bars)
-        ax.set_yticklabels(labels[idx_sorted], fontdict={'fontsize': fontsize})
-        ax.set_ylim(n_bars[0]-.5, n_bars[-1]+.5)
+        ax.set_yticklabels(labels[idx_sorted], fontdict={ 'fontsize': fontsize })
+        ax.set_ylim(n_bars[0] - .5, n_bars[-1] + .5)
         ax.set_xlabel('Weight{}'.format(' (normalized)' if normalize_coefs else ''))
         fig.tight_layout()
-        fig.savefig(self.save_path +'_Average_weight_variance.png',
+        fig.savefig(self.save_path + '_Average_weight_variance.png',
                     figsize=self.fig_size, dpi=self.fig_dpi)
         return fig, ax
 
+    def save_prediction_to_file(self, scores):
+        x = pd.concat([score['x'] for score in scores], axis=0).reset_index(drop=True)
+        y_hat = pd.concat([pd.Series(score['y_hat']) for score in scores], axis=0).reset_index(
+            drop=True)
+        y = pd.concat([score['y'] for score in scores], axis=0).reset_index(drop=True)
 
-def get_metrics(lst):
-    n = len(lst)
-    mean = sum(lst) / max(n, 1)
-    median = np.median(lst)
-    std = sqrt(sum([(value-mean)**2 for value in lst]) / n)
-    sem = std / sqrt(n)
-    ci = 1.96 * sem
+        filename = self.save_path + '_Prediction.pkl'
+        pd.DataFrame(pd.concat([x, y, y_hat], axis=1),
+                     columns=list(x.columns) + ['y', 'y_hat']) \
+            .to_pickle(filename)
 
-    return {'n': n,
-            'mean': mean,
-            'median': median,
-            'std': std,
-            'sem': sem,
-            'ci': ci}
+    @staticmethod
+    def get_metrics(lst):
+        n = len(lst)
+        mean = sum(lst) / max(n, 1)
+        median = np.median(lst)
+        std = sqrt(sum([(value - mean) ** 2 for value in lst]) / n)
+        sem = std / sqrt(n)
+        ci = 1.96 * sem
 
-
+        return {'n': n,
+                'mean': mean,
+                'median': median,
+                'std': std,
+                'sem': sem,
+                'ci': ci }
 
 
 
