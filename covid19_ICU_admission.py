@@ -50,6 +50,7 @@ from covid19_ICU_util import explore_data
 # classifiers
 from logreg import LogReg
 from gradboost import train_gradient_boosting
+from XGB import XGB
 
 # data
 from get_feature_set import get_1_premorbid
@@ -238,7 +239,7 @@ def train_and_predict(x, y, model, rep, type='subsamp', type_col=None, test_size
         # Default to random subsampling
         train_x, test_x, train_y, test_y = train_test_split(x, y,
                                                             test_size=test_size,
-                                                            stratify=y)
+                                                            stratify=y,random_state=0)
     datasets = {"train_x": train_x, "test_x": test_x,
                 "train_y": train_y, "test_y": test_y}
 

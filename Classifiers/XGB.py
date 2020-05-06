@@ -38,6 +38,7 @@ Datasets:   dictionary containin all training and test sets:
 '''
 from math import sqrt
 from xgboost import XGBClassifier
+from sklearn.ensemble import RandomForestClassifier
 #import shap
 from sklearn.model_selection import RandomizedSearchCV 
 
@@ -142,20 +143,30 @@ class XGB:
         # Initialize Classifier
         # clf = LogisticRegression(solver='lbfgs', penalty='l2', #class_weight='balanced', 
         #                         max_iter=200, random_state=0) # small dataset: solver='lbfgs'. multiclass: solver='lbgfs'
-        clf = XGBClassifier(random_state=0)
-
+        #clf = XGBClassifier(random_state=0)
+        clf = RandomForestClassifier(random_state=0)
+        
         print("Doing grid search for best parameters using pipeline!")
         self.grid = {
             'XGB__learning_rate': ([0.1, 0.01, 0.001]),
-            'XGB__gamma': ([0.1, 0.01, 0.001]),                  
+            #'XGB__gamma': ([0.1, 0.01, 0.001]),                  
+            'XGB__gamma': ([0, 1, 5]),                  
             'XGB__n_estimators':([100,200,300]),
-            'XGB__subsample': ([0.5,0.7, 0.9]),
-            'XGB__colsample_bytree': ([0.5,0.6,0.7,0.8]),
+            'XGB__subsample': ([0.5,0.6,0.7,0.8,0.9,1.0]),
+            'XGB__colsample_bytree': ([0.3,0.4,0.5,0.6,0.7,0.8,0.9]),
             'XGB__max_depth': ([2,4,6])
             }
 
-
-        grid = RandomizedSearchCV(clf, param_distributions=self.grid, cv=3,scoring='roc_auc',n_jobs=-2,random_state=0)
+        tuned_parameters = {
+        'n_estimators': ([200,400,500,600,800,1000,1200,1400]),
+        'max_features': (['auto', 'sqrt', 'log2']),                   # precomputed,'poly', 'sigmoid'
+        'max_depth':    ([10,20,30,40, 50, 60, 70, 80, 90, 100, None]),
+        'criterion':    (['gini', 'entropy']),
+        'min_samples_split':  [2,4,6,8],
+        'min_samples_leaf':   [2,4,6,8,10]}
+        
+        grid = RandomizedSearchCV(clf, param_distributions=tuned_parameters, cv=3,scoring='roc_auc',n_jobs=-2,random_state=0)
+        #
         
         #steps = [('scaler', StandardScaler()), ('XGB', XGBClassifier(random_state=0))]
 
@@ -165,7 +176,7 @@ class XGB:
 
         
         grid.fit(train_x, train_y)
-        #print('Best Params:',)
+        print('Best Params:',grid.best_params_)
         
         clf = grid.best_estimator_
    
@@ -253,13 +264,13 @@ class XGB:
     def add_engineered_features(self, train_x, test_x):
         ''' Generate and add features'''
         # TODO: Normalize/scale numeric features (also to 0 to 1?)
-        columns = train_x.columns
-        test_x = test_x.reset_index(drop=True)
+        #columns = train_x.columns
+        #test_x = test_x.reset_index(drop=True)
 
         #scaler = MinMaxScaler().fit(train_x)
-        scaler = StandardScaler().fit(train_x)
-        train_x = pd.DataFrame(scaler.transform(train_x), columns=columns)
-        test_x = pd.DataFrame(scaler.transform(test_x), columns=columns)
+        #scaler = StandardScaler().fit(train_x)
+        #train_x = pd.DataFrame(scaler.transform(train_x), columns=columns)
+        #test_x = pd.DataFrame(scaler.transform(test_x), columns=columns)
 
         # Dimensional transformation
         if self.model_args['apply_pca']:
