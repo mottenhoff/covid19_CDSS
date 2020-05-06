@@ -5,3 +5,4 @@ progressbar2==3.50.1
 sklearn==0.0
 requests==2.22.0
 castorapi==0.2
+xgboost==1.0.2
