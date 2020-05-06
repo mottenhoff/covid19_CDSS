@@ -49,6 +49,7 @@ from covid19_ICU_util import explore_data
 
 # classifiers
 from logreg import LogReg
+from XGB import XGB
 from gradboost import train_gradient_boosting
 
 # data
@@ -352,7 +353,7 @@ if __name__ == "__main__":
     # For more info: please check covid19_ICU_util.py:select_x_y()
     goal = ['classification', 'mortality_with_outcome']
 
-    save_figures = True
+    save_figures = False
 
     # Add all 'Field Variable Name' from data_struct to
     # INCLUDE variables from analysis
@@ -363,7 +364,7 @@ if __name__ == "__main__":
                     'pmcp': get_4_premorbid_clinical_representation(),
                     'all': get_5_premorbid_clin_rep_lab_rad()}
 
-    cv_opts = ['rss', 'loho']
+    cv_opts = ['loho'] #'rss', 'loho']
 
     variables_to_include = {
         'Form Collection Name': [],  # groups
@@ -378,7 +379,7 @@ if __name__ == "__main__":
     # Options:
     #   loho: Leave-one-hospital-out
     #   rss: random subsampling
-    train_test_split_method = 'rss'
+    train_test_split_method = 'loho'
 
     # Options:
     #   see .\Classifiers

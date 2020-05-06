@@ -5,11 +5,12 @@ def get_1_premorbid():
             'age_yrs','home_medication','ccd','hypertension','cpd','asthma','ckd',
             'live_disease','mld','cnd','mneoplasm','chd','immune_sup','aids_hiv',
             'diabetes_complications','diabetes_without_complications',
-            'rheuma_disorder','autoimm_disorder_1','Smoking','alcohol'] \
+            'rheuma_disorder','autoimm_disorder_1','Smoking','alcohol',
+            'uses_n_medicine'] \
             + ['ethnic_cat_'+str(i) for i in range(1, 11)]
 
 def get_2_clinical_presentation():
-    return ['days_since_onset','Temperature','HtR','irregular','rtr','sys_bp','dias_bp',
+    return ['days_untreated','Temperature','HtR','irregular','rtr','sys_bp','dias_bp',
             'capillary_refill','oxygen_saturation','oxygen_saturation_on','fever',
             'Dyspnea','Seizures','Bleeding_Haemorrhage']
 

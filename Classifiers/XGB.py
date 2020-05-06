@@ -144,7 +144,7 @@ class XGB:
         #                         max_iter=200, random_state=0) # small dataset: solver='lbfgs'. multiclass: solver='lbgfs'
         clf = XGBClassifier(random_state=0)
 
-        print("Doing grid search for best parameters using pipeline!")
+        # print("Doing grid search for best parameters using pipeline!")
         self.grid = {
             'XGB__learning_rate': ([0.1, 0.01, 0.001]),
             'XGB__gamma': ([0.1, 0.01, 0.001]),                  
@@ -315,12 +315,12 @@ class XGB:
         fig, ax = plt.subplots(1, 1)
         ax.plot(aucs)
         ax.set_title('{} - {}\nROC AUC: {:.3f} +- {:.3f} (95% CI)'
-                     .format('LogReg', self.goal, avg, sem*1.96))
+                     .format('XGBoost', self.goal, avg, sem*1.96))
         ax.axhline(sum(aucs)/max(len(aucs), 1), color='g', linewidth=1)
         ax.axhline(.5, color='r', linewidth=1)
         ax.set_ylim(0, 1)
         ax.legend(['ROC AUC', 'Average',  'Chance level'], bbox_to_anchor=(1, 0.5))
-        fig.savefig(self.save_path +'XGB_Performance_roc_auc_{}_{}.png'.format(avg, sem*1.96), dpi=1024)
+        fig.savefig(self.save_path +'_XGB_Performance_roc_auc_{}_{}.png'.format(avg, sem*1.96), dpi=1024)
 
         return fig, ax
 
@@ -354,7 +354,7 @@ class XGB:
         ax.set_xlabel('Probability Threshold')
         ax.set_ylabel('False Positive Rate')
         ax.set_title('Mean false positive rate per threshold.\nErrorbar = 95% confidence interval')
-        fig.savefig(self.save_path + 'XGB_False_positive_rate.png')
+        fig.savefig(self.save_path + '_XGB_False_positive_rate.png')
 
         fig, ax = plt.subplots()
         ax.errorbar(thrs[0], sens_mean, yerr=sens_ci, color='b', ecolor='k', label='Sensitivity')
@@ -363,7 +363,7 @@ class XGB:
         ax.set_xlabel('Threshold')
         ax.set_ylabel('Sensitiviy[TPR] / Specificity [TNR]')
         ax.set_title('Mean sensitivity and specitivity.\nErrorbar = 95% confidence interval')
-        fig.savefig(self.save_path +'XGB_sensitivity_vs_specificity.png')
+        fig.savefig(self.save_path +'_XGB_sensitivity_vs_specificity.png')
 
         fig, ax = plt.subplots()
         ax.step(fprs_mean, sens_mean, color='b')
@@ -371,7 +371,7 @@ class XGB:
         ax.set_title('Average ROC curve\n AUC: {:.3f}'.format(auc_mean))
         ax.set_xlabel('Fall-Out [FPR]')
         ax.set_ylabel('Sensitivity [TPR]')
-        fig.savefig(self.save_path +'XGB_average_roc.png')
+        fig.savefig(self.save_path +'_XGB_average_roc.png')
 
     def plot_model_weights(self, feature_labels, show_n_features=10,
                            normalize_coefs=False):
@@ -404,7 +404,7 @@ class XGB:
         ax.set_yticks(n_bars)
         ax.set_yticklabels(feature_labels[idx_sorted], fontdict={'fontsize': 6})
         ax.set_xlabel('Weight')
-        fig.savefig(self.save_path +'XGB_Average_weight_variance.png', figsize=(1280, 960), dpi=200)
+        fig.savefig(self.save_path +'_XGB_Average_weight_variance.png', figsize=(1280, 960), dpi=200)
         return fig, ax
         
 #        scaler = clf['scaler']
