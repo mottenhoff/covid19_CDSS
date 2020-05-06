@@ -104,7 +104,10 @@ class LogReg:
         self.save_path = ''
         self.fig_size = (1280, 960)
         self.fig_dpi = 600
+
         self.random_state = 0
+        self.save_prediction = False
+        
 
     def train(self, datasets):
         ''' Initialize, train and predict a classifier.
@@ -242,11 +245,15 @@ class LogReg:
         score = {
             'thr': thresholds,
             'conf_mats': conf_mats,
-            'roc_auc': roc_auc
-        }
-
+            'roc_auc': roc_auc,
+            'x': datasets['test_x'],
+            'y': datasets['test_y'],
+            'y_hat': test_y_hat
+            }
+        
         return score
 
+      
     def evaluate(self, clf, datasets, scores):
         ''' Evaluate the results of the modelling process,
         such as, feature importances.
@@ -272,6 +279,8 @@ class LogReg:
         fig2, ax2 = self.plot_model_weights(datasets['test_x'].columns,
                                             show_n_features=self.evaluation_args['show_n_features'],
                                             normalize_coefs=self.evaluation_args['normalize_coefs'])
+        if self.save_prediction:
+            self.save_prediction_to_file(scores)
 
     def add_engineered_features(self, train_x, test_x):
         ''' Generate and add features'''
@@ -496,6 +505,7 @@ class LogReg:
                 'std': std,
                 'sem': sem,
                 'ci': ci }
+
 
 
 

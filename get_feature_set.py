@@ -10,7 +10,7 @@ def get_1_premorbid():
             + ['ethnic_cat_'+str(i) for i in range(1, 11)]
 
 def get_2_clinical_presentation():
-    return ['days_since_onset','Temperature','HtR','irregular','rtr','sys_bp','dias_bp',
+    return ['days_untreated','Temperature','HtR','irregular','rtr','sys_bp','dias_bp',
             'capillary_refill','oxygen_saturation','oxygen_saturation_on','fever',
             'Dyspnea','Seizures','Bleeding_Haemorrhage']
 
