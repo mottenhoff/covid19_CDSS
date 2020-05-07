@@ -64,7 +64,7 @@ class LogReg:
         self.goal = None
         self.data_struct = None
         self.model_args = {
-            'apply_pca': True,
+            'apply_pca': False,
             'pca_n_components': 3,
 
             'select_features': False,
@@ -75,7 +75,7 @@ class LogReg:
         }
         
         self.score_args = {
-            'plot_n_rocaucs': 10,
+            'plot_n_rocaucs': 0,
             'n_thresholds': 50,
 
         }
@@ -444,10 +444,11 @@ class LogReg:
         y_hat = pd.concat([pd.Series(score['y_hat']) for score in scores], axis=0).reset_index(drop=True)
         y = pd.concat([score['y'] for score in scores], axis=0).reset_index(drop=True)
 
-        filename = self.save_path + '_Prediction.pkl'
-        pd.DataFrame(pd.concat([x, y, y_hat], axis=1), 
-                    columns=list(x.columns)+['y', 'y_hat']) \
-          .to_pickle(filename)
+        df = pd.concat([x, y, y_hat], axis=1)
+        df.columns=list(x.columns)+['y', 'y_hat']
+
+        filename = self.save_path + '_prediction.pkl'
+        df.to_pickle(filename)
 
 def get_metrics(lst):
     n = len(lst)
