@@ -297,9 +297,12 @@ def run(data, data_struct, goal, variables_to_include, variables_to_exclude,
                                                          variables_to_exclude,
                                                          goal)
 
-    model.save_path = '{}_n{}_y{}'.format(save_path, y.size, y.sum())
+    model = model_class()
+    model.goal = goal
     model.data_struct = data_struct
+    model.save_path = '{}_n{}_y{}'.format(save_path, y.size, y.sum())
     model.save_prediction = save_prediction
+
 
     if train_test_split_method == 'loho':
         # Leave-one-hospital-out
