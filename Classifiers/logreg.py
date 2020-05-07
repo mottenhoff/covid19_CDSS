@@ -56,7 +56,6 @@ import warnings
 from sklearn.exceptions import ConvergenceWarning
 # warnings.filterwarnings(action='ignore', category=ConvergenceWarning)
 
-
 class LogReg:
 
     def __init__(self):
@@ -70,6 +69,8 @@ class LogReg:
         self.goal = None
         self.data_struct = None
         self.model_args = {
+            'add_missing_indicator': False,
+            
             'apply_pca': False,
             'pca_n_components': 3,
 
@@ -77,7 +78,7 @@ class LogReg:
             'n_best_features': 10,
             'plot_feature_graph': True,
             
-            'grid_search': True
+            'grid_search': False
         }
 
         self.grid = {
@@ -131,6 +132,10 @@ class LogReg:
                 dict
             test_y_hat:: list
                 List containing the probabilities of outcomes.
+
+        # Add engineered features:
+        # TODO add PCA to pipeline
+        # train_x, test_x = self.add_engineered_features(train_x, test_x)
         '''
 
         train_x = datasets['train_x']
@@ -144,21 +149,19 @@ class LogReg:
         n_best_features = self.model_args['n_best_features']
         plot_feature_graph = self.model_args['plot_feature_graph']
 
-        # Add engineered features:
-        # TODO add PCA to pipeline
-        # train_x, test_x = self.add_engineered_features(train_x, test_x)
+        train_x = self.impute_missing_values(train_x)
+        test_x = self.impute_missing_values(test_x)
 
         # Initialize Classifier
-        # clf = LogisticRegression(solver='lbfgs', penalty='l2', #class_weight='balanced', 
-        #                         max_iter=200, random_state=self.random_state) # small dataset: solver='lbfgs'. multiclass: solver='lbgfs'
         clf = LogisticRegression(solver='saga', penalty='elasticnet', #class_weight='balanced', 
                                  l1_ratio=.5, max_iter=200, random_state=self.random_state)
 
         # Define pipeline
         # TODO Remove imputation from preprocessing and handle imputation for categoricals with
         #  additional missing category
-        steps = [('imputer', SimpleImputer(missing_values=np.nan, strategy='median',
-                                           add_indicator=True)),
+        steps = [('imputer', SimpleImputer(missing_values=np.nan, 
+                                           strategy='median',
+                                           add_indicator=self.model_args['add_missing_indicator'])),
                  ('scaler', StandardScaler()),
                  ('LR', clf)]
         pipeline = Pipeline(steps)
@@ -170,27 +173,24 @@ class LogReg:
                 self.importances = self.feature_contribution(pipeline, train_x, train_y,
                                                              plot_graph=plot_feature_graph)
                 self.n_best_features = np.argsort(self.importances)[-n_best_features:]
-                print('Select {} best features:\n{}'.format(self.model_args['n_best_features'],
-                                                            list(train_x.columns[
-                                                                     self.n_best_features])))
+                print('Select {} best features:\n{}'
+                        .format(self.model_args['n_best_features'],
+                                list(train_x.columns[self.n_best_features])))
             train_x = train_x.iloc[:, self.n_best_features]
             test_x = test_x.iloc[:, self.n_best_features]
 
         if self.model_args['grid_search']:
-            print("Train classfier using grid search for best parameters.")
+            # print("Train classfier using grid search for best parameters.")
 
             cv = StratifiedShuffleSplit(n_splits=5, test_size=0.2, random_state=self.random_state)
-
             grid = GridSearchCV(pipeline, param_grid=self.grid, cv=cv,
                                 scoring='roc_auc', n_jobs=-2)
-
             grid.fit(train_x, train_y)
-
             clf = grid.best_estimator_
             print("Best estimator: ", clf)
 
         else:
-            print("Train classifier without optimization.")
+            # print("Train classifier without optimization.")
             clf = pipeline
             clf.fit(train_x, train_y)  # Model
 
@@ -252,7 +252,6 @@ class LogReg:
             }
         
         return score
-
       
     def evaluate(self, clf, datasets, scores):
         ''' Evaluate the results of the modelling process,
@@ -274,6 +273,7 @@ class LogReg:
                                  self.data_struct['Field Label']))
         cms = [score['conf_mats'] for score in scores]
         thresholds = [score['thr'] for score in scores]
+        
         self.analyse_fpr(cms, thresholds)
         fig, ax = self.plot_model_results([score['roc_auc'] for score in scores])
         fig2, ax2 = self.plot_model_weights(datasets['test_x'].columns,
@@ -281,6 +281,22 @@ class LogReg:
                                             normalize_coefs=self.evaluation_args['normalize_coefs'])
         if self.save_prediction:
             self.save_prediction_to_file(scores)
+
+    def impute_missing_values(self, data, missing_class=-1):
+        data = data.copy()  # Prevents copy warning
+
+        # Categorical
+        vars_categorical = get_fields_per_type(data, self.data_struct, 'category')
+        data.loc[:, vars_categorical] = data[vars_categorical].fillna(missing_class, axis=0)
+    
+
+        # # Numeric
+        # vars_numeric = get_fields_per_type(data, self.data_struct, 'numeric')
+        # data.loc[:, vars_numeric] = data.loc[:, vars_numeric] \
+        #                                 .fillna(data.loc[:, vars_numeric] \
+        #                                             .median())
+        # data = data.fillna(0).astype(float)
+        return data
 
     def add_engineered_features(self, train_x, test_x):
         ''' Generate and add features'''
@@ -370,20 +386,20 @@ class LogReg:
 
         thrs = np.asarray(thresholds)
 
-        fprs = np.array([div(i[1], i[1] + i[0]) for cm in cms for i in cm]).reshape(
-            (len(self.learn_size), 50))
+        fprs = np.array([div(i[1], i[1] + i[0]) for cm in cms for i in cm]) \
+                 .reshape((len(self.learn_size), 50))
         fprs_mean = fprs.mean(axis=0)
         fprs_std = fprs.std(axis=0)
         fprs_ci = (fprs_std / sqrt(fprs.shape[0])) * 1.96
 
-        sens = np.array([div(i[3], i[3] + i[2]) for cm in cms for i in cm]).reshape(
-            (len(self.learn_size), 50))
+        sens = np.array([div(i[3], i[3] + i[2]) for cm in cms for i in cm]) \
+                 .reshape((len(self.learn_size), 50))
         sens_mean = sens.mean(axis=0)
         sens_std = sens.std(axis=0)
         sens_ci = (sens_std / sqrt(sens.shape[0])) * 1.96
 
-        spec = np.array([div(i[0], i[0] + i[1]) for cm in cms for i in cm]).reshape(
-            (len(self.learn_size), 50))
+        spec = np.array([div(i[0], i[0] + i[1]) for cm in cms for i in cm]) \
+                 .reshape((len(self.learn_size), 50))
         spec_mean = spec.mean(axis=0)
         spec_std = spec.std(axis=0)
         spec_ci = (spec_std / sqrt(spec.shape[0])) * 1.96
@@ -396,8 +412,7 @@ class LogReg:
                         color='b', alpha=.1)
         ax.set_xlabel('Classification Threshold')
         ax.set_ylabel('False Positive Rate')
-        ax.set_title(
-            'Mean false positive rate per threshold.\nErrorbar = 95% confidence interval')
+        ax.set_title('Mean false positive rate per threshold.\nErrorbar = 95% confidence interval')
         fig.tight_layout()
         fig.savefig(self.save_path + '_False_positive_rate.png',
                     figsize=self.fig_size, dpi=self.fig_dpi)
@@ -481,8 +496,8 @@ class LogReg:
 
     def save_prediction_to_file(self, scores):
         x = pd.concat([score['x'] for score in scores], axis=0).reset_index(drop=True)
-        y_hat = pd.concat([pd.Series(score['y_hat']) for score in scores], axis=0).reset_index(
-            drop=True)
+        y_hat = pd.concat([pd.Series(score['y_hat']) for score in scores], axis=0) \
+                  .reset_index(drop=True)
         y = pd.concat([score['y'] for score in scores], axis=0).reset_index(drop=True)
 
         df = pd.concat([x, y, y_hat], axis=1)
@@ -490,6 +505,7 @@ class LogReg:
 
         filename = self.save_path + '_prediction.pkl'
         df.to_pickle(filename)
+
 
 @staticmethod
 def get_metrics(lst):
@@ -507,7 +523,10 @@ def get_metrics(lst):
             'sem': sem,
             'ci': ci}
 
-
+def get_fields_per_type(data, data_struct, type):
+    fields = data_struct.loc[data_struct['Field Type']=='category',
+                            'Field Variable Name'].to_list()
+    return [field for field in fields if field in data.columns]
 
 
 

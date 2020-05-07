@@ -103,7 +103,6 @@ def load_data_api(path_credentials):
 
     return df_study, df_report, data_struct
 
-
 def load_data(path_to_creds):
     ''' Loads data and combines the different
     returned dataframes.
@@ -132,7 +131,6 @@ def load_data(path_to_creds):
 
     return data, data_struct
 
-
 def preprocess(data, data_struct):
     ''' Processed the data per datatype.'''
 
@@ -151,7 +149,6 @@ def preprocess(data, data_struct):
     data, data_struct = select_data(data, data_struct)
 
     return data, data_struct
-
 
 def prepare_for_learning(data, data_struct, variables_to_incl,
                          variables_to_exclude, goal,
@@ -185,13 +182,14 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
     x = x.drop(['hospital', 'Record Id'], axis=1)
     x = x.loc[:, x.nunique() > 1]  # Remove columns without information
 
-    if use_imputation:
-        # TODO: move inside pipeline
-        x = impute_missing_values(x, data_struct)
+    # if use_imputation:
+    #     # TODO: move inside pipeline
+    #     x = impute_missing_values(x, data_struct)
 
-    x = x.fillna(0)  # Fill missing values with 0 (0==missing or no asik)
+    # x = x.fillna(0)  # Fill missing values with 0 (0==missing or no asik)
 
-    x = x.astype(float)
+    # x = x.astype(float)
+    
     print('LOG: Using <{}:{}> as y.'.format(goal[0], goal[1]))
     print('LOG: Selected {} variables for predictive model'
           .format(x.columns.size))
@@ -203,7 +201,6 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
         y = y.loc[has_y]
 
     return x, y, data, hospital, records
-
 
 def train_and_predict(x, y, model, rep, type='subsamp', type_col=None, test_size=0.2):
     ''' Splits data into train and test set using
@@ -252,7 +249,6 @@ def train_and_predict(x, y, model, rep, type='subsamp', type_col=None, test_size
     clf, datasets, test_y_hat = model.train(datasets)
     return clf, datasets, test_y_hat
 
-
 def score_prediction(model, clf, datasets, test_y_hat, rep):
     ''' Wrapper for scoring individual predictions made
     by clf in model
@@ -280,7 +276,6 @@ def score_prediction(model, clf, datasets, test_y_hat, rep):
     print('.', end='', flush=True)
     score = model.score(clf, datasets, test_y_hat, rep)
     return score
-
 
 def evaluate_model(model, clf, datasets, scores):
     model.evaluate(clf, datasets, scores)
@@ -402,3 +397,5 @@ if __name__ == "__main__":
                 train_test_split_method, model,
                 save_figures=save_figures, save_path=save_path,
                 save_prediction=save_prediction)
+
+    plt.show()

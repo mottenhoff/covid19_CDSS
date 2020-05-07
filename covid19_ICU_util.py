@@ -594,7 +594,6 @@ def transform_time_features(data, data_struct):
 
     return data, data_struct
 
-
 def transform_string_features(data, data_struct):
     # TODO: Why it med_specify not in data_struct?
 
@@ -616,7 +615,6 @@ def transform_string_features(data, data_struct):
                   index=data_struct.columns), ignore_index=True)
     return data, data_struct
 
-
 def transform_calculated_features(data, data_struct):
     struct_calc = data_struct.loc[data_struct['Field Type']=='calculation', :]
 
@@ -626,7 +624,6 @@ def transform_calculated_features(data, data_struct):
                     if c not in ['discharge_live_3wk', 'discharge_live_6wk']]
     data = data.drop(cols_to_drop, axis=1)
     return data, data_struct
-
 
 def select_data(data, data_struct):
     cols_to_keep = [col for col in data.columns
@@ -666,21 +663,32 @@ def select_variables(data, data_struct, variables_to_include_dict):
     return data.loc[:, variables_to_include]
 
 def impute_missing_values(data, data_struct):
+    ''' 
+    NOTE: DEPRECATED in upcoming versions
+    NOTE: Only impute values that not leak data.
+          i.e. only use single field or 
+          record based imputations. '''
 
-    # Categorical --> Most prevalent class
+    missing_class = -1
+    # Categorical --> Add a missing class
     vars_categorical = is_in_columns(data_struct.loc[data_struct['Field Type']=='category', 'Field Variable Name'].to_list(), data)
-    data.loc[:, vars_categorical] = data.loc[:, vars_categorical] \
-                                        .fillna(data.loc[:, vars_categorical] \
-                                                    .mode().iloc[0])
+    
+    data.loc[:, vars_categorical] = data.loc[:, vars_categorical].fillna(missing_class)
 
+    ## MODE should be moved to Pipeline in Classifier to prevent data leakage
+    # data.loc[:, vars_categorical] = data.loc[:, vars_categorical] \
+    #                                     .fillna(data.loc[:, vars_categorical] \
+    #                                                 .mode().iloc[0])
+
+    ## Median should also be moved to Pipeline
     # Numeric --> Median value
-    vars_numeric = is_in_columns(data_struct.loc[data_struct['Field Type']=='numeric', 'Field Variable Name'].to_list(), data)
-    data.loc[:, vars_numeric] = data.loc[:, vars_numeric] \
-                                    .fillna(data.loc[:, vars_numeric] \
-                                                .median())
+    # vars_numeric = is_in_columns(data_struct.loc[data_struct['Field Type']=='numeric', 'Field Variable Name'].to_list(), data)
+    # data.loc[:, vars_numeric] = data.loc[:, vars_numeric] \
+    #                                 .fillna(data.loc[:, vars_numeric] \
+    #                                             .median())
 
     # Binary (and all else) --> 0
-    data = data.fillna(0)
+    # data = data.fillna(0)
 
     return data
 
