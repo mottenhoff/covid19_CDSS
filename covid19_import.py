@@ -12,9 +12,6 @@ import os
 import configparser
 import castorapi as ca
 
-# TODO: free text fields are now ignored
-# TODO: filter on TEST institution rather than on patient 000001. (if possible)
-
 
 def import_data_by_record(path_to_api_creds=None):
     config = configparser.ConfigParser()
@@ -47,7 +44,6 @@ def import_data_by_record(path_to_api_creds=None):
         institute_id=test_inst['institute_id'])]
     test_records += [r['record_id'] for r in c.request_study_records()
                      if r['archived'] == 1]
-
     df_study.drop(
         index=df_study[df_study['Record Id'].isin(test_records)].index,
         inplace=True)
