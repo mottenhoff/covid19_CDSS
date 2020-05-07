@@ -93,7 +93,8 @@ class LogReg:
 
         self.evaluation_args = {
             'show_n_features': None,
-            'normalize_coefs': True
+            'normalize_coefs': True,
+            'plot_analyse_fpr': False
         }
 
         self.coefs = []
@@ -276,7 +277,7 @@ class LogReg:
         
         self.analyse_fpr(cms, thresholds)
         fig, ax = self.plot_model_results([score['roc_auc'] for score in scores])
-        fig2, ax2 = self.plot_model_weights(datasets['test_x'].columns,
+        fig2, ax2 = self.plot_model_weights(datasets['test_x'].columns, clf,
                                             show_n_features=self.evaluation_args['show_n_features'],
                                             normalize_coefs=self.evaluation_args['normalize_coefs'])
         if self.save_prediction:
@@ -405,45 +406,51 @@ class LogReg:
         spec_ci = (spec_std / sqrt(spec.shape[0])) * 1.96
 
         auc_mean = auc_calc(fprs_mean, sens_mean)
+        if self.evaluation_args['plot_analyse_fpr']:
+            fig, ax = plt.subplots()
+            ax.plot(thrs[0], fprs_mean, label='fpr')
+            ax.fill_between(thrs[0], fprs_mean - fprs_ci, fprs_mean + fprs_ci,
+                            color='b', alpha=.1)
+            ax.set_xlabel('Classification Threshold')
+            ax.set_ylabel('False Positive Rate')
+            ax.set_title('Mean false positive rate per threshold.\nErrorbar = 95% confidence interval')
+            fig.tight_layout()
+            fig.savefig(self.save_path + '_False_positive_rate.png',
+                        figsize=self.fig_size, dpi=self.fig_dpi)
 
-        fig, ax = plt.subplots()
-        ax.plot(thrs[0], fprs_mean, label='fpr')
-        ax.fill_between(thrs[0], fprs_mean - fprs_ci, fprs_mean + fprs_ci,
-                        color='b', alpha=.1)
-        ax.set_xlabel('Classification Threshold')
-        ax.set_ylabel('False Positive Rate')
-        ax.set_title('Mean false positive rate per threshold.\nErrorbar = 95% confidence interval')
-        fig.tight_layout()
-        fig.savefig(self.save_path + '_False_positive_rate.png',
-                    figsize=self.fig_size, dpi=self.fig_dpi)
+            fig, ax = plt.subplots()
+            ax.plot(thrs[0], sens_mean, color='b', label='Sensitivity')
+            ax.plot(thrs[0], spec_mean, color='r', label='Specificity')
+            ax.fill_between(thrs[0], sens_mean - sens_ci, sens_mean + sens_ci,
+                            color='b', alpha=.1)
+            ax.fill_between(thrs[0], spec_mean - spec_ci, spec_mean + spec_ci,
+                            color='r', alpha=.1)
+            ax.legend(bbox_to_anchor=(1, 0.5))
+            ax.set_xlabel('Classification Threshold')
+            ax.set_ylabel('Sensitiviy (TPR) / Specificity (TNR)')
+            ax.set_title('Mean sensitivity and specitivity.\nErrorbar = 95% confidence interval')
+            fig.tight_layout()
+            fig.savefig(self.save_path + '_sensitivity_vs_specificity.png',
+                        figsize=self.fig_size, dpi=self.fig_dpi)
 
-        fig, ax = plt.subplots()
-        ax.plot(thrs[0], sens_mean, color='b', label='Sensitivity')
-        ax.plot(thrs[0], spec_mean, color='r', label='Specificity')
-        ax.fill_between(thrs[0], sens_mean - sens_ci, sens_mean + sens_ci,
-                        color='b', alpha=.1)
-        ax.fill_between(thrs[0], spec_mean - spec_ci, spec_mean + spec_ci,
-                        color='r', alpha=.1)
-        ax.legend(bbox_to_anchor=(1, 0.5))
-        ax.set_xlabel('Classification Threshold')
-        ax.set_ylabel('Sensitiviy (TPR) / Specificity (TNR)')
-        ax.set_title('Mean sensitivity and specitivity.\nErrorbar = 95% confidence interval')
-        fig.tight_layout()
-        fig.savefig(self.save_path + '_sensitivity_vs_specificity.png',
-                    figsize=self.fig_size, dpi=self.fig_dpi)
+            fig, ax = plt.subplots()
+            ax.step(fprs_mean, sens_mean, color='b')
+            ax.plot([0, 1], [0, 1], color='k')
+            ax.set_title('Average ROC curve\nAUC: {:.3f}'.format(auc_mean))
+            ax.set_xlabel('1 - Specificity (FPR)')  # Also Fall-Out / False Positive Rate
+            ax.set_ylabel('Sensitivity (TPR)')
+            fig.tight_layout()
+            fig.savefig(self.save_path + '_average_roc.png',
+                        figsize=self.fig_size, dpi=self.fig_dpi)
 
-        fig, ax = plt.subplots()
-        ax.step(fprs_mean, sens_mean, color='b')
-        ax.plot([0, 1], [0, 1], color='k')
-        ax.set_title('Average ROC curve\nAUC: {:.3f}'.format(auc_mean))
-        ax.set_xlabel('1 - Specificity (FPR)')  # Also Fall-Out / False Positive Rate
-        ax.set_ylabel('Sensitivity (TPR)')
-        fig.tight_layout()
-        fig.savefig(self.save_path + '_average_roc.png',
-                    figsize=self.fig_size, dpi=self.fig_dpi)
-
-    def plot_model_weights(self, feature_labels, show_n_features=10,
-                           normalize_coefs=False):
+    def plot_model_weights(self, feature_labels, clf, 
+                           show_n_features=10, normalize_coefs=False):
+        if self.model_args['add_missing_indicator']:
+            # ADD featuere labels for missing feature indicators
+            feature_labels = feature_labels.to_list() \
+                             + ['m_id_{}'.format(feature_labels[i])\
+                                for i in clf.named_steps.imputer.indicator_.features_]
+                             
         coefs = self.coefs
         intercepts = self.intercepts
         coefs = np.array(coefs).squeeze()
