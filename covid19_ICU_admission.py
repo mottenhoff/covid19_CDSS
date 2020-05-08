@@ -103,6 +103,7 @@ def load_data_api(path_credentials):
 
     return df_study, df_report, data_struct
 
+
 def load_data(path_to_creds):
     ''' Loads data and combines the different
     returned dataframes.
@@ -189,7 +190,7 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
     # x = x.fillna(0)  # Fill missing values with 0 (0==missing or no asik)
 
     # x = x.astype(float)
-    
+
     print('LOG: Using <{}:{}> as y.'.format(goal[0], goal[1]))
     print('LOG: Selected {} variables for predictive model'
           .format(x.columns.size))
@@ -357,7 +358,7 @@ if __name__ == "__main__":
                     'cp':   get_2_clinical_presentation(),
                     'lab':  get_3_laboratory_radiology_findings(),
                     'pmcp': get_4_premorbid_clinical_representation(),
-                    'all':  get_5_premorbid_clin_rep_lab_rad()}    
+                    'all':  get_5_premorbid_clin_rep_lab_rad()}
 
     # Options:
     #   loho: Leave-one-hospital-out
