@@ -49,8 +49,8 @@ from covid19_ICU_util import explore_data
 
 # classifiers
 from logreg import LogReg
-from gradboost import train_gradient_boosting
 from XGB import XGB
+from gradboost import train_gradient_boosting
 
 # data
 from get_feature_set import get_1_premorbid
@@ -62,6 +62,7 @@ from get_feature_set import get_6_all
 
 
 is_in_columns = lambda var_list, data: [v for v in var_list if v in data.columns]
+
 
 def load_data_api(path_credentials):
 
@@ -178,15 +179,17 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
     # Remove columns without information
     hospital = x.loc[:, 'hospital']
     records = x.loc[:, 'Record Id']
-    x = x.drop(['hospital','Record Id'], axis=1)
+    x = x.drop(['hospital', 'Record Id'], axis=1)
     x = x.loc[:, x.nunique() > 1]  # Remove columns without information
 
-    if use_imputation:
-        x = impute_missing_values(x, data_struct)
+    # if use_imputation:
+    #     # TODO: move inside pipeline
+    #     x = impute_missing_values(x, data_struct)
 
-    x = x.fillna(0)  # Fill missing values with 0 (0==missing or no asik)
+    # x = x.fillna(0)  # Fill missing values with 0 (0==missing or no asik)
 
-    x = x.astype(float)
+    # x = x.astype(float)
+    
     print('LOG: Using <{}:{}> as y.'.format(goal[0], goal[1]))
     print('LOG: Selected {} variables for predictive model'
           .format(x.columns.size))
@@ -227,7 +230,7 @@ def train_and_predict(x, y, model, rep, type='subsamp', type_col=None, test_size
             clf on test y.
     '''
 
-    if type=='loho':
+    if type == 'loho':
         # Leave-one-hospital-out cross-validation
         test_hosp = type_col.unique()[rep]
         is_test_hosp = type_col == test_hosp
@@ -239,7 +242,7 @@ def train_and_predict(x, y, model, rep, type='subsamp', type_col=None, test_size
         # Default to random subsampling
         train_x, test_x, train_y, test_y = train_test_split(x, y,
                                                             test_size=test_size,
-                                                            stratify=y,random_state=0)
+                                                            stratify=y)
     datasets = {"train_x": train_x, "test_x": test_x,
                 "train_y": train_y, "test_y": test_y}
 
@@ -277,23 +280,24 @@ def score_prediction(model, clf, datasets, test_y_hat, rep):
 def evaluate_model(model, clf, datasets, scores):
     model.evaluate(clf, datasets, scores)
 
-def run(goal, variables_to_include, variables_to_exclude,
+def run(data, data_struct, goal, variables_to_include, variables_to_exclude,
         train_test_split_method, model_class,
-        save_figures=False, save_path=''):
-    config = configparser.ConfigParser()
-    config.read('user_settings.ini')
-    path_creds = config['CastorCredentials']['local_private_path']
-
+        save_figures=False, save_path='', save_prediction=False):
     model = model_class()
     model.goal = goal
 
-    data, data_struct = load_data(path_creds)
     data, data_struct = preprocess(data, data_struct)
     x, y, data, hospital, records = prepare_for_learning(data, data_struct,
-                                                variables_to_include,
-                                                variables_to_exclude, goal)
-
+                                                         variables_to_include,
+                                                         variables_to_exclude,
+                                                         goal)
+    x= x[x.columns[x.isnull().mean() < 0.8]]
+    model = model_class()
+    model.goal = goal
+    model.data_struct = data_struct
     model.save_path = '{}_n{}_y{}'.format(save_path, y.size, y.sum())
+    model.save_prediction = save_prediction
+
 
     if train_test_split_method == 'loho':
         # Leave-one-hospital-out
@@ -305,8 +309,8 @@ def run(goal, variables_to_include, variables_to_exclude,
     scores = []
     for rep in range(repetitions):
         clf, datasets, test_y_hat = train_and_predict(x, y, model, rep,
-                                                        type=train_test_split_method,
-                                                        type_col=hospital)
+                                                      type=train_test_split_method,
+                                                      type_col=hospital)
         score = score_prediction(model, clf, datasets,
                                  test_y_hat, rep)
         scores.append(score)
@@ -317,6 +321,7 @@ def run(goal, variables_to_include, variables_to_exclude,
         plt.show()
 
     print('\n', flush=True)
+
 
 if __name__ == "__main__":
     ##### START PARAMETERS #####
@@ -343,54 +348,54 @@ if __name__ == "__main__":
     goal = ['classification', 'mortality_with_outcome']
 
     save_figures = True
+    save_prediction = True
 
     # Add all 'Field Variable Name' from data_struct to
     # INCLUDE variables from analysis
     #  NOTE: See get_feature_set.py for preset selections
-    feature_opts = {'pm': get_1_premorbid(),
-                    'cp': get_2_clinical_presentation(),
-                    'lab': get_3_laboratory_radiology_findings(),
+    feature_opts = {'pm':   get_1_premorbid(),
+                    'cp':   get_2_clinical_presentation(),
+                    'lab':  get_3_laboratory_radiology_findings(),
                     'pmcp': get_4_premorbid_clinical_representation(),
-                    'all': get_5_premorbid_clin_rep_lab_rad()}
+                    'all':  get_5_premorbid_clin_rep_lab_rad()}    
 
-    cv_opts = ['rss', 'loho']
-
-
-    variables_to_include = {
-        'Form Collection Name': [],  # groups
-        'Form Name':            [],  # variable subgroups
-        'Field Variable Name': [] # single variables
-    }
+    # Options:
+    #   loho: Leave-one-hospital-out
+    #   rss: random subsampling
+    cv_opts = ['loho']
 
     # Add all 'Field Variable Name' from data_struct to
     # EXCLUDE variables from analysis
     variables_to_exclude = ['microbiology_worker']
 
     # Options:
-    #   loho: Leave-one-hospital-out
-    #   rss: random subsampling
-    train_test_split_method = 'rss'
-
-    # Options:
     #   see .\Classifiers
-    model = LogReg # NOTE: do not initialize model here,
-                   #       but supply the class (i.e. omit
-                   #       the parentheses)
+    model = XGB  # NOTE: do not initialize model here,
+                    #       but supply the class (i.e. omit
+                    #       the parentheses)
 
     ##### END PARAMETERS #####
     if not os.path.exists(r'./results'):
         os.mkdir(r'./results')
+
+    config = configparser.ConfigParser()
+    config.read('user_settings.ini')
+    path_creds = config['CastorCredentials']['local_private_path']
+    data, data_struct = load_data(path_creds)
 
     for train_test_split_method in cv_opts:
         for feat_name, features in feature_opts.items():
             vars_to_include = {
                 'Form Collection Name': [],  # groups
                 'Form Name':            [],  # variable subgroups
-                'Field Variable Name': [] # single variables
+                'Field Variable Name': []  # single variables
             }
             # single variables #FIXME: this is terrible
             vars_to_include['Field Variable Name'] += features
             save_path = './results/{}_{}'.format(train_test_split_method, feat_name)
-            run(goal, vars_to_include, variables_to_exclude,
+            run(data, data_struct, goal, vars_to_include, variables_to_exclude,
                 train_test_split_method, model,
-                save_figures=save_figures, save_path=save_path)
+                save_figures=save_figures, save_path=save_path,
+                save_prediction=save_prediction)
+
+    plt.show()

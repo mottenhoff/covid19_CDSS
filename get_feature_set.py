@@ -5,11 +5,12 @@ def get_1_premorbid():
             'age_yrs','home_medication','ccd','hypertension','cpd','asthma','ckd',
             'live_disease','mld','cnd','mneoplasm','chd','immune_sup','aids_hiv',
             'diabetes_complications','diabetes_without_complications',
-            'rheuma_disorder','autoimm_disorder_1','Smoking','alcohol'] \
+            'rheuma_disorder','autoimm_disorder_1','Smoking','alcohol',
+            'uses_n_medicine'] \
             + ['ethnic_cat_'+str(i) for i in range(1, 11)]
 
 def get_2_clinical_presentation():
-    return ['days_since_onset','Temperature','HtR','irregular','rtr','sys_bp','dias_bp',
+    return ['days_untreated','Temperature','HtR','irregular','rtr','sys_bp','dias_bp',
             'capillary_refill','oxygen_saturation','oxygen_saturation_on','fever',
             'Dyspnea','Seizures','Bleeding_Haemorrhage']
 
@@ -21,7 +22,7 @@ def get_3_laboratory_radiology_findings():
             'Calcium_adm','crp_1_1','Blood_albumin_value_1','creatininekinase',
             'LDH','d_dimer','ferritine_admin_spec','fibrinogen_admin',
             'oxygentherapy_1','fio2_1','SaO2_1','PaO2_1','PCO2_1','PH_value_1',
-            'Influenza','Coronavirus','RSV_','Adenovirus','Bacteria','culture',
+            'Influenza','Coronavirus','Adenovirus','Bacteria','culture',
             'infec_resp_diagnosis','infiltrates_2','CT_thorax_performed',
             'corads_admission']
 
@@ -34,7 +35,7 @@ def get_5_premorbid_clin_rep_lab_rad():
     return get_1_premorbid() \
            + get_2_clinical_presentation() \
            + get_3_laboratory_radiology_findings()
-    
+
 def get_6_all():
     return ['ethnic_group','healthcare_worker','microbiology_worker','gender',
             'age','home_medication','ccd','hypertension','cpd','asthma','ckd',
@@ -55,7 +56,7 @@ def get_6_all():
             'Influenza','Coronavirus','RSV_','Adenovirus','Bacteria','culture',
             'infec_resp_diagnosis','infiltrates_2','CT_thorax_performed',
             'corads_admission',
-            
+
             'Bacterial_pneumonia_1_1','Acute_Respiratory_Distress_Syndrome_1_1',
             'specify_Acute_Respiratory_Distress_Syndrome_1_1','Pneumothorax_1_1',
             'Meningitis_Encephalitis_1_1','Seizure_1_1','Stroke_Cerebrovascular_accident_1_1',
