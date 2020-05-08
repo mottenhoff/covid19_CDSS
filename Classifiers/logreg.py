@@ -111,6 +111,7 @@ class LogReg:
 
         self.random_state = 0
         self.save_prediction = False
+        self.hospital = None
         
     def train(self, datasets):
         ''' Initialize, train and predict a classifier.
@@ -150,27 +151,35 @@ class LogReg:
         test_x = self.impute_missing_values(test_x)
 
         # Define pipeline
-        pipeline = self.get_pipeline()
+        self.pipeline = self.get_pipeline()
 
         # Grid search
         if self.model_args['grid_search']:
             # print("Train classfier using grid search for best parameters.")
             cv = StratifiedShuffleSplit(n_splits=5, test_size=0.2, random_state=self.random_state)
-            grid = GridSearchCV(pipeline, param_grid=self.grid, cv=cv,
+            grid = GridSearchCV(self.pipeline, param_grid=self.grid, cv=cv,
                                 scoring='roc_auc', n_jobs=-2)
             grid.fit(train_x, train_y)
             clf = grid.best_estimator_
-            print("Best estimator: ", clf)
+            # print("Best estimator: ", clf)
         else:
             # Train classifier without optimization.
-            clf = pipeline
+            clf = self.pipeline
             clf.fit(train_x, train_y)
 
         self.coefs.append(clf.named_steps['LR'].coef_)
         self.intercepts.append(clf.named_steps['LR'].intercept_)
 
         test_y_hat = clf.predict_proba(test_x)  # Predict
-
+        
+        if 'feature_selection' in clf.named_steps:
+            columns = train_x.columns[np.argsort(clf.named_steps\
+                                          .feature_selection\
+                                          .pvalues_)][0:self.model_args['n_features']].to_list()
+        else:
+            columns = train_x.columns
+        train_x = pd.DataFrame(clf[:-1].transform(train_x), columns=columns)
+        train_x = pd.DataFrame(clf[:-1].transform(test_x), columns=columns)
         datasets = {"train_x": train_x,
                     "test_x": test_x,
                     "train_y": train_y,
@@ -251,6 +260,7 @@ class LogReg:
         fig2, ax2 = self.plot_model_weights(datasets['test_x'].columns, clf,
                                             show_n_features=self.evaluation_args['show_n_features'],
                                             normalize_coefs=self.evaluation_args['normalize_coefs'])
+
         if self.save_prediction:
             self.save_prediction_to_file(scores)
 
@@ -277,7 +287,6 @@ class LogReg:
             for key in keys:
                 del self.grid[key]
 
-                
         steps += [('LR', LogisticRegression(solver='saga', 
                                             penalty='elasticnet', #class_weight='balanced', 
                                             l1_ratio=.5,
@@ -299,35 +308,6 @@ class LogReg:
         #                                             .median())
         # data = data.fillna(0).astype(float)
         return data
-
-    def feature_contribution(self, clf, x, y, plot_graph=False, plot_n_features=None,
-                                n_cv=2, method='predict_proba'):
-
-        plot_n_features = x.shape[1] if not plot_n_features else plot_n_features
-        y_hat = cross_val_predict(clf, x, y, cv=n_cv, method=method)
-        baseline_score = roc_auc_score(y, y_hat[:, 1])
-
-        importances = np.array([])
-        
-        for col in x.columns:
-            x_tmp = x.drop(col, axis=1)
-            y_hat = cross_val_predict(clf, x_tmp, y, cv=n_cv, method=method)
-            score = roc_auc_score(y, y_hat[:, 1])
-            importances = np.append(importances, baseline_score-score)
-
-        if plot_graph:
-            idc = np.argsort(importances)
-            columns = x.columns[idc]
-            fig, ax = plt.subplots(1, 1)
-            ax.plot(importances[idc[-plot_n_features:]])
-            ax.axhline(0, color='k', linewidth=.5)
-            ax.set_xticks(np.arange(x.shape[1]))
-            ax.set_xticklabels(columns[-plot_n_features:], rotation=90, fontdict={'fontsize': 6})
-            ax.set_xlabel('Features')
-            ax.set_ylabel('Difference with baseline')
-            fig.tight_layout()
-
-        return importances
 
     def plot_model_results(self,
                            aucs):  # , classifier='Logistic regression', outcome='ICU admission'):
@@ -502,15 +482,13 @@ class LogReg:
             return labels
         return labels
 
-
     def save_prediction_to_file(self, scores):
-        x = pd.concat([score['x'] for score in scores], axis=0).reset_index(drop=True)
-        y_hat = pd.concat([pd.Series(score['y_hat']) for score in scores], axis=0) \
-                  .reset_index(drop=True)
-        y = pd.concat([score['y'] for score in scores], axis=0).reset_index(drop=True)
-
-        df = pd.concat([x, y, y_hat], axis=1)
-        df.columns=list(x.columns)+['y', 'y_hat']
+        x = pd.concat([score['x'] for score in scores], axis=0)
+        y_hat = pd.concat([pd.Series(score['y_hat']) for score in scores], axis=0)
+        y_hat.index = x.index
+        y = pd.concat([score['y'] for score in scores], axis=0)
+        df = pd.concat([x, y, y_hat, self.hospital], axis=1)
+        df.columns=list(x.columns)+['y', 'y_hat', 'hospital']
 
         filename = self.save_path + '_prediction.pkl'
         df.to_pickle(filename)
@@ -572,5 +550,32 @@ def get_fields_per_type(data, data_struct, type):
     #     fig.savefig('FPR_results.png')
 
 
+    # def feature_contribution(self, clf, x, y, plot_graph=False, plot_n_features=None,
+    #                             n_cv=2, method='predict_proba'):
 
+    #     plot_n_features = x.shape[1] if not plot_n_features else plot_n_features
+    #     y_hat = cross_val_predict(clf, x, y, cv=n_cv, method=method)
+    #     baseline_score = roc_auc_score(y, y_hat[:, 1])
+
+    #     importances = np.array([])
+        
+    #     for col in x.columns:
+    #         x_tmp = x.drop(col, axis=1)
+    #         y_hat = cross_val_predict(clf, x_tmp, y, cv=n_cv, method=method)
+    #         score = roc_auc_score(y, y_hat[:, 1])
+    #         importances = np.append(importances, baseline_score-score)
+
+    #     if plot_graph:
+    #         idc = np.argsort(importances)
+    #         columns = x.columns[idc]
+    #         fig, ax = plt.subplots(1, 1)
+    #         ax.plot(importances[idc[-plot_n_features:]])
+    #         ax.axhline(0, color='k', linewidth=.5)
+    #         ax.set_xticks(np.arange(x.shape[1]))
+    #         ax.set_xticklabels(columns[-plot_n_features:], rotation=90, fontdict={'fontsize': 6})
+    #         ax.set_xlabel('Features')
+    #         ax.set_ylabel('Difference with baseline')
+    #         fig.tight_layout()
+
+    #     return importances
 

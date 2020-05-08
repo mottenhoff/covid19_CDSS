@@ -45,6 +45,7 @@ from covid19_ICU_util import select_x_y
 from covid19_ICU_util import select_variables
 from covid19_ICU_util import impute_missing_values
 from covid19_ICU_util import plot_feature_importance
+from covid19_ICU_util import save_class_dist_per_hospital
 from covid19_ICU_util import explore_data
 
 # classifiers
@@ -102,7 +103,6 @@ def load_data_api(path_credentials):
     data_struct = data_struct.loc[:, var_columns].reset_index(drop=True)
 
     return df_study, df_report, data_struct
-
 
 def load_data(path_to_creds):
     ''' Loads data and combines the different
@@ -183,15 +183,9 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
     x = x.drop(['hospital', 'Record Id'], axis=1)
     x = x.loc[:, x.nunique() > 1]  # Remove columns without information
 
-    # if use_imputation:
-    #     # TODO: move inside pipeline
-    #     x = impute_missing_values(x, data_struct)
-
-    # x = x.fillna(0)  # Fill missing values with 0 (0==missing or no asik)
-
-    # x = x.astype(float)
-
     print('LOG: Using <{}:{}> as y.'.format(goal[0], goal[1]))
+    print('LOG: Class distribution: 1: {}, 0: {}, total: {}'\
+            .format(y.value_counts()[1], y.value_counts()[0], y.size))
     print('LOG: Selected {} variables for predictive model'
           .format(x.columns.size))
 
@@ -200,7 +194,7 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
         has_y = y.notna()
         x = x.loc[has_y, :]
         y = y.loc[has_y]
-
+    
     return x, y, data, hospital, records
 
 def train_and_predict(x, y, model, rep, type='subsamp', type_col=None, test_size=0.2):
@@ -293,6 +287,8 @@ def run(data, data_struct, goal, variables_to_include, variables_to_exclude,
                                                          variables_to_exclude,
                                                          goal)
 
+    save_class_dist_per_hospital(save_path, y, hospital[y.index])
+
     model = model_class()
     model.goal = goal
     model.data_struct = data_struct
@@ -316,6 +312,7 @@ def run(data, data_struct, goal, variables_to_include, variables_to_exclude,
                                  test_y_hat, rep)
         scores.append(score)
 
+    model.hospital = hospital[y.index]
     evaluate_model(model, clf, datasets, scores)
 
     if not save_figures:
@@ -354,11 +351,13 @@ if __name__ == "__main__":
     # Add all 'Field Variable Name' from data_struct to
     # INCLUDE variables from analysis
     #  NOTE: See get_feature_set.py for preset selections
-    feature_opts = {'pm':   get_1_premorbid(),
-                    'cp':   get_2_clinical_presentation(),
-                    'lab':  get_3_laboratory_radiology_findings(),
-                    'pmcp': get_4_premorbid_clinical_representation(),
-                    'all':  get_5_premorbid_clin_rep_lab_rad()}
+    feature_opts = {
+        'pm':   get_1_premorbid(),
+        'cp':   get_2_clinical_presentation(),
+        'lab':  get_3_laboratory_radiology_findings(),
+        'pmcp': get_4_premorbid_clinical_representation(),
+        'all':  get_5_premorbid_clin_rep_lab_rad()
+    }
 
     # Options:
     #   loho: Leave-one-hospital-out
