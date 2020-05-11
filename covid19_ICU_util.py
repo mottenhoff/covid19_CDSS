@@ -211,10 +211,11 @@ def select_x_y(data, outcomes, used_columns,
 
     # TEMP select (Non-ICU patients)
     # ICU pts:
-    # was_icu = outcomes.iloc[:, [3, 6, 10, 12, 14]].any(axis=1)
-    # y[was_icu] = None # ONLY INCLUDE NON ICU PATIENTS
+    was_icu = outcomes.iloc[:, [3, 6, 10, 12, 14]].any(axis=1)
+    # was_icu.to_excel('was_icu.xlsx')
+    # y[was_icu] = None # ONLY INCLUDE NON-ICU PATIENTS (Inverted because set to None)
     # y[~was_icu] = None # ONLY INCLUDE ICU PATIENTS
-
+    # x['was_icu'] = was_icu
     return x, y, outcomes_dict
 
 def get_classification_outcomes(data, outcomes):

@@ -197,7 +197,9 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
     
     return x, y, data, hospital, records
 
-def train_and_predict(x, y, model, rep, type='subsamp', type_col=None, test_size=0.2):
+def train_and_predict(x, y, model, rep, type='loho', 
+                      hospitals=None, unique_hospitals=None,
+                      test_size=0.2):
     ''' Splits data into train and test set using
     monte carlo subsampling method, i.e., n random
     train/test splits using equal class balance.
@@ -227,12 +229,13 @@ def train_and_predict(x, y, model, rep, type='subsamp', type_col=None, test_size
 
     if type == 'loho':
         # Leave-one-hospital-out cross-validation
-        test_hosp = type_col.unique()[rep]
-        is_test_hosp = type_col == test_hosp
+        test_hosp = unique_hospitals[rep]
+        is_test_hosp = hospitals == test_hosp
         train_x = x.loc[~is_test_hosp, :]
         train_y = y.loc[~is_test_hosp]
         test_x = x.loc[is_test_hosp, :]
         test_y = y.loc[is_test_hosp]
+        model.hospital = model.hospital.append(hospitals.loc[is_test_hosp])
     else:
         # Default to random subsampling
         train_x, test_x, train_y, test_y = train_test_split(x, y,
@@ -287,27 +290,30 @@ def run(data, data_struct, goal, variables_to_include, variables_to_exclude,
                                                          variables_to_exclude,
                                                          goal)
 
-    save_class_dist_per_hospital(save_path, y, hospital[y.index])
-
+    # save_class_dist_per_hospital(save_path, y, hospital[y.index])
     model = model_class()
     model.goal = goal
     model.data_struct = data_struct
     model.save_path = '{}_n{}_y{}'.format(save_path, y.size, y.sum())
     model.save_prediction = save_prediction
 
-
     if train_test_split_method == 'loho':
         # Leave-one-hospital-out
-        repetitions = hospital.unique().size
+        unique_hospitals = hospital.unique()
+        repetitions = unique_hospitals.size
     else:
         # Random Subsampling
         repetitions = 100
 
     scores = []
     for rep in range(repetitions):
+        # if rep in [4, 5, 7]:
+        #     continue
+        # print(rep, hospital.unique()[rep])
         clf, datasets, test_y_hat = train_and_predict(x, y, model, rep,
                                                       type=train_test_split_method,
-                                                      type_col=hospital)
+                                                      hospitals=hospital,
+                                                      unique_hospitals=unique_hospitals)
         score = score_prediction(model, clf, datasets,
                                  test_y_hat, rep)
         scores.append(score)
@@ -319,7 +325,6 @@ def run(data, data_struct, goal, variables_to_include, variables_to_exclude,
         plt.show()
 
     print('\n', flush=True)
-
 
 if __name__ == "__main__":
     ##### START PARAMETERS #####

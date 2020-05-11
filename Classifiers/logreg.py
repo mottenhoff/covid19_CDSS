@@ -111,7 +111,7 @@ class LogReg:
 
         self.random_state = 0
         self.save_prediction = False
-        self.hospital = None
+        self.hospital = pd.Series()
         
     def train(self, datasets):
         ''' Initialize, train and predict a classifier.
@@ -176,10 +176,16 @@ class LogReg:
             columns = train_x.columns[np.argsort(clf.named_steps\
                                           .feature_selection\
                                           .pvalues_)][0:self.model_args['n_features']].to_list()
+            print(columns)
         else:
             columns = train_x.columns
+        
+        idx_train = train_x.index
+        idx_test = test_x.index
         train_x = pd.DataFrame(clf[:-1].transform(train_x), columns=columns)
-        train_x = pd.DataFrame(clf[:-1].transform(test_x), columns=columns)
+        test_x = pd.DataFrame(clf[:-1].transform(test_x), columns=columns)
+        train_x.index = idx_train
+        test_x.index = idx_test
         datasets = {"train_x": train_x,
                     "test_x": test_x,
                     "train_y": train_y,
