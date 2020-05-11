@@ -289,8 +289,11 @@ def run(data, data_struct, goal, variables_to_include, variables_to_exclude,
                                                          variables_to_include,
                                                          variables_to_exclude,
                                                          goal)
+    if goal[0] == 'survival':
+        save_class_dist_per_hospital(save_path, y['event_mortality'], hospital[y.index])
+    else:
+        save_class_dist_per_hospital(save_path, y, hospital[y.index])
 
-    # save_class_dist_per_hospital(save_path, y, hospital[y.index])
     model = model_class()
     model.goal = goal
     model.data_struct = data_struct
