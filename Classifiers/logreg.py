@@ -28,6 +28,7 @@ Datasets:   dictionary containin all training and test sets:
 
 ..._args:   Dictionary that holds the parameters that are used as 
             input for train, score or evaluate
+            
 '''
 from math import sqrt
 
@@ -57,6 +58,8 @@ from sklearn.impute import SimpleImputer
 
 import warnings
 from sklearn.exceptions import ConvergenceWarning
+from sklearn.impute import IterativeImputer
+from missingpy import MissForest
 # warnings.filterwarnings(action='ignore', category=ConvergenceWarning)
 
 class LogReg:
@@ -149,9 +152,10 @@ class LogReg:
 
         train_x = self.impute_missing_values(train_x)
         test_x = self.impute_missing_values(test_x)
-
+        
         # Define pipeline
         self.pipeline = self.get_pipeline()
+
 
         # Grid search
         if self.model_args['grid_search']:
@@ -269,11 +273,30 @@ class LogReg:
 
         if self.save_prediction:
             self.save_prediction_to_file(scores)
+        
+    def define_imputer(self,impute_type):
+        '''Initialize the imputer to be used for every iteration.
+        
+        Input:
+            impute_type: string, {'simple': SimpleImputer, 
+            'iterative': IterativeImputer and 'forest': RandomForest imputer}
+        Output:
+            Imputer: imputer object to be used in the pipeline        
+        '''
+        if impute_type=='simple':
+            self.imputer = SimpleImputer(missing_values=np.nan, strategy='median',
+                                           add_indicator=self.model_args['add_missing_indicator'])
+        else:
+            if impute_type=='iterative':
+                    self.imputer = IterativeImputer(missing_values=np.nan, initial_strategy='median',
+                                           add_indicator=self.model_args['add_missing_indicator'])
+            else:                    
+                if impute_type=='forest':
+                    self.imputer = MissForest(random_state=self.random_state,n_jobs=-2)
 
     def get_pipeline(self):
-        steps = [('imputer', SimpleImputer(missing_values=np.nan, 
-                                           strategy='median',
-                                           add_indicator=self.model_args['add_missing_indicator'])),
+        self.define_imputer('iterative')
+        steps = [('imputer', self.imputer),
                  ('scaler', MinMaxScaler())]
 
         if self.model_args['apply_polynomials']:
