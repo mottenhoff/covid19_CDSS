@@ -152,9 +152,10 @@ class LogReg:
 
         train_x = self.impute_missing_values(train_x)
         test_x = self.impute_missing_values(test_x)
-
+        
         # Define pipeline
         self.pipeline = self.get_pipeline()
+
 
         # Grid search
         if self.model_args['grid_search']:

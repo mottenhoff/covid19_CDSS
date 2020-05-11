@@ -183,6 +183,7 @@ class XGB:
                                             random_state=self.random_state))] 
         return Pipeline(steps)
         
+        
     def train(self, datasets):
         ''' Initialize, train and predict a classifier.
         This includes: Feature engineering (i.e. PCA) and
@@ -223,6 +224,7 @@ class XGB:
 
         self.pipeline = self.get_pipeline()
 
+
         # Model and feature selection
         # TODO ideally also the feature selection would take place within a CV pipeline
         if self.model_args['select_features']:
@@ -252,7 +254,6 @@ class XGB:
         test_y_hat = clf.predict_proba(test_x)  # Predict
 
         self.coefs.append(clf['XGB'].feature_importances_)
-
 
         datasets = {"train_x": train_x,
                     "test_x": test_x,
@@ -306,6 +307,7 @@ class XGB:
             'y_hat': test_y_hat
             }
         
+
         return score
     
     def evaluate(self, clf, datasets, scores):
@@ -360,6 +362,7 @@ class XGB:
         train_x = train_x.reset_index(drop=True)
         test_x = test_x.reset_index(drop=True)
 
+
         scaler = MinMaxScaler().fit(train_x)
         # scaler = StandardScaler().fit(train_x)
         train_x = pd.DataFrame(scaler.transform(train_x), columns=columns)
@@ -383,19 +386,32 @@ class XGB:
         return train_x, test_x
 
     def feature_contribution(self, clf, x, y, plot_graph=False, plot_n_features=None,
-                                n_cv=2, method='predict_proba'):
+                             n_cv=2, method='predict_proba'):
+
+        """Select feature from model internal selection."""
+
 
         plot_n_features = x.shape[1] if not plot_n_features else plot_n_features
         y_hat = cross_val_predict(clf, x, y, cv=n_cv, method=method)
         baseline_score = roc_auc_score(y, y_hat[:, 1])
 
         importances = np.array([])
-        
-        for col in x.columns:
-            x_tmp = x.drop(col, axis=1)
-            y_hat = cross_val_predict(clf, x_tmp, y, cv=n_cv, method=method)
+
+        # Fit model using each importance as a threshold
+        clf.fit(x, y)
+        thresholds = np.sort(clf.feature_importances_)
+        for thresh in thresholds:
+            # select features using threshold
+            selection = SelectFromModel(clf, threshold=thresh, prefit=True)
+            select_X_train = selection.transform(x)
+            # train model
+            selection_clf = XGBClassifier()
+            y_hat = cross_val_predict(selection_clf, x, y, cv=n_cv, method=method)
+
             score = roc_auc_score(y, y_hat[:, 1])
             importances = np.append(importances, baseline_score-score)
+            print("Thresh=%.3f, n=%d, roc_auc_score: %.2f%%" % (
+                thresh, select_X_train.shape[1], score * 100.0))
 
         if plot_graph:
             idc = np.argsort(importances)
@@ -404,7 +420,7 @@ class XGB:
             ax.plot(importances[idc[-plot_n_features:]])
             ax.axhline(0, color='k', linewidth=.5)
             ax.set_xticks(np.arange(x.shape[1]))
-            ax.set_xticklabels(columns[-plot_n_features:], rotation=90, fontdict={'fontsize': 6})
+            ax.set_xticklabels(columns[-plot_n_features:], rotation=90, fontdict={ 'fontsize': 6 })
             ax.set_xlabel('Features')
             ax.set_ylabel('Difference with baseline')
             fig.tight_layout()
@@ -460,6 +476,7 @@ class XGB:
         spec_ci = (spec_std / sqrt(spec.shape[0])) * 1.96
 
         auc_mean = auc_calc(fprs_mean, sens_mean)
+
         if self.evaluation_args['plot_analyse_fpr']:
             fig, ax = plt.subplots()
             ax.plot(thrs[0], fprs_mean, label='fpr')
@@ -523,6 +540,7 @@ class XGB:
 
         var_coefs = coefs.var(axis=0)[mask_not_nan] if not normalize_coefs else None
         idx_sorted = avg_coefs.argsort()
+
         n_bars = np.arange(avg_coefs.shape[0])
 
         labels = [self.var_dict.get(c) for c in feature_labels]
@@ -536,6 +554,7 @@ class XGB:
                 labels[i] = 'Home medication'
         labels = np.array(labels)
         fontsize = 5.75 if labels.size < 50 else 5
+
         bar_width = .5  # bar width
 
         fig, ax = plt.subplots()
@@ -554,6 +573,7 @@ class XGB:
         fig.savefig(self.save_path + '_Average_weight_variance.png',
                     figsize=self.fig_size, dpi=self.fig_dpi)
         return fig, ax
+
 
     def save_prediction_to_file(self, scores):
         x = pd.concat([score['x'] for score in scores], axis=0).reset_index(drop=True)
@@ -588,6 +608,7 @@ def get_fields_per_type(data, data_struct, type):
     fields = data_struct.loc[data_struct['Field Type']=='category',
                             'Field Variable Name'].to_list()
     return [field for field in fields if field in data.columns]
+
 
     # def analyse_fpr(self, fprs):
     #     means = [fpr.mean() for fpr in fprs]
