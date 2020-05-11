@@ -57,14 +57,14 @@ if __name__ == "__main__":
     c = ca.CastorApi(path_to_api_creds)  # e.g. in user dir outside of GIT repo
 
     # get study ID for COVID study
-    if True:
+    if False:
         name = 'COVID-19 NL'
         excel_postfix = ''
     else:
         name = 'Clinical features of COVID-19 positive patients in VieCuri'
         excel_postfix = '_viecurie.xlsx'
 
-    study_id = c.select_study_by_name(config['CastorCredentials']['study_name'])
+    study_id = c.select_study_by_name(name)
 
     study_name = c.request_study(study_id=study_id)['name']
 
