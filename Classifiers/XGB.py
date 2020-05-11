@@ -38,6 +38,8 @@ Datasets:   dictionary containin all training and test sets:
 '''
 from math import sqrt
 from xgboost import XGBClassifier
+from sklearn.feature_selection import SelectKBest
+from sklearn.preprocessing import PolynomialFeatures
 #import shap
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.model_selection import StratifiedShuffleSplit
@@ -66,7 +68,7 @@ from scipy import stats
 from sklearn.experimental import enable_iterative_imputer  
 from sklearn.impute import IterativeImputer
 from sklearn.ensemble import RandomForestClassifier
-#from missingpy import KNNImputer,MissForest
+from missingpy import MissForest
 # warnings.filterwarnings(action='ignore', category=ConvergenceWarning)
 
 
@@ -111,27 +113,76 @@ class XGB:
 
         self.learn_size = []
         
-        #self.grid = {
-        #    'XGB__learning_rate': ([0.1, 0.01, 0.001]),
-        #    'XGB__gamma': ([0.1, 0.01, 0.001]),
-        #    'XGB__n_estimators': ([100, 200, 300, 500, 700]),
-        #    'XGB__subsample': ([0.5, 0.7, 0.9]),
-        #    'XGB__colsample_bytree': ([0.5, 0.6, 0.7, 0.8]),
-        #    'XGB__max_depth': ([2, 4, 6,8])}
-        
         self.grid = {
-        'XGB__n_estimators': ([200,400,500,600,800,1000,1200,1400]),
-        'XGB__max_features': (['auto', 'sqrt', 'log2']),                   # precomputed,'poly', 'sigmoid'
-        'XGB__max_depth':    ([10,20,30,40, 50, 60, 70, 80, 90, 100, None]),
-        'XGB__criterion':    (['gini', 'entropy']),
-        'XGB__min_samples_split':  [2,4,6,8],
-        'XGB__min_samples_leaf':   [2,4,6,8,10]}
+            'XGB__learning_rate': ([0.1, 0.01, 0.001]),
+            'XGB__gamma': ([0.1, 0.01, 0.001]),
+            'XGB__n_estimators': ([100, 200, 300, 500, 700]),
+            'XGB__subsample': ([0.5, 0.7, 0.9]),
+            'XGB__colsample_bytree': ([0.5, 0.6, 0.7, 0.8]),
+            'XGB__max_depth': ([2, 4, 6,8])}
+        
+        #self.grid = {
+        #'XGB__n_estimators': ([200,400,500,600,800,1000,1200,1400]),
+        #'XGB__max_features': (['auto', 'sqrt', 'log2']),                   # precomputed,'poly', 'sigmoid'
+        #'XGB__max_depth':    ([10,20,30,40, 50, 60, 70, 80, 90, 100, None]),
+        #'XGB__criterion':    (['gini', 'entropy']),
+        #'XGB__min_samples_split':  [2,4,6,8],
+        #'XGB__min_samples_leaf':   [2,4,6,8,10]}
        
         self.save_path = ''
         self.fig_size = (1280, 960)
         self.fig_dpi = 600
         self.random_state = 0
+        
+    def define_imputer(self,impute_type):
+        '''Initialize the imputer to be used for every iteration.
+        
+        Input:
+            impute_type: string, {'simple': SimpleImputer, 
+            'iterative': IterativeImputer and 'forest': RandomForest imputer}
+        Output:
+            Imputer: imputer object to be used in the pipeline        
+        '''
+        if impute_type=='simple':
+            self.imputer = SimpleImputer(missing_values=np.nan, strategy='median',
+                                           add_indicator=self.model_args['add_missing_indicator'])
+        else:
+            if impute_type=='iterative':
+                    self.imputer = IterativeImputer(missing_values=np.nan, initial_strategy='median',
+                                           add_indicator=self.model_args['add_missing_indicator'])
+            else:                    
+                if impute_type=='forest':
+                    self.imputer = MissForest(random_state=self.random_state,n_jobs=-2)
 
+    def get_pipeline(self):
+        self.define_imputer('iterative')
+        steps = [('imputer', self.imputer),
+                 ('scaler', MinMaxScaler())]
+
+        if self.model_args['apply_polynomials']:
+            steps += [('polynomials', PolynomialFeatures(interaction_only=True))]
+
+        if self.model_args['apply_feature_selection']:
+            steps += [('feature_selection', SelectKBest(k=self.model_args['n_features']))]
+        else:
+            keys = [key for key in self.grid.keys() if 'feature_selection' in key]
+            for key in keys:
+                del self.grid[key]
+
+        if self.model_args['apply_pca']:
+            steps += [('PCA', PCA(self.model_args['pca_n_components']))]
+        else:
+            keys = [key for key in self.grid.keys() if 'PCA' in key]
+            for key in keys:
+                del self.grid[key]
+
+        steps += [('LR', LogisticRegression(solver='saga', 
+                                            penalty='elasticnet', #class_weight='balanced', 
+                                            l1_ratio=.5,
+                                            max_iter=200,
+                                            random_state=self.random_state))] 
+        return Pipeline(steps)
+        
     def train(self, datasets):
         ''' Initialize, train and predict a classifier.
         This includes: Feature engineering (i.e. PCA) and
@@ -170,22 +221,7 @@ class XGB:
         train_x = self.impute_missing_values(train_x)
         test_x = self.impute_missing_values(test_x)
 
-        # Initialize Classifier
-        clf = RandomForestClassifier(random_state=self.random_state)
-
-        # Define Pipeline
-        # TODO Remove imputation from preprocessing and handle imputation for categoricals with
-        #  additional missing category
-        steps = [('imputer', SimpleImputer(missing_values=np.nan, strategy='median',
-                                           add_indicator=self.model_args['add_missing_indicator'])),
-                         ('scaler', StandardScaler()),
-                 ('XGB', clf)]
-        #imputer = MissForest(missing_values=np.nan,random_state==self.random_state,n_jobs=-2)
-        #steps = [('imputer', IterativeImputer(missing_values=np.nan, initial_strategy='median',
-        #                                   add_indicator=self.model_args['add_missing_indicator'])),            
-        #        ('scaler', StandardScaler()),
-        #         ('XGB', clf)]
-        pipeline = Pipeline(steps)
+        self.pipeline = self.get_pipeline()
 
         # Model and feature selection
         # TODO ideally also the feature selection would take place within a CV pipeline
@@ -201,23 +237,17 @@ class XGB:
             test_x = test_x.iloc[:, self.n_best_features]
 
         if self.model_args['grid_search']:
-            print("Train classfier using grid search for best parameters.")
-
+            # print("Train classfier using grid search for best parameters.")
             cv = StratifiedShuffleSplit(n_splits=5, test_size=0.2, random_state=self.random_state)
-
-            grid = RandomizedSearchCV(pipeline, param_distributions=self.grid,
-                                      cv=cv, scoring='roc_auc', n_jobs=-2,
-                                      random_state=self.random_state)
-
+            grid = RandomizedSearchCV(self.pipeline, param_grid=self.grid, cv=cv,
+                                scoring='roc_auc', n_jobs=-2)
             grid.fit(train_x, train_y)
-
             clf = grid.best_estimator_
-            print("Best estimator: ", clf)
-
+            # print("Best estimator: ", clf)
         else:
-            print("Train classifier without optimization.")
-            clf = pipeline
-            clf.fit(train_x, train_y)  # Model
+            # Train classifier without optimization.
+            clf = self.pipeline
+            clf.fit(train_x, train_y)
 
         test_y_hat = clf.predict_proba(test_x)  # Predict
 

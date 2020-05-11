@@ -38,14 +38,17 @@ import numpy as np
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.feature_selection import SelectFpr
+from sklearn.feature_selection import SelectKBest
 from sklearn.model_selection import cross_val_predict
+from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import auc as auc_calc
 from sklearn.metrics import roc_curve
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import plot_confusion_matrix
-from sklearn.model_selection import StratifiedShuffleSplit
 
 import os
 from sklearn.pipeline import Pipeline
@@ -54,10 +57,9 @@ from sklearn.impute import SimpleImputer
 
 import warnings
 from sklearn.exceptions import ConvergenceWarning
-# warnings.filterwarnings(action='ignore', category=ConvergenceWarning)
-from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer
-
+from missingpy import MissForest
+# warnings.filterwarnings(action='ignore', category=ConvergenceWarning)
 
 class LogReg:
 
@@ -68,38 +70,36 @@ class LogReg:
         parameters, as they might be called outside
         this class. 
         '''
+
         self.goal = None
         self.data_struct = None
         self.model_args = {
             'add_missing_indicator': False,
             
+            'apply_polynomials': False,
+
+            'apply_feature_selection': False,
+            'n_features': 10,
+
             'apply_pca': False,
             'pca_n_components': 3,
 
-            'select_features': False,
-            'n_best_features': 10,
-            'plot_feature_graph': True,
-            
             'grid_search': True
         }
 
         self.grid = {
-            'LR__l1_ratio': [i / 10 for i in range(0, 11, 1)],
-            'LR__C': [0.001, 0.01, 0.1, 1, 10, 100],
-            'LR__solver' : ['newton-cg', 'lbfgs', 'liblinear', 'sag', 'saga']
+            'PCA__n_components': list(range(1, 11)),
+            'LR__l1_ratio': [i / 10 for i in range(0, 11, 1)]
         }
 
         self.score_args = {
             'plot_n_rocaucs': 0,
-            'n_thresholds': 50,
-
-        }
+            'n_thresholds': 50}
 
         self.evaluation_args = {
             'show_n_features': None,
             'normalize_coefs': True,
-            'plot_analyse_fpr': False
-        }
+            'plot_analyse_fpr': False}
 
         self.coefs = []
         self.intercepts = []
@@ -113,8 +113,8 @@ class LogReg:
 
         self.random_state = 0
         self.save_prediction = False
+        self.hospital = None
         
-
     def train(self, datasets):
         ''' Initialize, train and predict a classifier.
         This includes: Feature engineering (i.e. PCA) and
@@ -138,9 +138,7 @@ class LogReg:
             test_y_hat:: list
                 List containing the probabilities of outcomes.
 
-        # Add engineered features:
         # TODO add PCA to pipeline
-        # train_x, test_x = self.add_engineered_features(train_x, test_x)
         '''
 
         train_x = datasets['train_x']
@@ -151,65 +149,39 @@ class LogReg:
         self.learn_size += [{'tr_x': train_x.shape, 'tr_y': train_y.shape,
                             'te_x': test_x.shape, 'te_y': test_y.shape}]
 
-        n_best_features = self.model_args['n_best_features']
-        plot_feature_graph = self.model_args['plot_feature_graph']
-
         train_x = self.impute_missing_values(train_x)
         test_x = self.impute_missing_values(test_x)
 
-        # Initialize Classifier
-        clf = LogisticRegression(solver='saga', penalty='elasticnet', #class_weight='balanced', 
-                                 l1_ratio=.5, max_iter=200, random_state=self.random_state)
-
         # Define pipeline
-        # TODO Remove imputation from preprocessing and handle imputation for categoricals with
-        #  additional missing category
-        steps = [('imputer', SimpleImputer(missing_values=np.nan, 
-                                           strategy='median',
-                                           add_indicator=self.model_args['add_missing_indicator'])),
-                 ('scaler', StandardScaler()),
-                 ('LR', clf)]
-        
-        #steps = [('imputer', IterativeImputer(missing_values=np.nan, initial_strategy='median',
-        #                           add_indicator=self.model_args['add_missing_indicator'])),            
-        #('scaler', StandardScaler()),
-        # ('LR', clf)]
-        
-        pipeline = Pipeline(steps)
+        self.pipeline = self.get_pipeline()
 
-        # Model and feature selection
-        # TODO ideally also the feature selection would take place within a CV pipeline
-        if self.model_args['select_features']:
-            if not any(self.n_best_features):
-                self.importances = self.feature_contribution(pipeline, train_x, train_y,
-                                                             plot_graph=plot_feature_graph)
-                self.n_best_features = np.argsort(self.importances)[-n_best_features:]
-                print('Select {} best features:\n{}'
-                        .format(self.model_args['n_best_features'],
-                                list(train_x.columns[self.n_best_features])))
-            train_x = train_x.iloc[:, self.n_best_features]
-            test_x = test_x.iloc[:, self.n_best_features]
-
+        # Grid search
         if self.model_args['grid_search']:
             # print("Train classfier using grid search for best parameters.")
-
             cv = StratifiedShuffleSplit(n_splits=5, test_size=0.2, random_state=self.random_state)
-            grid = GridSearchCV(pipeline, param_grid=self.grid, cv=cv,
+            grid = GridSearchCV(self.pipeline, param_grid=self.grid, cv=cv,
                                 scoring='roc_auc', n_jobs=-2)
             grid.fit(train_x, train_y)
             clf = grid.best_estimator_
-            print("Best estimator: ", clf)
-
+            # print("Best estimator: ", clf)
         else:
-            # print("Train classifier without optimization.")
-            clf = pipeline
-            clf.fit(train_x, train_y)  # Model
+            # Train classifier without optimization.
+            clf = self.pipeline
+            clf.fit(train_x, train_y)
 
         self.coefs.append(clf.named_steps['LR'].coef_)
         self.intercepts.append(clf.named_steps['LR'].intercept_)
 
         test_y_hat = clf.predict_proba(test_x)  # Predict
-
+        
+        if 'feature_selection' in clf.named_steps:
+            columns = train_x.columns[np.argsort(clf.named_steps\
+                                          .feature_selection\
+                                          .pvalues_)][0:self.model_args['n_features']].to_list()
+        else:
+            columns = train_x.columns
+        train_x = pd.DataFrame(clf[:-1].transform(train_x), columns=columns)
+        train_x = pd.DataFrame(clf[:-1].transform(test_x), columns=columns)
         datasets = {"train_x": train_x,
                     "test_x": test_x,
                     "train_y": train_y,
@@ -290,8 +262,58 @@ class LogReg:
         fig2, ax2 = self.plot_model_weights(datasets['test_x'].columns, clf,
                                             show_n_features=self.evaluation_args['show_n_features'],
                                             normalize_coefs=self.evaluation_args['normalize_coefs'])
+
         if self.save_prediction:
             self.save_prediction_to_file(scores)
+        
+    def define_imputer(self,impute_type):
+        '''Initialize the imputer to be used for every iteration.
+        
+        Input:
+            impute_type: string, {'simple': SimpleImputer, 
+            'iterative': IterativeImputer and 'forest': RandomForest imputer}
+        Output:
+            Imputer: imputer object to be used in the pipeline        
+        '''
+        if impute_type=='simple':
+            self.imputer = SimpleImputer(missing_values=np.nan, strategy='median',
+                                           add_indicator=self.model_args['add_missing_indicator'])
+        else:
+            if impute_type=='iterative':
+                    self.imputer = IterativeImputer(missing_values=np.nan, initial_strategy='median',
+                                           add_indicator=self.model_args['add_missing_indicator'])
+            else:                    
+                if impute_type=='forest':
+                    self.imputer = MissForest(random_state=self.random_state,n_jobs=-2)
+
+    def get_pipeline(self):
+        self.define_imputer('iterative')
+        steps = [('imputer', self.imputer),
+                 ('scaler', MinMaxScaler())]
+
+        if self.model_args['apply_polynomials']:
+            steps += [('polynomials', PolynomialFeatures(interaction_only=True))]
+
+        if self.model_args['apply_feature_selection']:
+            steps += [('feature_selection', SelectKBest(k=self.model_args['n_features']))]
+        else:
+            keys = [key for key in self.grid.keys() if 'feature_selection' in key]
+            for key in keys:
+                del self.grid[key]
+
+        if self.model_args['apply_pca']:
+            steps += [('PCA', PCA(self.model_args['pca_n_components']))]
+        else:
+            keys = [key for key in self.grid.keys() if 'PCA' in key]
+            for key in keys:
+                del self.grid[key]
+
+        steps += [('LR', LogisticRegression(solver='saga', 
+                                            penalty='elasticnet', #class_weight='balanced', 
+                                            l1_ratio=.5,
+                                            max_iter=200,
+                                            random_state=self.random_state))] 
+        return Pipeline(steps)
 
     def impute_missing_values(self, data, missing_class=-1):
         data = data.copy()  # Prevents copy warning
@@ -300,7 +322,6 @@ class LogReg:
         vars_categorical = get_fields_per_type(data, self.data_struct, 'category')
         data.loc[:, vars_categorical] = data[vars_categorical].fillna(missing_class, axis=0)
     
-
         # # Numeric
         # vars_numeric = get_fields_per_type(data, self.data_struct, 'numeric')
         # data.loc[:, vars_numeric] = data.loc[:, vars_numeric] \
@@ -308,64 +329,6 @@ class LogReg:
         #                                             .median())
         # data = data.fillna(0).astype(float)
         return data
-
-    def add_engineered_features(self, train_x, test_x):
-        ''' Generate and add features'''
-        # TODO: Add PCA to preprocessing pipeline to avoid leakage in CV.
-        columns = train_x.columns
-        train_x = train_x.reset_index(drop=True)
-        test_x = test_x.reset_index(drop=True)
-
-        scaler = MinMaxScaler().fit(train_x)
-        # scaler = StandardScaler().fit(train_x)
-        train_x = pd.DataFrame(scaler.transform(train_x), columns=columns)
-        test_x = pd.DataFrame(scaler.transform(test_x), columns=columns)
-
-        # Dimensional transformation
-        if self.model_args['apply_pca']:
-            train_x, test_x = self.get_pca(train_x, test_x)
-
-        return train_x, test_x
-
-    def get_pca(self, train_x, test_x):
-        pca_col_names = ['PC {:d}'.format(i+1) for i in range(self.model_args['pca_n_components'])]
-        pca = PCA(n_components=self.model_args['pca_n_components'])
-        pca = pca.fit(train_x)
-        pcs_train = pd.DataFrame(pca.transform(train_x), columns=pca_col_names)
-        pcs_test = pd.DataFrame(pca.transform(test_x), columns=pca_col_names)
-        train_x = pd.concat([train_x, pcs_train], axis=1)
-        test_x = pd.concat([test_x, pcs_test], axis=1)
-
-        return train_x, test_x
-
-    def feature_contribution(self, clf, x, y, plot_graph=False, plot_n_features=None,
-                                n_cv=2, method='predict_proba'):
-
-        plot_n_features = x.shape[1] if not plot_n_features else plot_n_features
-        y_hat = cross_val_predict(clf, x, y, cv=n_cv, method=method)
-        baseline_score = roc_auc_score(y, y_hat[:, 1])
-
-        importances = np.array([])
-        
-        for col in x.columns:
-            x_tmp = x.drop(col, axis=1)
-            y_hat = cross_val_predict(clf, x_tmp, y, cv=n_cv, method=method)
-            score = roc_auc_score(y, y_hat[:, 1])
-            importances = np.append(importances, baseline_score-score)
-
-        if plot_graph:
-            idc = np.argsort(importances)
-            columns = x.columns[idc]
-            fig, ax = plt.subplots(1, 1)
-            ax.plot(importances[idc[-plot_n_features:]])
-            ax.axhline(0, color='k', linewidth=.5)
-            ax.set_xticks(np.arange(x.shape[1]))
-            ax.set_xticklabels(columns[-plot_n_features:], rotation=90, fontdict={'fontsize': 6})
-            ax.set_xlabel('Features')
-            ax.set_ylabel('Difference with baseline')
-            fig.tight_layout()
-
-        return importances
 
     def plot_model_results(self,
                            aucs):  # , classifier='Logistic regression', outcome='ICU admission'):
@@ -455,12 +418,14 @@ class LogReg:
 
     def plot_model_weights(self, feature_labels, clf, 
                            show_n_features=10, normalize_coefs=False):
-        if self.model_args['add_missing_indicator']:
-            # ADD featuere labels for missing feature indicators
-            feature_labels = feature_labels.to_list() \
-                             + ['m_id_{}'.format(feature_labels[i])\
-                                for i in clf.named_steps.imputer.indicator_.features_]
-                             
+
+        feature_labels = self.get_feature_labels(feature_labels, clf)
+        
+        # FIXME
+        if self.model_args['apply_pca']:
+            print('UNEVEN FEATURE LENGTH. CANT PLOT WEIGHTS')
+            return None, None
+
         coefs = self.coefs
         intercepts = self.intercepts
         coefs = np.array(coefs).squeeze()
@@ -481,16 +446,7 @@ class LogReg:
         idx_sorted = avg_coefs.argsort()
         n_bars = np.arange(avg_coefs.shape[0])
 
-        labels = [self.var_dict.get(c) for c in feature_labels]
-        has_no_label = labels
-        for i, l in enumerate(labels):
-            if l == None:
-                labels[i] = feature_labels[i]
-            elif 'chronic cardiac disease' in l.lower():
-                labels[i] = 'Chronic Cardiac Disease (Not hypertension)'
-            elif 'home medication' in l.lower():
-                labels[i] = 'Home medication'
-        labels = np.array(labels)
+        labels = np.array([self.var_dict.get(c, c) for c in feature_labels])
         fontsize = 5.75 if labels.size < 50 else 5
         bar_width = .5  # bar width
 
@@ -511,14 +467,49 @@ class LogReg:
                     figsize=self.fig_size, dpi=self.fig_dpi)
         return fig, ax
 
-    def save_prediction_to_file(self, scores):
-        x = pd.concat([score['x'] for score in scores], axis=0).reset_index(drop=True)
-        y_hat = pd.concat([pd.Series(score['y_hat']) for score in scores], axis=0) \
-                  .reset_index(drop=True)
-        y = pd.concat([score['y'] for score in scores], axis=0).reset_index(drop=True)
+    def get_feature_labels(self, labels, clf):
+        steps = clf.named_steps.keys()
+        labels = np.array(labels)
 
-        df = pd.concat([x, y, y_hat], axis=1)
-        df.columns=list(x.columns)+['y', 'y_hat']
+        for i, l in enumerate(labels):
+            if l == None:
+                labels[i] = labels[i]
+            elif 'chronic cardiac disease' in l.lower():
+                labels[i] = 'Chronic Cardiac Disease (Not hypertension)'
+            elif 'home medication' in l.lower():
+                labels[i] = 'Home medication'
+
+        # NOTE: use loop over steps to be able to switch order    
+        if self.model_args['add_missing_indicator']:
+            labels = labels.to_list() \
+                     + ['m_id_{}'.format(labels[i])\
+                       for i in clf.named_steps.imputer.indicator_.features_]
+        
+        if 'polynomials' in steps:
+            # N_features = n_features (n)
+            #              + n_combinations_without_repeat (k)
+            #              + bias (if true)
+            #            = n + (n!)/(k!(n-k)!) + 1
+
+            labels = np.array(clf.named_steps.polynomials.get_feature_names(labels))
+
+        if 'feature_selection' in steps:
+            # TODO: check if also works with adding_missing_indicators
+            k = self.model_args['n_features']
+            labels = labels[np.argsort(clf.named_steps\
+                                          .feature_selection\
+                                          .pvalues_)[0:k]]
+
+            return labels
+        return labels
+
+    def save_prediction_to_file(self, scores):
+        x = pd.concat([score['x'] for score in scores], axis=0)
+        y_hat = pd.concat([pd.Series(score['y_hat']) for score in scores], axis=0)
+        y_hat.index = x.index
+        y = pd.concat([score['y'] for score in scores], axis=0)
+        df = pd.concat([x, y, y_hat, self.hospital], axis=1)
+        df.columns=list(x.columns)+['y', 'y_hat', 'hospital']
 
         filename = self.save_path + '_prediction.pkl'
         df.to_pickle(filename)
@@ -546,6 +537,19 @@ def get_fields_per_type(data, data_struct, type):
     return [field for field in fields if field in data.columns]
 
 
+            # Model and feature selection
+        # TODO ideally also the feature selection would take place within a CV pipeline
+        # if self.model_args['select_features']:
+        #     if not any(self.n_best_features):
+        #         self.importances = self.feature_contribution(pipeline, train_x, train_y,
+        #                                                      plot_graph=plot_feature_graph)
+        #         self.n_best_features = np.argsort(self.importances)[-n_best_features:]
+        #         print('Select {} best features:\n{}'
+        #                 .format(self.model_args['n_best_features'],
+        #                         list(train_x.columns[self.n_best_features])))
+        #     train_x = train_x.iloc[:, self.n_best_features]
+        #     test_x = test_x.iloc[:, self.n_best_features]
+
 
     # def analyse_fpr(self, fprs):
     #     means = [fpr.mean() for fpr in fprs]
@@ -565,3 +569,34 @@ def get_fields_per_type(data, data_struct, type):
     #     ax.set_title('FALSE POSITIVE RATE\n Mean mean and median over FPRs at different\nthresholds for all training iterations\nmean: {:.3f} \u00B1 {:.3f}\nmedian: {:.3f} \u00B1 {:.3f}'
     #             .format(means_mets['mean'], means_mets['ci'], median_mets['mean'], median_mets['ci']))
     #     fig.savefig('FPR_results.png')
+
+
+    # def feature_contribution(self, clf, x, y, plot_graph=False, plot_n_features=None,
+    #                             n_cv=2, method='predict_proba'):
+
+    #     plot_n_features = x.shape[1] if not plot_n_features else plot_n_features
+    #     y_hat = cross_val_predict(clf, x, y, cv=n_cv, method=method)
+    #     baseline_score = roc_auc_score(y, y_hat[:, 1])
+
+    #     importances = np.array([])
+        
+    #     for col in x.columns:
+    #         x_tmp = x.drop(col, axis=1)
+    #         y_hat = cross_val_predict(clf, x_tmp, y, cv=n_cv, method=method)
+    #         score = roc_auc_score(y, y_hat[:, 1])
+    #         importances = np.append(importances, baseline_score-score)
+
+    #     if plot_graph:
+    #         idc = np.argsort(importances)
+    #         columns = x.columns[idc]
+    #         fig, ax = plt.subplots(1, 1)
+    #         ax.plot(importances[idc[-plot_n_features:]])
+    #         ax.axhline(0, color='k', linewidth=.5)
+    #         ax.set_xticks(np.arange(x.shape[1]))
+    #         ax.set_xticklabels(columns[-plot_n_features:], rotation=90, fontdict={'fontsize': 6})
+    #         ax.set_xlabel('Features')
+    #         ax.set_ylabel('Difference with baseline')
+    #         fig.tight_layout()
+
+    #     return importances
+

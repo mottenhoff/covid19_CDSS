@@ -703,6 +703,16 @@ def plot_feature_importance(importances, features, show_n_features=5):
 
     return fig, ax
 
+def save_class_dist_per_hospital(path, y, hospital):   
+    with open(path + '_class_dist_per_hosp.txt', 'w') as f:
+        f.write('{}\t{}\t{}\n'.format('hospital', '0', '1'))
+        for h in hospital.unique():
+            vcs = y[hospital==h].value_counts()
+            line = '{}\t{}\t{}\n'.format(h, vcs[0], vcs[1])
+            f.write(line)
+    print('LOG: Written class distribution per hospital to file.')
+
+
 def explore_data(x, y):
     data = pd.concat([x, y], axis=1)
     corr = data.corr(method='spearman')
