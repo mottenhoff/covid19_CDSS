@@ -30,6 +30,7 @@ Datasets:   dictionary containin all training and test sets:
             input for train, score or evaluate
             
 '''
+import os
 from math import sqrt
 
 import matplotlib.pyplot as plt
@@ -40,6 +41,7 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.preprocessing import PolynomialFeatures
+from sklearn.pipeline import Pipeline
 from sklearn.feature_selection import SelectFpr
 from sklearn.feature_selection import SelectKBest
 from sklearn.model_selection import cross_val_predict
@@ -51,13 +53,12 @@ from sklearn.metrics import roc_auc_score
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import plot_confusion_matrix
 
-import os
-from sklearn.pipeline import Pipeline
 from sklearn.model_selection import GridSearchCV
 from sklearn.impute import SimpleImputer
 
 import warnings
 from sklearn.exceptions import ConvergenceWarning
+from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer
 from missingpy import MissForest
 # warnings.filterwarnings(action='ignore', category=ConvergenceWarning)
