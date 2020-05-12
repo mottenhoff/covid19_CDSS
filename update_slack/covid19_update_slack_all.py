@@ -9,7 +9,7 @@ Created on Thu Mar 26 21:51:39 2020
 """
 import time, statistics, os, site, sys
 site.addsitedir('./../') # add directory to path to enable import of castor_api
-from castor_api import Castor_api
+import castorapi as ca
 
 import configparser
 config = configparser.ConfigParser()
@@ -18,10 +18,10 @@ config.read('../user_settings.ini')
 # put both the secret, client and the tokens_slack file here
 location_castor_slack_api_data = config['SlackAPI']['local_private_path']
 
-c = Castor_api(location_castor_slack_api_data) # e.g. in user dir outside of GIT repo
+c = ca.CastorApi(location_castor_slack_api_data) # e.g. in user dir outside of GIT repo
 
 # get study ID for COVID study
-study_id = c.request_study_id('COVID')[0]
+study_id = c.select_study_by_name('COVID-19 NL')
 
 # Posting to a Slack channel
 def send_message_to_slack(text):
@@ -51,14 +51,14 @@ first_update = True
 while True:
     try:
         # renew session with api to avoid timeout errors
-        c = Castor_api(location_castor_slack_api_data) # e.g. in user dir outside of GIT repo
+        c = ca.CastorApi(location_castor_slack_api_data) # e.g. in user dir outside of GIT repo
         records = c.request_study_records(study_id)
         institutes = [x['_embedded']['institute']['name'] for x in records if x['_embedded']['institute']['name'] != 'Test Institute'  and x['archived'] == False]
         institutesUnique = []
         for inst in institutes:
             if inst not in institutesUnique:
                 institutesUnique.append(inst)
-                
+
         count_sub = {}
         completion_rate_sub = {}
         completion_rate_100_sub = {}
@@ -74,7 +74,7 @@ while True:
             completion_rate_0_sub[inst] = sum([x['progress']==0 for x in records if x['_embedded']['institute']['name'] == inst  and x['archived'] == False])
             completion_rate_avg_sub[inst] = statistics.mean([x['progress'] for x in records if x['_embedded']['institute']['name'] == inst and x['archived'] == False])
             sub_messages[inst] = str(count_sub[inst]) + ' (avg completion rate: ' + str(round(completion_rate_avg_sub[inst],2)) + '%)'
-            
+
         count_nw = (len([x['_embedded']['institute']['name'] for x in records if x['_embedded']['institute']['name'] != 'Test Institute' and x['archived'] == False]))
         completion_rate = [x['progress'] for x in records if x['_embedded']['institute']['name'] != 'Test Institute' and x['archived'] == False]
         completion_rate_100 = sum([x['progress']==100 for x in records if x['_embedded']['institute']['name'] != 'Test Institute' and x['archived'] == False])
@@ -91,12 +91,12 @@ while True:
                      '\n - average completion: ' + str(round(completion_rate_avg,2))+'% (n='+ str(count) +')\n'
             for c in sub_messages:
                 message = message + '\n>' + c + ': ' + (max([len(x) for x in institutesUnique])-len(c))*' ' + sub_messages[c]
-            
+
             send_message_to_slack(message)
             print(message)
-            
+
             first_update = False
-            
+
         else:
             print('No new entries found; try again in 5 minutes')
         time.sleep(60*5) # 5 minute updates, only if count increases by 10 or more.
@@ -106,4 +106,3 @@ while True:
         time.sleep(60) # in case of errors; wait 1 minute and try again.
 
 
-        

@@ -6,3 +6,4 @@ sklearn==0.0
 requests==2.22.0
 castorapi==0.2
 xgboost==1.0.2
+missingpy=0.2.0

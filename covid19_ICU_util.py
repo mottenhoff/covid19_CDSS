@@ -501,6 +501,20 @@ def transform_numeric_features(data, data_struct):
 
     data = data.drop(is_in_columns(unit_dict.keys(), data), axis=1)
 
+    # PaO2_1 and PaO2 are measured in 3 ways
+    # as described in PaO2_sample\_type_1 and PaO2_sample_type
+    # divide these variables in four dummies.
+    for p in ['', '_1']:
+        option_names = data_struct[
+            data_struct['Field Variable Name'] == 'PaO2_sample_type'+p]['Option Name']
+        option_values = data_struct[
+            data_struct['Field Variable Name'] == 'PaO2_sample_type'+p]['Option Value']
+        for value, name in zip(option_values.to_list()[0], option_names.to_list()[0]):
+            sel = data['PaO2_sample_type'+p] == value
+            data['PaO2'+p+'_'+str(name)] = np.nan
+            data['PaO2'+p+'_'+str(name)][sel] = data['PaO2'+p][sel]
+        data.drop(columns='PaO2'+p, inplace=True)
+
     return data, data_struct
 
 def transform_time_features(data, data_struct):
@@ -664,16 +678,16 @@ def select_variables(data, data_struct, variables_to_include_dict):
     return data.loc[:, variables_to_include]
 
 def impute_missing_values(data, data_struct):
-    ''' 
+    '''
     NOTE: DEPRECATED in upcoming versions
     NOTE: Only impute values that not leak data.
-          i.e. only use single field or 
+          i.e. only use single field or
           record based imputations. '''
 
     missing_class = -1
     # Categorical --> Add a missing class
     vars_categorical = is_in_columns(data_struct.loc[data_struct['Field Type']=='category', 'Field Variable Name'].to_list(), data)
-    
+
     data.loc[:, vars_categorical] = data.loc[:, vars_categorical].fillna(missing_class)
 
     ## MODE should be moved to Pipeline in Classifier to prevent data leakage
@@ -704,7 +718,7 @@ def plot_feature_importance(importances, features, show_n_features=5):
 
     return fig, ax
 
-def save_class_dist_per_hospital(path, y, hospital):   
+def save_class_dist_per_hospital(path, y, hospital):
     with open(path + '_class_dist_per_hosp.txt', 'w') as f:
         f.write('{}\t{}\t{}\n'.format('hospital', '0', '1'))
         for h in hospital.unique():

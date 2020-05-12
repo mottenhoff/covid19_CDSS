@@ -20,6 +20,8 @@ import matplotlib.pyplot as plt
 from lifelines import *
 import pandas as pd
 import numpy as np
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
 
 plt.rcParams["font.family"] = "Times New Roman"
 matplotlib.rcParams.update({'font.size': 14})
@@ -46,8 +48,24 @@ englishvar_to_dutchnames = {'age_yrs':'Leeftijd (jaren)','gender_male':'Geslacht
                             'confusion':'Veranderd bewustzijn (ja)','Seizures':'Insulten (ja)','infiltrates_2':'Infiltraat op X-thorax (ja)','corads_admission':'CO-RADS (1-5)','Glucose_unit_1_1':'glucose (mmol/L)','Sodium_1_1':'Natrium (mmol/L)','Potassium_1_1':'Kalium (mmol/L)','Blood_Urea_Nitrogen_value_1':'Ureum (mmol/L)',
                             'Creatinine_value_1':'Creatinine (µmol/L)','Calcium_adm':'Ca (totaal) (mmol/L)','ferritine_admin_spec':'ferritine (mg/L)','creatininekinase':'CK (U/L)','d_dimer':'D-Dimeer (nmol/L)','AST_SGOT_1_1':'ASAT (U/L)','ALT_SGPT_1_1':'ALAT (U/L)','Total_Bilirubin_2_1':'totaal Bilirubine (IE)','LDH':'LDH (U/L)',
                             'PH_value_1':'Zuurgraad (pH)','Lactate_2_1':'Lactaat (mmol/L)','crp_1_1':'CRP (mg/L)','Haemoglobin_value_1':'Hb (mmol/L)','Platelets_value_1':'trombocyten (x10^9/L)','WBC_2_1':'Leukocyten (x10^3/µL)','Lymphocyte_1_1':'Lymfocyten (x10^9/L)','Neutrophil_unit_1':'Neutrofielen (x10^9/L)','INR_1_1':'INR',
-                            'pt_spec':'PT (sec)','fibrinogen_admin':'Fibrinogeen (g/L)','pcr_pos':'Corona PCR + (ja)','Adenovirus':'Adenovirus (ja)','RSV_':'RS virus (ja)','Influenza':'Influenza virus (ja)','Bacteria':'Sputumkweek (ja)','days_since_onset':'Tijd sinds eerste klachten (dagen)','irregular':'Onregelmatige hartslag (ja)',
+                            'pt_spec':'PT (sec)','fibrinogen_admin':'Fibrinogeen (g/L)','pcr_pos':'Corona PCR + (ja)','Adenovirus':'Adenovirus (ja)','RSV_':'RS virus (ja)','Influenza':'Influenza virus (ja)','Bacteria':'Sputumkweek (ja)','days_untreated':'Tijd sinds eerste klachten (dagen)','irregular':'Onregelmatige hartslag (ja)',
                             'DNR_yesno':' (ja)','healthcare_worker':'Zorgmedewerker (ja)','infec_resp_diagnosis':'Andere infectieuze ademhalingsdiagnose','Blood_albumin_value_1':'Albumine (g/L)','culture':'Bloedkweek (positief)','APT_APTR_1_1':'APTT (sec)'}
+
+
+class StandardScaler_min2cols(StandardScaler):
+    def __init__(self,columns,copy=True,with_mean=True,with_std=True):
+        self.scaler = StandardScaler(copy,with_mean,with_std)
+        self.columns = columns
+
+    def fit(self, X, y=None):
+        self.scaler.fit(X[self.columns], y)
+        return self
+
+    def transform(self, X, y=None, copy=None):
+        init_col_order = X.columns
+        X_scaled = pd.DataFrame(self.scaler.transform(X[self.columns]), columns=self.columns)
+        X_not_scaled = X.iloc[:, ~X.columns.isin(self.columns)]
+        return pd.concat([X_not_scaled, X_scaled], axis=1)[init_col_order]
 
 
 def simple_estimates(features):
@@ -89,7 +107,7 @@ def KM_age_groups(features):
     print('ICU no: n=', np.nansum(was_not_on_icu))
 
     icu = False
-    special = True
+    special = False
     fig, axes = plt.subplots(1, 1)
 
     if special:
@@ -141,24 +159,41 @@ def KM_age_groups(features):
     plt.show()
 
 
-def cox_ph_concordance_test(features):
-    test_hospital = 'MUMC' # this can be MUMC, Zuyderland, or AUMC - AMC
-    train_set = features[features['hospital'] != test_hospital]
-    test_set = features[features['hospital'] == test_hospital]
+def cox_ph_loho(features, hazard_ratios=False,
+                imputation_method='median', pvalue=0.05):
+    cindex = []
+    for test_hospital in features['hospital'].unique():
+        train_set = features[features['hospital'] != test_hospital]
+        test_set = features[features['hospital'] == test_hospital]
 
-    train_set = train_set.drop(columns=['hospital'])
-    test_set = test_set.drop(columns=['hospital'])
+        test_set = test_set.drop(columns=['hospital'])
 
-    cph = CoxPHFitter()
-    cph.fit(train_set, duration_col='Time to event', event_col='Event death', show_progress=True, step_size=0.1)
+        cph, p, imputer, scaler = cox_ph(train_set, hazard_ratios=False,
+                                         imputation_method='median',
+                                         return_scaler_imputer=True)
 
-    print('with and without ICU')
-    print('test hospital:', test_hospital)
-    print('test c-index', cph.score(test_set, scoring_method="concordance_index"))
+        test_set = pd.DataFrame(imputer.transform(test_set), columns=test_set.columns)
+        test_set = scaler.transform(test_set)
 
+        hazard_ratios_sum = cph.summary
+        sel_corr = hazard_ratios_sum[hazard_ratios_sum['p'] <= pvalue]
+        c = cph.score(test_set, scoring_method="concordance_index")
+        print('test hospital:', test_hospital, 'test c-index', c)
+        print(sel_corr)
+        cindex += [c]
+    return cindex
 
-def cox_ph(features, hazard_ratios=False):
+def cox_ph(features, hazard_ratios=False,
+           imputation_method='median', return_scaler_imputer=False):
     train_set = features.drop(columns=['hospital']) # NOTE aids_hiv is an outlier for plotting coefs
+
+    # impute nan with median; note that time to event and event death cannot contain nan
+    imputer = SimpleImputer(missing_values=np.nan, strategy=imputation_method)
+    train_set = pd.DataFrame(imputer.fit_transform(train_set), columns=train_set.columns)
+
+    # scale data using zscore
+    scaler = StandardScaler_min2cols(columns=train_set.columns)
+    train_set = scaler.fit_transform(train_set)
 
     cph = CoxPHFitter()
     cph.fit(train_set, duration_col='Time to event', event_col='Event death', show_progress=True, step_size=0.1)
@@ -167,7 +202,10 @@ def cox_ph(features, hazard_ratios=False):
 
     fig, ax = plt.subplots(figsize=(5, 25))
     p = cph.plot(hazard_ratios=hazard_ratios)
-    return cph, p
+    if return_scaler_imputer:
+        return cph, p, imputer, scaler
+    else:
+        return cph, p
 
 def cox_plot_pvalue_only(cph, pvalue, hazard_ratios=False):
     hazard_ratios_sum = cph.summary
@@ -200,6 +238,7 @@ if __name__ == '__main__':
     variables_to_exclude += ['Coronavirus']  # duplicate of PCR information
     data, data_struct = load_data(path_creds)
     data, data_struct = preprocess(data, data_struct)
+    # %%
     features, outcomes, data, hospital, record_id = prepare_for_learning(data, data_struct,
                                                               variables_to_include,
                                                               variables_to_exclude,
@@ -215,6 +254,9 @@ if __name__ == '__main__':
     times.loc[data['Levend ontslagen en niet heropgenomen - totaal']] = 21.  # or 365   #  discharged alive - ALL 3
     events.loc[data['Levend ontslagen en niet heropgenomen - totaal']] = False  # censor at t=21 days
 
+    times.loc[data['Levend dag 21 maar nog in het ziekenhuis - totaal']] = 21.
+    events.loc[data['Levend dag 21 maar nog in het ziekenhuis - totaal']] = False
+
     # now add the people that are UNKNOWN at 21 days.
     times.loc[data['Onbekend (alle patiënten zonder outcome)']] = data['days_since_admission_current_hosp'][data['Onbekend (alle patiënten zonder outcome)']]  # Onbekend (alle patiënten zonder outcome) == UNKNOWN outcome
     events.loc[data['Onbekend (alle patiënten zonder outcome)']] = False  # censor at time of event.
@@ -222,6 +264,19 @@ if __name__ == '__main__':
     # now mark the people that died after 21 days as alive at 21 days.
     times.loc[data['Days until death'] > 21.] = 21.
     events.loc[data['Days until death'] > 21.] = False  # censor at time of event.
+
+    # fix remaining issues with events
+    sel = np.logical_and(times.isna(),data['Outcome_cat_4'] == 1) # transfer
+    events[sel] = np.nan
+    sel = np.logical_and(times.isna(),data['Outcome_cat_8'] == 1) # death
+    events[sel] = False  # no information on timing present, hence state as alive at t=0
+    times[sel] = 0.
+    sel = np.logical_and(times.isna(),data['Outcome_cat_10'] == 1) # discharged readmitted
+    events[sel] = np.nan
+
+    # remaining data: does not have any outcome or follow-up: we only now these patients are alive at t=0.
+    times[times.isna()] = 0.0
+    times[events.isna()] = np.nan
 
     features = pd.concat([features,
                           pd.Series(name='Time to event',
@@ -246,25 +301,31 @@ if __name__ == '__main__':
     # translate feature columns
     features.rename(columns=englishvar_to_dutchnames, inplace=True)
 
-
     # CORRECT SaO2
-    features['SaO2 (%)'][features['SaO2 (%)']<= 1.0] = features['SaO2 (%)'][features['SaO2 (%)']<= 1.0] * 100.
+    features['SaO2 (%)'] = features['SaO2 (%)'].astype(float)
+    features['SaO2 (%)'][features['SaO2 (%)'] <= 1.0] = features['SaO2 (%)'][features['SaO2 (%)']<= 1.0] * 100.
 
-    # fi_sa_ratio = (features['SaO2 (%)']/100) / features['FiO2 (%)']
-    # fi_sa_ratio[fi_sa_ratio == np.inf] = np.nan
-    # fi_sa_ratio[fi_sa_ratio == 0.0] = np.nan
+    # do not model data with > 50% missing data
+    drop_vars = features.columns[np.sum(features.isnull())/len(features) > 0.9]
+    features = features.drop(columns=drop_vars)
 
     # %% STEP 3: SHOW KM CURVE
     # simple_estimates(features)  # events: True = death, False = censor, None = ?
     KM_age_groups(features)
 
+    # %% step 5: valdiate concordance with LOHO
+    cindex = cox_ph_loho(features, hazard_ratios=False,
+                         imputation_method='median')
+    print('concordances = ', cindex)
+
+
     # %% STEP 4: COX REGRESSION.
     # USE HERE: features, hospital, times, events
-    cph, plot = cox_ph(features, hazard_ratios=False)
+    cph, plot = cox_ph(features, hazard_ratios=True)
     plot.figure.savefig('Cox_coef_all.png', format='png', dpi=300, figsize=(3,23), pad_inches=0, bbox_inches='tight')
 
     # %%
-    cphplt = cox_plot_pvalue_only(cph, 0.05, hazard_ratios=False)
+    cphplt = cox_plot_pvalue_only(cph, 0.05, hazard_ratios=True)
     # run on command line:
     cphplt.figure.set_figheight(6)
     cphplt.figure.savefig('Cox_coef_pvalue_.05.png', format='png', dpi=300, figsize=(7,9), pad_inches=0, bbox_inches='tight')
