@@ -1,34 +1,34 @@
-''' 
+'''
 DO NOT OVERWRITE THIS FILE, MAKE A COPY TO EDIT!
 
 This file contains blueprint for the model that is used
-in covid19_ICU_admission.  
+in covid19_ICU_admission.
 This class should take care of training a classifier/regressor,
-scoring each iteration and evaluating post training. 
+scoring each iteration and evaluating post training.
 
-Make sure the names, inputs and outputs of the predefined methods stay 
+Make sure the names, inputs and outputs of the predefined methods stay
 the same!
 
 
 Model parameters:
 Please store all parameters in the defined dicts in __init__().
-This way it is easy to change some parameters without changing 
-the main code and without the need for extra config files. 
+This way it is easy to change some parameters without changing
+the main code and without the need for extra config files.
 
 Most important naming conventions and variables:
 Model:      The whole class in this file. This means that "model" takes
             care of training, scoring and evaluating
 
 Clf:        This is the actually classifier/regressor. It can be for example
-            the trained instance from the Sklearn package 
+            the trained instance from the Sklearn package
             (e.g. LogisticRegression())
 
 Datasets:   dictionary containin all training and test sets:
             train_x, train_y, test_x, test_y, test_y_hat
 
-..._args:   Dictionary that holds the parameters that are used as 
+..._args:   Dictionary that holds the parameters that are used as
             input for train, score or evaluate
-            
+
 '''
 from math import sqrt
 
@@ -58,6 +58,7 @@ from sklearn.impute import SimpleImputer
 
 import warnings
 from sklearn.exceptions import ConvergenceWarning
+from sklearn.experimental import enable_iterative_imputer  # Required to enable experimental iterative imputer
 from sklearn.impute import IterativeImputer
 from missingpy import MissForest
 # warnings.filterwarnings(action='ignore', category=ConvergenceWarning)
@@ -66,17 +67,17 @@ class LogReg:
 
     def __init__(self):
         ''' Initialize model.
-        Save all model parameters here. 
+        Save all model parameters here.
         Please don't change the names of the preset
         parameters, as they might be called outside
-        this class. 
+        this class.
         '''
 
         self.goal = None
         self.data_struct = None
         self.model_args = {
             'add_missing_indicator': False,
-            
+
             'apply_polynomials': False,
 
             'apply_feature_selection': False,
@@ -115,21 +116,21 @@ class LogReg:
         self.random_state = 0
         self.save_prediction = False
         self.hospital = None
-        
+
     def train(self, datasets):
         ''' Initialize, train and predict a classifier.
         This includes: Feature engineering (i.e. PCA) and
-        selection, training clf, (hyper)parameter optimization, 
+        selection, training clf, (hyper)parameter optimization,
         and a prediction on the test set. Make sure to save
         all variables you want to keep track of in the instance.
 
-        Input: 
+        Input:
             datasets:: dict
                 Contains train and test x, y
-        
+
         Output:
             clf:: instance, dict, list, None
-                Trained classifier/regressor instance, such as 
+                Trained classifier/regressor instance, such as
                 sklearn logistic regression. Is not used
                 outside this file, so can be left empty
             datasets:: dict
@@ -152,7 +153,7 @@ class LogReg:
 
         train_x = self.impute_missing_values(train_x)
         test_x = self.impute_missing_values(test_x)
-        
+
         # Define pipeline
         self.pipeline = self.get_pipeline()
 
@@ -175,7 +176,7 @@ class LogReg:
         self.intercepts.append(clf.named_steps['LR'].intercept_)
 
         test_y_hat = clf.predict_proba(test_x)  # Predict
-        
+
         if 'feature_selection' in clf.named_steps:
             columns = train_x.columns[np.argsort(clf.named_steps\
                                           .feature_selection\
@@ -188,7 +189,7 @@ class LogReg:
                     "test_x": test_x,
                     "train_y": train_y,
                     "test_y": test_y}
-        
+
         return clf, datasets, test_y_hat
 
     def score(self, clf, datasets, test_y_hat, rep):
@@ -235,9 +236,9 @@ class LogReg:
             'y': datasets['test_y'],
             'y_hat': test_y_hat
             }
-        
+
         return score
-      
+
     def evaluate(self, clf, datasets, scores):
         ''' Evaluate the results of the modelling process,
         such as, feature importances.
@@ -254,11 +255,11 @@ class LogReg:
                 List of all scores generated per training
                 iteration.
         '''
-        self.var_dict = dict(zip(self.data_struct['Field Variable Name'], 
+        self.var_dict = dict(zip(self.data_struct['Field Variable Name'],
                                  self.data_struct['Field Label']))
         cms = [score['conf_mats'] for score in scores]
         thresholds = [score['thr'] for score in scores]
-        
+
         self.analyse_fpr(cms, thresholds)
         fig, ax = self.plot_model_results([score['roc_auc'] for score in scores])
         fig2, ax2 = self.plot_model_weights(datasets['test_x'].columns, clf,
@@ -267,15 +268,15 @@ class LogReg:
 
         if self.save_prediction:
             self.save_prediction_to_file(scores)
-        
+
     def define_imputer(self,impute_type):
         '''Initialize the imputer to be used for every iteration.
-        
+
         Input:
-            impute_type: string, {'simple': SimpleImputer, 
+            impute_type: string, {'simple': SimpleImputer,
             'iterative': IterativeImputer and 'forest': RandomForest imputer}
         Output:
-            Imputer: imputer object to be used in the pipeline        
+            Imputer: imputer object to be used in the pipeline
         '''
         if impute_type=='simple':
             self.imputer = SimpleImputer(missing_values=np.nan, strategy='median',
@@ -284,7 +285,7 @@ class LogReg:
             if impute_type=='iterative':
                     self.imputer = IterativeImputer(missing_values=np.nan, initial_strategy='median',
                                            add_indicator=self.model_args['add_missing_indicator'])
-            else:                    
+            else:
                 if impute_type=='forest':
                     self.imputer = MissForest(random_state=self.random_state,n_jobs=-2)
 
@@ -310,11 +311,11 @@ class LogReg:
             for key in keys:
                 del self.grid[key]
 
-        steps += [('LR', LogisticRegression(solver='saga', 
-                                            penalty='elasticnet', #class_weight='balanced', 
+        steps += [('LR', LogisticRegression(solver='saga',
+                                            penalty='elasticnet', #class_weight='balanced',
                                             l1_ratio=.5,
                                             max_iter=200,
-                                            random_state=self.random_state))] 
+                                            random_state=self.random_state))]
         return Pipeline(steps)
 
     def impute_missing_values(self, data, missing_class=-1):
@@ -323,7 +324,7 @@ class LogReg:
         # Categorical
         vars_categorical = get_fields_per_type(data, self.data_struct, 'category')
         data.loc[:, vars_categorical] = data[vars_categorical].fillna(missing_class, axis=0)
-    
+
         # # Numeric
         # vars_numeric = get_fields_per_type(data, self.data_struct, 'numeric')
         # data.loc[:, vars_numeric] = data.loc[:, vars_numeric] \
@@ -418,11 +419,11 @@ class LogReg:
             fig.savefig(self.save_path + '_average_roc.png',
                         figsize=self.fig_size, dpi=self.fig_dpi)
 
-    def plot_model_weights(self, feature_labels, clf, 
+    def plot_model_weights(self, feature_labels, clf,
                            show_n_features=10, normalize_coefs=False):
 
         feature_labels = self.get_feature_labels(feature_labels, clf)
-        
+
         # FIXME
         if self.model_args['apply_pca']:
             print('UNEVEN FEATURE LENGTH. CANT PLOT WEIGHTS')
@@ -481,12 +482,12 @@ class LogReg:
             elif 'home medication' in l.lower():
                 labels[i] = 'Home medication'
 
-        # NOTE: use loop over steps to be able to switch order    
+        # NOTE: use loop over steps to be able to switch order
         if self.model_args['add_missing_indicator']:
             labels = labels.to_list() \
                      + ['m_id_{}'.format(labels[i])\
                        for i in clf.named_steps.imputer.indicator_.features_]
-        
+
         if 'polynomials' in steps:
             # N_features = n_features (n)
             #              + n_combinations_without_repeat (k)
@@ -581,7 +582,7 @@ def get_fields_per_type(data, data_struct, type):
     #     baseline_score = roc_auc_score(y, y_hat[:, 1])
 
     #     importances = np.array([])
-        
+
     #     for col in x.columns:
     #         x_tmp = x.drop(col, axis=1)
     #         y_hat = cross_val_predict(clf, x_tmp, y, cv=n_cv, method=method)
