@@ -727,31 +727,29 @@ def save_class_dist_per_hospital(path, y, hospital):
             f.write(line)
     print('LOG: Written class distribution per hospital to file.')
 
-
 def explore_data(x, y):
-    data = pd.concat([x, y], axis=1)
-    corr = data.corr(method='spearman')
-    plt.matshow(corr)
+    # VIF
+    from statsmodels.stats.outliers_influence import variance_inflation_factor
+    from statsmodels.tools.tools import add_constant
+
+    x = x.fillna(0).astype(float)
+    # x = add_constant(x)
+    vif = pd.Series([variance_inflation_factor(x.values, i)
+                    for i in range(x.shape[1])], index=x.columns)\
+            .sort_values(ascending=False)
+
+    fig, ax = plt.subplots()
+    ax.set_title('Variance inflation factor')
+    vif.nlargest(25).plot(kind='barh')
+    fig.tight_layout()
+
+    # CORRELATION
+    xc = x.corr('spearman') # 'spearmon'
+
+    fig, ax = plt.subplots()
+    ax.set_title('Correlation matrix')
+    ax.matshow(xc)
 
 
-# beademd geweest op IC
-# outcome_ventilation_any = data['patient_interventions_cat_1'] == 1.0 \
-#                           | data['patient_interventions_cat_2'] == 1.0 \
-#                           | data['Invasive_ventilation_1'] == 1.0
-# outcome_ventilation_daily = data['patient_interventions_cat_1'] == 1.0 | \
-#                             data['patient_interventions_cat_2'] == 1.0
 
-# Orgaanfalen lever, nier
-# outcome_organfailure_any = data['patient_interventions_cat_3'] == 1.0 | \
-# data['patient_interventions_cat_5'] == 1.0 | \
-# data['Extracorporeal_support_1'] == 1.0 | \
-# data['Liver_dysfunction_1_1'] == 1.0 | \
-# data['INR_1_1'].astype('float') > 1.5 | \
-# data['Acute_renal_injury_Acute_renal_failure_1_1'] == 1.0
-
-
-
-# has_not_died = outcomes.loc[:, ['Levend ontslagen en niet heropgenomen - totaal',
-#                                 'Levend dag 21 maar nog in het ziekenhuis - totaal']].any(axis=1)
-# y_duration.loc[has_not_died] = data.loc[has_not_died, 'days_since_admission_current_hosp']
-# y_event.loc[has_not_died] = 0
+    return

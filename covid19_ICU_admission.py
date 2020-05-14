@@ -51,7 +51,6 @@ from covid19_ICU_util import explore_data
 # classifiers
 from logreg import LogReg
 from XGB import XGB
-from gradboost import train_gradient_boosting
 
 # data
 from get_feature_set import get_1_premorbid
@@ -195,6 +194,8 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
         x = x.loc[has_y, :]
         y = y.loc[has_y]
     
+    # explore_data(x, y)
+
     return x, y, data, hospital, records
 
 def train_and_predict(x, y, model, rep, type='loho', 
@@ -364,7 +365,8 @@ if __name__ == "__main__":
         'cp':   get_2_clinical_presentation(),
         'lab':  get_3_laboratory_radiology_findings(),
         'pmcp': get_4_premorbid_clinical_representation(),
-        'all':  get_5_premorbid_clin_rep_lab_rad()
+        'all':  get_5_premorbid_clin_rep_lab_rad(),
+        'k10': ['LDH', 'PH_value_1', 'age_yrs', 'ccd', 'fio2_1', 'hypertension', 'irregular', 'oxygen_saturation', 'rtr', 'uses_n_medicine']
     }
 
     # Options:
@@ -378,7 +380,8 @@ if __name__ == "__main__":
 
     # Options:
     #   see .\Classifiers
-    model = LogReg  # NOTE: do not initialize model here,
+    model = XGB
+    # model = LogReg  # NOTE: do not initialize model here,
                     #       but supply the class (i.e. omit
                     #       the parentheses)
 

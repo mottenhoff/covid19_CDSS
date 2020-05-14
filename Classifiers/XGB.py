@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Created on Thu Apr 30 13:25:50 2020
 
@@ -86,8 +85,9 @@ class XGB:
         self.model_args = {
             'add_missing_indicator': False,
             'apply_pca': False,
+            'apply_polynomials': False,
             'pca_n_components': 3,
-
+            'apply_feature_selection':False,
             'select_features': False,
             'n_best_features': 10,
             'plot_feature_graph': True,
@@ -122,18 +122,21 @@ class XGB:
             'XGB__max_depth': ([2, 4, 6,8])}
         
         #self.grid = {
-        #'XGB__n_estimators': ([200,400,500,600,800,1000,1200,1400]),
-        #'XGB__max_features': (['auto', 'sqrt', 'log2']),                   # precomputed,'poly', 'sigmoid'
-        #'XGB__max_depth':    ([10,20,30,40, 50, 60, 70, 80, 90, 100, None]),
-        #'XGB__criterion':    (['gini', 'entropy']),
-        #'XGB__min_samples_split':  [2,4,6,8],
-        #'XGB__min_samples_leaf':   [2,4,6,8,10]}
+        #'RFC__n_estimators': ([200,400,500,600,800,1000,1200,1400]),
+        #'RFC__max_features': (['auto', 'sqrt', 'log2']),                   # precomputed,'poly', 'sigmoid'
+        #'RFC__max_depth':    ([10,20,30,40, 50, 60, 70, 80, 90, 100, None]),
+        #'RFC__criterion':    (['gini', 'entropy']),
+        #'RFC__min_samples_split':  [2,4,6,8],
+        #'RFC__min_samples_leaf':   [2,4,6,8,10]}
        
         self.save_path = ''
         self.fig_size = (1280, 960)
         self.fig_dpi = 600
+
         self.random_state = 0
-        
+        self.save_prediction = True
+        self.hospital = pd.Series()
+
     def define_imputer(self,impute_type):
         '''Initialize the imputer to be used for every iteration.
         
@@ -176,13 +179,8 @@ class XGB:
             for key in keys:
                 del self.grid[key]
 
-        steps += [('LR', LogisticRegression(solver='saga', 
-                                            penalty='elasticnet', #class_weight='balanced', 
-                                            l1_ratio=.5,
-                                            max_iter=200,
-                                            random_state=self.random_state))] 
+        steps += [('XGB', XGBClassifier(random_state=self.random_state))] 
         return Pipeline(steps)
-        
         
     def train(self, datasets):
         ''' Initialize, train and predict a classifier.
@@ -216,32 +214,19 @@ class XGB:
         self.learn_size += [{'tr_x': train_x.shape, 'tr_y': train_y.shape,
                             'te_x': test_x.shape, 'te_y': test_y.shape}]
 
-        n_best_features = self.model_args['n_best_features']
-        plot_feature_graph = self.model_args['plot_feature_graph']
-
         train_x = self.impute_missing_values(train_x)
         test_x = self.impute_missing_values(test_x)
 
+        # Define pipeline
         self.pipeline = self.get_pipeline()
-
 
         # Model and feature selection
         # TODO ideally also the feature selection would take place within a CV pipeline
-        if self.model_args['select_features']:
-            if not any(self.n_best_features):
-                self.importances = self.feature_contribution(clf, train_x, train_y,
-                                                             plot_graph=plot_feature_graph)
-                self.n_best_features = np.argsort(self.importances)[-n_best_features:]
-                print('Select {} best features:\n{}'.format(self.model_args['n_best_features'],
-                                                            list(train_x.columns[
-                                                                     self.n_best_features])))
-            train_x = train_x.iloc[:, self.n_best_features]
-            test_x = test_x.iloc[:, self.n_best_features]
 
         if self.model_args['grid_search']:
             # print("Train classfier using grid search for best parameters.")
             cv = StratifiedShuffleSplit(n_splits=5, test_size=0.2, random_state=self.random_state)
-            grid = RandomizedSearchCV(self.pipeline, param_grid=self.grid, cv=cv,
+            grid = RandomizedSearchCV(self.pipeline, param_distributions=self.grid, cv=cv,
                                 scoring='roc_auc', n_jobs=-2)
             grid.fit(train_x, train_y)
             clf = grid.best_estimator_
@@ -254,6 +239,7 @@ class XGB:
         test_y_hat = clf.predict_proba(test_x)  # Predict
 
         self.coefs.append(clf['XGB'].feature_importances_)
+
 
         datasets = {"train_x": train_x,
                     "test_x": test_x,
@@ -307,7 +293,6 @@ class XGB:
             'y_hat': test_y_hat
             }
         
-
         return score
     
     def evaluate(self, clf, datasets, scores):
@@ -362,7 +347,6 @@ class XGB:
         train_x = train_x.reset_index(drop=True)
         test_x = test_x.reset_index(drop=True)
 
-
         scaler = MinMaxScaler().fit(train_x)
         # scaler = StandardScaler().fit(train_x)
         train_x = pd.DataFrame(scaler.transform(train_x), columns=columns)
@@ -386,32 +370,19 @@ class XGB:
         return train_x, test_x
 
     def feature_contribution(self, clf, x, y, plot_graph=False, plot_n_features=None,
-                             n_cv=2, method='predict_proba'):
-
-        """Select feature from model internal selection."""
-
+                                n_cv=2, method='predict_proba'):
 
         plot_n_features = x.shape[1] if not plot_n_features else plot_n_features
         y_hat = cross_val_predict(clf, x, y, cv=n_cv, method=method)
         baseline_score = roc_auc_score(y, y_hat[:, 1])
 
         importances = np.array([])
-
-        # Fit model using each importance as a threshold
-        clf.fit(x, y)
-        thresholds = np.sort(clf.feature_importances_)
-        for thresh in thresholds:
-            # select features using threshold
-            selection = SelectFromModel(clf, threshold=thresh, prefit=True)
-            select_X_train = selection.transform(x)
-            # train model
-            selection_clf = XGBClassifier()
-            y_hat = cross_val_predict(selection_clf, x, y, cv=n_cv, method=method)
-
+        
+        for col in x.columns:
+            x_tmp = x.drop(col, axis=1)
+            y_hat = cross_val_predict(clf, x_tmp, y, cv=n_cv, method=method)
             score = roc_auc_score(y, y_hat[:, 1])
             importances = np.append(importances, baseline_score-score)
-            print("Thresh=%.3f, n=%d, roc_auc_score: %.2f%%" % (
-                thresh, select_X_train.shape[1], score * 100.0))
 
         if plot_graph:
             idc = np.argsort(importances)
@@ -420,7 +391,7 @@ class XGB:
             ax.plot(importances[idc[-plot_n_features:]])
             ax.axhline(0, color='k', linewidth=.5)
             ax.set_xticks(np.arange(x.shape[1]))
-            ax.set_xticklabels(columns[-plot_n_features:], rotation=90, fontdict={ 'fontsize': 6 })
+            ax.set_xticklabels(columns[-plot_n_features:], rotation=90, fontdict={'fontsize': 6})
             ax.set_xlabel('Features')
             ax.set_ylabel('Difference with baseline')
             fig.tight_layout()
@@ -445,7 +416,7 @@ class XGB:
         ax.set_ylabel('AUC')
         ax.legend(['ROC AUC', 'Average', 'Chance level'], bbox_to_anchor=(1, 0.5))
         fig.tight_layout()
-        fig.savefig(self.save_path + '_Performance_roc_auc_{}_{}.png'.format(avg, sem * 1.96),
+        fig.savefig(self.save_path + 'XGB_Performance_roc_auc_{}_{}.png'.format(avg, sem * 1.96),
                     figsize=self.fig_size, dpi=self.fig_dpi)
 
         return fig, ax
@@ -476,7 +447,6 @@ class XGB:
         spec_ci = (spec_std / sqrt(spec.shape[0])) * 1.96
 
         auc_mean = auc_calc(fprs_mean, sens_mean)
-
         if self.evaluation_args['plot_analyse_fpr']:
             fig, ax = plt.subplots()
             ax.plot(thrs[0], fprs_mean, label='fpr')
@@ -540,7 +510,6 @@ class XGB:
 
         var_coefs = coefs.var(axis=0)[mask_not_nan] if not normalize_coefs else None
         idx_sorted = avg_coefs.argsort()
-
         n_bars = np.arange(avg_coefs.shape[0])
 
         labels = [self.var_dict.get(c) for c in feature_labels]
@@ -554,7 +523,6 @@ class XGB:
                 labels[i] = 'Home medication'
         labels = np.array(labels)
         fontsize = 5.75 if labels.size < 50 else 5
-
         bar_width = .5  # bar width
 
         fig, ax = plt.subplots()
@@ -570,10 +538,9 @@ class XGB:
         ax.set_ylim(n_bars[0] - .5, n_bars[-1] + .5)
         ax.set_xlabel('Weight{}'.format(' (normalized)' if normalize_coefs else ''))
         fig.tight_layout()
-        fig.savefig(self.save_path + '_Average_weight_variance.png',
+        fig.savefig(self.save_path + 'XGB_Average_weight_variance.png',
                     figsize=self.fig_size, dpi=self.fig_dpi)
         return fig, ax
-
 
     def save_prediction_to_file(self, scores):
         x = pd.concat([score['x'] for score in scores], axis=0).reset_index(drop=True)
@@ -608,7 +575,6 @@ def get_fields_per_type(data, data_struct, type):
     fields = data_struct.loc[data_struct['Field Type']=='category',
                             'Field Variable Name'].to_list()
     return [field for field in fields if field in data.columns]
-
 
     # def analyse_fpr(self, fprs):
     #     means = [fpr.mean() for fpr in fprs]

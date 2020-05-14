@@ -76,6 +76,8 @@ class LogReg:
         self.goal = None
         self.data_struct = None
         self.model_args = {
+            'imputer': 'simple',     # Simple, iterative, forest
+
             'add_missing_indicator': False,
             
             'apply_polynomials': False,
@@ -100,12 +102,14 @@ class LogReg:
 
         self.evaluation_args = {
             'show_n_features': None,
-            'normalize_coefs': True,
+            'normalize_coefs': False,
             'plot_analyse_fpr': False}
 
         self.coefs = []
         self.intercepts = []
         self.n_best_features = []
+
+        self.trained_classifiers = []
 
         self.learn_size = []
 
@@ -114,7 +118,7 @@ class LogReg:
         self.fig_dpi = 600
 
         self.random_state = 0
-        self.save_prediction = False
+        self.save_prediction = True
         self.hospital = pd.Series()
         
     def train(self, datasets):
@@ -157,7 +161,6 @@ class LogReg:
         # Define pipeline
         self.pipeline = self.get_pipeline()
 
-
         # Grid search
         if self.model_args['grid_search']:
             # print("Train classfier using grid search for best parameters.")
@@ -166,6 +169,7 @@ class LogReg:
                                 scoring='roc_auc', n_jobs=-2)
             grid.fit(train_x, train_y)
             clf = grid.best_estimator_
+            self.trained_classifiers += [clf]
             # print("Best estimator: ", clf)
         else:
             # Train classifier without optimization.
@@ -181,6 +185,7 @@ class LogReg:
             columns = train_x.columns[np.argsort(clf.named_steps\
                                           .feature_selection\
                                           .pvalues_)][0:self.model_args['n_features']].to_list()
+            self.n_best_features += [columns]
             print(columns)
         else:
             columns = train_x.columns
@@ -266,11 +271,17 @@ class LogReg:
         cms = [score['conf_mats'] for score in scores]
         thresholds = [score['thr'] for score in scores]
         
+        if self.model_args['apply_feature_selection']:
+            # self.save_path += 'k{}'.format(self.model_args['n_features'])
+            self.vote_best_featureset()
+
         self.analyse_fpr(cms, thresholds)
         fig, ax = self.plot_model_results([score['roc_auc'] for score in scores])
-        fig2, ax2 = self.plot_model_weights(datasets['test_x'].columns, clf,
-                                            show_n_features=self.evaluation_args['show_n_features'],
-                                            normalize_coefs=self.evaluation_args['normalize_coefs'])
+
+        if not self.model_args['apply_feature_selection']:
+            fig2, ax2 = self.plot_model_weights(datasets['test_x'].columns, clf,
+                                                show_n_features=self.evaluation_args['show_n_features'],
+                                                normalize_coefs=self.evaluation_args['normalize_coefs'])
 
         if self.save_prediction:
             self.save_prediction_to_file(scores)
@@ -287,16 +298,14 @@ class LogReg:
         if impute_type=='simple':
             self.imputer = SimpleImputer(missing_values=np.nan, strategy='median',
                                            add_indicator=self.model_args['add_missing_indicator'])
-        else:
-            if impute_type=='iterative':
-                    self.imputer = IterativeImputer(missing_values=np.nan, initial_strategy='median',
+        elif impute_type=='iterative':
+             self.imputer = IterativeImputer(missing_values=np.nan, initial_strategy='median',
                                            add_indicator=self.model_args['add_missing_indicator'])
-            else:                    
-                if impute_type=='forest':
-                    self.imputer = MissForest(random_state=self.random_state,n_jobs=-2)
+        elif impute_type=='forest':
+             self.imputer = MissForest(random_state=self.random_state,n_jobs=-2)
 
     def get_pipeline(self):
-        self.define_imputer('iterative')
+        self.define_imputer(self.model_args['imputer'])
         steps = [('imputer', self.imputer),
                  ('scaler', MinMaxScaler())]
 
@@ -511,6 +520,12 @@ class LogReg:
 
             return labels
         return labels
+
+    def vote_best_featureset(self):
+        # Get list by voting. i.e sorted list with most occurences
+        self.n_best_features = [sorted(fset) for fset in self.n_best_features]
+        counts = pd.Series(self.n_best_features).value_counts()
+        print('votes={} for {}'.format(counts.iloc[0], counts.index[0]))
 
     def save_prediction_to_file(self, scores):
         x = pd.concat([score['x'] for score in scores], axis=0)
