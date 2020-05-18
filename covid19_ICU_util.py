@@ -35,7 +35,6 @@ TIME_FNS = True
 format_dt = lambda col: pd.to_datetime(col, format='%d-%m-%Y', errors='coerce').astype('datetime64[ns]')
 is_in_columns = lambda var_list, data: [v for v in var_list if v in data.columns]
 
-
 # Function timer decorator
 def timeit(method):
     def timed(*args, **kw):
@@ -374,7 +373,6 @@ def transform_binary_features(data, data_struct):
     dict_yes_no = {0:0, 1:1, 2:0, 3:value_na, 9:value_na, 9999: value_na}
     dict_yp = {0:0, 1:1, 2:.5, 3:0, 4:value_na} # [1, 2, 3, 4 ] --> [1, .5, 0, -1]
     dict_yu = {0:0, 1:1, 9999:value_na}
-    dict_smoke = {0:0, 1:1, 2:0, 3:.5, 4:value_na} # [Yes, no, stopped_smoking] --> [1, 0, .5]
 
     # Some fixed for erronuous field types
     data_struct.loc[data_struct['Field Variable Name']=='MH_HF', 'Field Type'] = 'radio'
@@ -408,9 +406,9 @@ def transform_binary_features(data, data_struct):
     data.loc[:, 'Bacteria'] = data.loc[:, 'Bacteria'].fillna(3) \
                                                      .astype(int) \
                                                      .apply(lambda x: dict_yes_no.get(x))
-    data.loc[:, 'Smoking'] = data.loc[:, 'Smoking'].fillna(4) \
-                                                   .astype(int) \
-                                                   .apply(lambda x: dict_smoke.get(x))
+    # data.loc[:, 'Smoking'] = data.loc[:, 'Smoking'].fillna(4) \
+    #                                                .astype(int) \
+    #                                                .apply(lambda x: dict_smoke.get(x))
     data.loc[:, 'CT_thorax_performed'] = data.loc[:, 'CT_thorax_performed'].fillna(3) \
                                                                            .astype(int) \
                                                                            .apply(lambda x: {0:0, 1:0, 2:1, 3:0}.get(x))
