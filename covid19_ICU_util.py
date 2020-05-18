@@ -1,3 +1,5 @@
+import time
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -28,10 +30,30 @@ IS_MEASURED_COLUMNS = \
      'CRP', 'Albumin', 'CKin', 'LDH_daily', 'Chest_X_Ray', 'CTperf',
      'd_dimer_yes_no']
 
+TIME_FNS = True
+
 format_dt = lambda col: pd.to_datetime(col, format='%d-%m-%Y', errors='coerce').astype('datetime64[ns]')
 is_in_columns = lambda var_list, data: [v for v in var_list if v in data.columns]
 
 
+# Function timer decorator
+def timeit(method):
+    def timed(*args, **kw):
+        if not TIME_FNS:
+            return method(*args, **kw)
+        ts = time.time()
+        result = method(*args, **kw)
+        te = time.time()
+        if 'log_time' in kw:
+            name = kw.get('log_name', 'method.__name__'.upper())
+            kw['log_time'][name] = int((te - ts)*1000)
+        else:
+            print('{:s}: {:2.2f}ms'.format(method.__name__,
+                                           (te-ts)*1000))
+        return result
+    return timed
+
+@timeit
 def get_all_field_information(path_to_creds):
     study_struct, reports_struct, \
         optiongroups_struct = import_study_report_structure(path_to_creds)
@@ -52,6 +74,7 @@ def get_all_field_information(path_to_creds):
 
     return data_struct
 
+@timeit
 def count_occurrences(col, record_ids, reset_count=False, start_count_at=1):
     # Make counter of occurences in binary column
     # NOTE: Make sure to supply sorted array
@@ -81,6 +104,7 @@ def count_occurrences(col, record_ids, reset_count=False, start_count_at=1):
     new_col = pd.concat(new_cols, axis=0)
     return new_col
 
+@timeit
 def calculate_outcomes(data, data_struct):
     # CATEGORY EXPLANATION
     # Discharged alive: 1) Discharged to home
@@ -199,6 +223,7 @@ def calculate_outcomes(data, data_struct):
     used_columns = [col for col in data.columns if 'Outcome' in col] # Keep track of var
     return df_outcomes, used_columns
 
+@timeit
 def select_x_y(data, outcomes, used_columns,
                goal, remove_not_outcome=True):
     x = data.drop(used_columns, axis=1)
@@ -218,6 +243,7 @@ def select_x_y(data, outcomes, used_columns,
     # x['was_icu'] = was_icu
     return x, y, outcomes_dict
 
+@timeit
 def get_classification_outcomes(data, outcomes):
     y_dict = {}
 
@@ -241,8 +267,10 @@ def get_classification_outcomes(data, outcomes):
 
     return y_dict
 
+@timeit
 def get_survival_analysis_outcomes(data, outcomes):
     y_dict = {}
+    data = data.copy()
 
     # 1) Event (=1): ICU admission
     #    Duration (event=1): days until first ICU admission since hospital admission
@@ -267,7 +295,7 @@ def get_survival_analysis_outcomes(data, outcomes):
     outcome_name = 'Patient has died'
 
     event = pd.Series(0, index=data.index)
-    duration = outcomes.loc[:, 'Days until death']
+    duration = outcomes.loc[:, 'Days until death'].copy()
     event.loc[duration.notna()] = 1
     duration.loc[duration.isna()] = data.loc[duration.isna(), 'days_since_admission_current_hosp']
 
@@ -305,6 +333,7 @@ def get_survival_analysis_outcomes(data, outcomes):
                                        axis=1)
     return y_dict
 
+@timeit
 def fix_single_errors(data):
     ''' Replaces values on the global dataframe,
     per column or per column and record Id.
@@ -337,6 +366,7 @@ def fix_single_errors(data):
                           .replace(pair[0], pair[1])
     return data
 
+@timeit
 def transform_binary_features(data, data_struct):
     '''
     '''
@@ -408,6 +438,7 @@ def transform_binary_features(data, data_struct):
 
     return data, data_struct
 
+@timeit
 def transform_categorical_features(data, data_struct):
     ''' Create dummyvariables for category variables,
         removes empty variables and attaches column names
@@ -472,9 +503,12 @@ def transform_categorical_features(data, data_struct):
 
     return data, data_struct
 
+@timeit
 def transform_numeric_features(data, data_struct):
     # Calculates all variables to the same unit,
     #   according to a handmade mapping in unit_lookup.py
+    data = data.copy()
+
     unit_dict, var_numeric = get_unit_lookup_dict()
 
     numeric_columns = is_in_columns(var_numeric.keys(), data)
@@ -505,18 +539,22 @@ def transform_numeric_features(data, data_struct):
     # as described in PaO2_sample\_type_1 and PaO2_sample_type
     # divide these variables in four dummies.
     for p in ['', '_1']:
-        option_names = data_struct[
-            data_struct['Field Variable Name'] == 'PaO2_sample_type'+p]['Option Name']
-        option_values = data_struct[
-            data_struct['Field Variable Name'] == 'PaO2_sample_type'+p]['Option Value']
-        for value, name in zip(option_values.to_list()[0], option_names.to_list()[0]):
-            sel = data['PaO2_sample_type'+p] == value
-            data['PaO2'+p+'_'+str(name)] = np.nan
-            data['PaO2'+p+'_'+str(name)][sel] = data['PaO2'+p][sel]
-        data.drop(columns='PaO2'+p, inplace=True)
+        options = data_struct.loc[
+            data_struct['Field Variable Name']==('PaO2_sample_type'+p),
+            ['Option Name', 'Option Value']].iloc[0, :]
+
+        for name, value in zip(options['Option Name'], options['Option Value']):
+            if str(name) == 'nan':
+                continue
+            data['PaO2'+p+'_'+str(name)] = None
+            is_measure_type = data['PaO2_sample_type'+p] == value
+            data.loc[is_measure_type,
+                    'PaO2'+p+'_'+str(name)] = data.loc[is_measure_type, 'PaO2'+p].copy()
+        data = data.drop(columns='PaO2'+p)
 
     return data, data_struct
 
+@timeit
 def transform_time_features(data, data_struct):
     '''
     TODO: Check difference hosp_admission and Outcome_dt
@@ -609,6 +647,7 @@ def transform_time_features(data, data_struct):
 
     return data, data_struct
 
+@timeit
 def transform_string_features(data, data_struct):
     # TODO: Why it med_specify not in data_struct?
 
@@ -630,6 +669,7 @@ def transform_string_features(data, data_struct):
                   index=data_struct.columns), ignore_index=True)
     return data, data_struct
 
+@timeit
 def transform_calculated_features(data, data_struct):
     struct_calc = data_struct.loc[data_struct['Field Type']=='calculation', :]
 
@@ -640,6 +680,7 @@ def transform_calculated_features(data, data_struct):
     data = data.drop(cols_to_drop, axis=1)
     return data, data_struct
 
+@timeit
 def select_data(data, data_struct):
     cols_to_keep = [col for col in data.columns
                     if col not in IS_MEASURED_COLUMNS]
@@ -655,6 +696,7 @@ def select_data(data, data_struct):
 
     return data, data_struct
 
+@timeit
 def select_variables(data, data_struct, variables_to_include_dict):
     # Get all variables
     variables_to_include = []
@@ -677,6 +719,7 @@ def select_variables(data, data_struct, variables_to_include_dict):
     variables_to_include = list(np.unique(is_in_columns(variables_to_include, data)))
     return data.loc[:, variables_to_include]
 
+@timeit
 def impute_missing_values(data, data_struct):
     '''
     NOTE: DEPRECATED in upcoming versions
@@ -707,6 +750,7 @@ def impute_missing_values(data, data_struct):
 
     return data
 
+@timeit
 def plot_feature_importance(importances, features, show_n_features=5):
     show_n_features = features.shape[0] if not show_n_features else show_n_features
 
@@ -718,6 +762,7 @@ def plot_feature_importance(importances, features, show_n_features=5):
 
     return fig, ax
 
+@timeit
 def save_class_dist_per_hospital(path, y, hospital):
     with open(path + '_class_dist_per_hosp.txt', 'w') as f:
         f.write('{}\t{}\t{}\n'.format('hospital', '0', '1'))
@@ -750,6 +795,5 @@ def explore_data(x, y):
     ax.set_title('Correlation matrix')
     ax.matshow(xc)
 
-
-
     return
+
