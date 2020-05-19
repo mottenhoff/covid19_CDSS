@@ -20,8 +20,9 @@ import matplotlib.pyplot as plt
 from lifelines import *
 import pandas as pd
 import numpy as np
-from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import StandardScaler
+from sklearn.experimental import enable_iterative_imputer  # Required to enable experimental iterative imputer
+from sklearn.impute import SimpleImputer, IterativeImputer
+from sklearn.preprocessing import StandardScaler, RobustScaler
 
 plt.rcParams["font.family"] = "Times New Roman"
 matplotlib.rcParams.update({'font.size': 14})
@@ -40,8 +41,9 @@ englishvar_to_dutchnames = {'age_yrs':'Leeftijd (jaren)','gender_male':'Geslacht
                             'oxygen_saturation':'Saturatie (%)','Temperature':'Temperatuur (ºC)','Antiviral_agent_1':'Behandeling met antivirale middelen (ja)','Oxygen_therapy_1':'zuurstof therapie (ja)','Non_invasive_ventilation_1':'non-invasieve beademing (ja)','Invasive_ventilation_1':'Invasieve beademing (ja)','resucitate':'Niet reanimeren (ja)',
                             'intubate_yesno':'Niet intuberen (ja)','CT_thorax_performed':'CT thorax verricht op SEH (ja)','corads_admission':'CO-RAD score  (1-5)','pcr_pos':'Corona virus PCR + op SEH (ja)','Coagulation_disorder_1_1':'Stollingsstoornis (ja)',
                             'Acute_renal_injury_Acute_renal_failure_1_1':'Nierfunctie stoornis waarvoor dialyse (ja)','diabetes_complications':'Diabetes met complicaties (ja)','cpd':'chronische longziekte (ja)','Smoking':'Actieve roker (ja)','obesity':'Obesitas (ja)','immune_sup':'immunosupressiva (ja)','ace_i_spec_1':'Gebruik ACE remmer (ja)',
-                            'sys_bp':'Systolische bloeddruk (mmHg)','dias_bp':'Diastolische bloeddruk (mmHg)','HtR':'hart frequentie (1/min)','capillary_refill':'Verlengde capillaire refill (ja)','rtr':'Ademhalingsfrequentie (1/min)','oxygen_saturation':'Zuurstof saturatie (%)','SaO2_1':'SaO2 (%)','PaO2_1':'PaO2 (kPa)','PCO2_1':'pCO2 (kPa)',
-                            'fio2_1':'FiO2 (%)','Temperature':'Temperatuur (ºC)','eye':'EMV','Antiviral_agent_1':'Anti-virale middelen (ja)','Antibiotic_1':'Antibiotica (ja)','Corticosteroid_1':'Corticosteroiden voor ARDS (ja)','Corticosteroid_type_1':'gebruik corticosteroiden (ja)','Oxygen_therapy_1':'Zuurstof behandeling (ja)',
+                            'sys_bp':'Systolische bloeddruk (mmHg)','dias_bp':'Diastolische bloeddruk (mmHg)','HtR':'hart frequentie (1/min)','capillary_refill':'Verlengde capillaire refill (ja)','rtr':'Ademhalingsfrequentie (1/min)','oxygen_saturation':'Zuurstof saturatie (%)','SaO2_1':'SaO2 (%)','PaO2_1_Arterial':'PaO2 arteriëel (kPa)',
+                            'PaO2_1_Venous':'PaO2 veneus (kPa)', 'PaO2_1_Capillary':'PaO2 capillair (kPa)', 'PaO2_1_nan':'PaO2 onbekend (kPa)', 'PCO2_1':'pCO2 (kPa)','fio2_1':'FiO2 (%)','Temperature':'Temperatuur (ºC)','eye':'EMV','Antiviral_agent_1':'Anti-virale middelen (ja)','Antibiotic_1':'Antibiotica (ja)',
+                            'Corticosteroid_1':'Corticosteroiden voor ARDS (ja)','Corticosteroid_type_1':'gebruik corticosteroiden (ja)','Oxygen_therapy_1':'Zuurstof behandeling (ja)',
                             'Non_invasive_ventilation_1':'Niet-invasieve beademing (ja)','Invasive_ventilation_1':'Invasieve beademing (ja)','resucitate':'Niet reanimeren (ja)','intubate_yesno':'Niet intuberen (ja)','auxiliary_breathing_muscles':'Gebruik van extra ademhalingsspieren (ja)','fever':'Koorts gehad sinds eerste klachten (ja)',
                             'Anosmia':'Anosmie (ja)','Rhinorrhoea':'Rhinorrhoea (ja)','Sore_throat':'Keelpijn (ja)','cough_sputum':'Hoest met sputum (ja)','cough_sputum_haemoptysis':'Hoest met bloederig slijm/ haemoptoë (ja)','Arthralgia':'Arthralgie (ja)','Myalgia':'Spierpijn (ja)','Fatigue_Malaise':'Vermoeidheid/ algehele malaise (ja)',
                             'Abdominal_pain':'Buikpijn (ja)','Vomiting_Nausea':'Misselijkheid/ overgeven (ja)','Diarrhoea':'diarree (ja)','Dyspnea':'Dyspneu (ja)','Wheezing':'Piepende ademhaling (ja)','Chest_pain':'Pijn op de borst (ja)','ear_pain':'oorpijn (ja)','Bleeding_Haemorrhage':'bloeding (ja)','Headache':'Hoofdpijn (ja)',
@@ -49,12 +51,31 @@ englishvar_to_dutchnames = {'age_yrs':'Leeftijd (jaren)','gender_male':'Geslacht
                             'Creatinine_value_1':'Creatinine (µmol/L)','Calcium_adm':'Ca (totaal) (mmol/L)','ferritine_admin_spec':'ferritine (mg/L)','creatininekinase':'CK (U/L)','d_dimer':'D-Dimeer (nmol/L)','AST_SGOT_1_1':'ASAT (U/L)','ALT_SGPT_1_1':'ALAT (U/L)','Total_Bilirubin_2_1':'totaal Bilirubine (IE)','LDH':'LDH (U/L)',
                             'PH_value_1':'Zuurgraad (pH)','Lactate_2_1':'Lactaat (mmol/L)','crp_1_1':'CRP (mg/L)','Haemoglobin_value_1':'Hb (mmol/L)','Platelets_value_1':'trombocyten (x10^9/L)','WBC_2_1':'Leukocyten (x10^3/µL)','Lymphocyte_1_1':'Lymfocyten (x10^9/L)','Neutrophil_unit_1':'Neutrofielen (x10^9/L)','INR_1_1':'INR',
                             'pt_spec':'PT (sec)','fibrinogen_admin':'Fibrinogeen (g/L)','pcr_pos':'Corona PCR + (ja)','Adenovirus':'Adenovirus (ja)','RSV_':'RS virus (ja)','Influenza':'Influenza virus (ja)','Bacteria':'Sputumkweek (ja)','days_untreated':'Tijd sinds eerste klachten (dagen)','irregular':'Onregelmatige hartslag (ja)',
-                            'DNR_yesno':' (ja)','healthcare_worker':'Zorgmedewerker (ja)','infec_resp_diagnosis':'Andere infectieuze ademhalingsdiagnose','Blood_albumin_value_1':'Albumine (g/L)','culture':'Bloedkweek (positief)','APT_APTR_1_1':'APTT (sec)'}
+                            'DNR_yesno':' (ja)','healthcare_worker':'Zorgmedewerker (ja)','infec_resp_diagnosis':'Andere infectieuze ademhalingsdiagnose','Blood_albumin_value_1':'Albumine (g/L)','culture':'Bloedkweek (positief)','APT_APTR_1_1':'APTT (sec)','uses_n_medicine':'Aantal thuismedicamenten'}
 
 
 class StandardScaler_min2cols(StandardScaler):
-    def __init__(self,columns,copy=True,with_mean=True,with_std=True):
-        self.scaler = StandardScaler(copy,with_mean,with_std)
+    def __init__(self,columns,copy=True, with_mean=False, with_std=True):
+        self.scaler = StandardScaler(copy, with_mean=with_mean, with_std=with_std)
+        self.columns = columns
+
+    def fit(self, X, y=None):
+        self.scaler.fit(X[self.columns], y)
+        return self
+
+    def transform(self, X, y=None, copy=None):
+        init_col_order = X.columns
+        X_scaled = pd.DataFrame(self.scaler.transform(X[self.columns]), columns=self.columns)
+        X_not_scaled = X.iloc[:, ~X.columns.isin(self.columns)]
+        return pd.concat([X_not_scaled, X_scaled], axis=1)[init_col_order]
+
+class RobustScaler_min2cols(RobustScaler):
+    def __init__(self, columns, copy=True, with_centering=True,
+                 with_scaling=True, quantile_range=(25.0, 75.0)):
+        self.scaler = RobustScaler(with_centering=with_centering,
+                                   with_scaling=with_scaling,
+                                   quantile_range=quantile_range,
+                                   copy=copy)
         self.columns = columns
 
     def fit(self, X, y=None):
@@ -72,7 +93,6 @@ def simple_estimates(features):
     T = features['Time to event']
     E = features['Event death']
     fig, axes = plt.subplots(1, 1)
-
 
     kmf = KaplanMeierFitter().fit(T, E, label='KaplanMeierFitter')
     kmf.plot_survival_function()
@@ -158,50 +178,72 @@ def KM_age_groups(features):
         plt.savefig('KM_survival_curve_DEATH.png', format='png', dpi=300, figsize=(20,20), pad_inches=0, bbox_inches='tight')
     plt.show()
 
+    return kmf1, kmf2, kmf3
+
 
 def cox_ph_loho(features, hazard_ratios=False,
-                imputation_method='median', pvalue=0.05):
+                imputation_method='median',
+                minimal_n=10,
+                pvalue=0.05):
     cindex = []
+    n = []
     for test_hospital in features['hospital'].unique():
+        print(test_hospital)
         train_set = features[features['hospital'] != test_hospital]
         test_set = features[features['hospital'] == test_hospital]
 
-        test_set = test_set.drop(columns=['hospital'])
+        if len(test_set) >= minimal_n:
+            test_set = test_set.drop(columns=['hospital'])
 
-        cph, p, imputer, scaler = cox_ph(train_set, hazard_ratios=False,
-                                         imputation_method='median',
-                                         return_scaler_imputer=True)
+            cph, p, imputer, scaler = cox_ph(train_set, hazard_ratios=False,
+                                             imputation_method='median',
+                                             return_scaler_imputer=True)
 
-        test_set = pd.DataFrame(imputer.transform(test_set), columns=test_set.columns)
-        test_set = scaler.transform(test_set)
+            test_set = pd.DataFrame(imputer.transform(test_set), columns=test_set.columns)
+            test_set = scaler.transform(test_set)
 
-        hazard_ratios_sum = cph.summary
-        sel_corr = hazard_ratios_sum[hazard_ratios_sum['p'] <= pvalue]
-        c = cph.score(test_set, scoring_method="concordance_index")
-        print('test hospital:', test_hospital, 'test c-index', c)
-        print(sel_corr)
-        cindex += [c]
-    return cindex
+            hazard_ratios_sum = cph.summary
+            print(hazard_ratios_sum)
+            sel_corr = hazard_ratios_sum[hazard_ratios_sum['p'] <= pvalue]
+            c = cph.score(test_set, scoring_method="concordance_index")
+            print('test hospital:', test_hospital, 'test c-index', c)
+            print(sel_corr)
+            cindex += [c]
+            n += [len(test_set)]
+        else:
+            print('test hospital:', test_hospital, ' has <= ',minimal_n,' records. Cannot determine concordance.')
+    return cindex, n
 
 def cox_ph(features, hazard_ratios=False,
-           imputation_method='median', return_scaler_imputer=False):
+           imputation_method='median', return_scaler_imputer=False,
+           show_progress=True,
+           penalizer=0.,
+           l1_ratio=0.):
     train_set = features.drop(columns=['hospital']) # NOTE aids_hiv is an outlier for plotting coefs
 
     # impute nan with median; note that time to event and event death cannot contain nan
-    imputer = SimpleImputer(missing_values=np.nan, strategy=imputation_method)
+    if imputation_method == 'iterative':
+        imputer = IterativeImputer(missing_values=np.nan,
+                                   initial_strategy='median')
+    else:
+        imputer = SimpleImputer(missing_values=np.nan, strategy=imputation_method)
     train_set = pd.DataFrame(imputer.fit_transform(train_set), columns=train_set.columns)
 
     # scale data using zscore
-    scaler = StandardScaler_min2cols(columns=train_set.columns)
+    scaler = RobustScaler_min2cols(columns=train_set.columns)
     train_set = scaler.fit_transform(train_set)
 
-    cph = CoxPHFitter()
-    cph.fit(train_set, duration_col='Time to event', event_col='Event death', show_progress=True, step_size=0.1)
+    cph = CoxPHFitter(penalizer=penalizer, l1_ratio=l1_ratio)
+    cph.fit(train_set, duration_col='Time to event', event_col='Event death', show_progress=show_progress, step_size=0.1)
 
-    cph.print_summary()
+    if True:
+        cph.print_summary()
 
-    fig, ax = plt.subplots(figsize=(5, 25))
-    p = cph.plot(hazard_ratios=hazard_ratios)
+        fig, ax = plt.subplots(figsize=(5, 25))
+        p = cph.plot(hazard_ratios=hazard_ratios)
+    else:
+        p = None
+
     if return_scaler_imputer:
         return cph, p, imputer, scaler
     else:
@@ -287,11 +329,11 @@ if __name__ == '__main__':
                                     data=hospital)], axis=1)
 
 
-    pd.Series(name='Record Id',data=record_id)[[d not in ['VieCuri'] for d in data['hospital']]]
+    # pd.Series(name='Record Id',data=record_id)[[d not in ['VieCuri'] for d in data['hospital']]]
 
     # drop hospitals without enough data
-    data.drop(index=features.index[[d in ['VieCuri'] for d in features['hospital']]], inplace=True)
-    features.drop(index=features.index[[d in ['VieCuri'] for d in features['hospital']]], inplace=True)
+    # data.drop(index=features.index[[d in ['VieCuri'] for d in features['hospital']]], inplace=True)
+    # features.drop(index=features.index[[d in ['VieCuri'] for d in features['hospital']]], inplace=True)
 
     # now drop the people that have no information regarding durations (very new records).
     # now drop n/a's in time to event; these are incomplete records that cannot be used.
@@ -306,26 +348,30 @@ if __name__ == '__main__':
     features['SaO2 (%)'][features['SaO2 (%)'] <= 1.0] = features['SaO2 (%)'][features['SaO2 (%)']<= 1.0] * 100.
 
     # do not model data with > 50% missing data
-    drop_vars = features.columns[np.sum(features.isnull())/len(features) > 0.9]
+    drop_vars = features.columns[np.sum(features.isnull())/len(features) > 0.5]
     features = features.drop(columns=drop_vars)
 
     # %% STEP 3: SHOW KM CURVE
     # simple_estimates(features)  # events: True = death, False = censor, None = ?
-    KM_age_groups(features)
+    kmf =  KM_age_groups(features)
 
     # %% step 5: valdiate concordance with LOHO
-    cindex = cox_ph_loho(features, hazard_ratios=False,
-                         imputation_method='median')
-    print('concordances = ', cindex)
-
+    imputation_method = 'iterative'
+    hazard_ratios = False
+    cindex, testsetn = cox_ph_loho(features, hazard_ratios=hazard_ratios,
+                         imputation_method=imputation_method,
+                         minimal_n=25)
+    print('concordances (mean: {}) = {}'.format(round(np.mean(cindex),3), [round(c,3) for c in cindex]))
 
     # %% STEP 4: COX REGRESSION.
     # USE HERE: features, hospital, times, events
-    cph, plot = cox_ph(features, hazard_ratios=True)
+    cph, plot = cox_ph(features, hazard_ratios=True,
+                       imputation_method=imputation_method)
     plot.figure.savefig('Cox_coef_all.png', format='png', dpi=300, figsize=(3,23), pad_inches=0, bbox_inches='tight')
 
     # %%
     cphplt = cox_plot_pvalue_only(cph, 0.05, hazard_ratios=True)
+
     # run on command line:
     cphplt.figure.set_figheight(6)
     cphplt.figure.savefig('Cox_coef_pvalue_.05.png', format='png', dpi=300, figsize=(7,9), pad_inches=0, bbox_inches='tight')
