@@ -398,8 +398,8 @@ if __name__ == "__main__":
     # INCLUDE variables from analysis
     #  NOTE: See get_feature_set.py for preset selections
     feature_opts = {
-        # 'pm':   get_1_premorbid(),
-        # 'cp':   get_2_clinical_presentation(),
+        'pm':   get_1_premorbid(),
+        'cp':   get_2_clinical_presentation(),
         'lab':  get_3_laboratory_radiology_findings(),
         'pmcp': get_4_premorbid_clinical_representation(),
         'all':  get_5_premorbid_clin_rep_lab_rad(),
@@ -418,8 +418,8 @@ if __name__ == "__main__":
 
     # Options:
     #   see .\Classifiers
-    model = XGB
-    # model = LogReg  # NOTE: do not initialize model here,
+    # model = XGB
+    model = LogReg  # NOTE: do not initialize model here,
                     #       but supply the class (i.e. omit
                     #       the parentheses)
 

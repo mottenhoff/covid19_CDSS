@@ -88,10 +88,12 @@ class LogReg:
         }
 
         self.grid = {
-            'scaler__with_centering': [False, True],
-            'scaler__with_scaling': [False, True],
-            'PCA__n_components': list(range(1, 11)),
-            'LR__l1_ratio': [i / 10 for i in range(0, 11, 1)]
+            'LR__penalty': ['l1', 'l2', 'elasticnet'],
+            'LR__l1_ratio': [i / 10 for i in range(0, 11, 1)],
+            'LR__tol': [10**(-i) for i in range(-2, -6),
+            'LR__C': np.linspace(0, 2, 5),
+            'LR__solver': ['newton-cg', 'lbfgs', 'liblinear', 'sag', 'saga'],
+            'LR__max_iter' [100, 200, 300, 400, 500]
         }
 
         self.score_args = {
