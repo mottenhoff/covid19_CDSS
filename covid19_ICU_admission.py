@@ -418,8 +418,8 @@ if __name__ == "__main__":
 
     # Options:
     #   see .\Classifiers
-    # model = XGB
-    model = LogReg  # NOTE: do not initialize model here,
+    model = XGB
+    # model = LogReg  # NOTE: do not initialize model here,
                     #       but supply the class (i.e. omit
                     #       the parentheses)
 

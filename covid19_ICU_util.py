@@ -459,11 +459,15 @@ def transform_categorical_features(data, data_struct):
                                   'Option Value']]
     category_columns_ohe = is_in_columns(cat_struct_ohe['Field Variable Name'], data)
 
+    # Exclude some vars
+    category_columns_ohe = [c for c in category_columns_ohe if 'PaO2_sample_type' not in c]
+
     get_name = lambda c, v: '{:s}_cat_{:s}'.format(col, str(v))
 
     # Dummify variables
     dummies_list = []
     for col in category_columns_ohe:
+
         # Get all unique categories in the column
         unique_categories = pd.unique([cat for value in data[col].values
                                        for cat in str(value).split(';')])
@@ -477,6 +481,7 @@ def transform_categorical_features(data, data_struct):
                               if v.lower() not in ['nan', 'none']]
         # Create new dataframe with the dummies
         dummies = pd.DataFrame(0, index=data.index, columns=dummy_column_names)
+
         # Insert the data
         for cat in unique_categories:
             # TODO: Filter specific categories that are nan/na/none/unknown
@@ -485,8 +490,9 @@ def transform_categorical_features(data, data_struct):
             data[col] = data[col].fillna('')
 
             regex_str = '(?:;|^){}(?:;|$)'.format(cat)
-            dummies.loc[data[col].str.contains(regex_str, regex=True),
-                        get_name(col, cat)] = 1
+            has_cat = data[col].str.contains(regex_str, regex=True)
+            if has_cat.sum() > 1:
+                dummies.loc[has_cat, get_name(col, cat)] = 1            
 
         dummies_list += [dummies]
 
@@ -544,7 +550,8 @@ def transform_numeric_features(data, data_struct):
         for name, value in zip(options['Option Name'], options['Option Value']):
             if str(name) == 'nan':
                 continue
-            data['PaO2'+p+'_'+str(name)] = None
+            colname = 'PaO2'+p+'_'+str(name)
+            data[colname] = None
             is_measure_type = data['PaO2_sample_type'+p] == value
             data.loc[is_measure_type,
                     'PaO2'+p+'_'+str(name)] = data.loc[is_measure_type, 'PaO2'+p].copy()
