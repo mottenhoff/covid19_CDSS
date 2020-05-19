@@ -450,7 +450,7 @@ def transform_categorical_features(data, data_struct):
     #   dummified to be used in a later stage
     vars_to_dummy = ['oxygen_saturation_on', 'dept', 'Outcome']
 
-    is_one_hot_encoded = data_struct['Field Type'].isin(['checkbox']) | \
+    is_one_hot_encoded = data_struct['Field Type'].isin(['checkbox', 'category']) | \
                          data_struct['Field Variable Name'].isin(vars_to_dummy)
     data_struct.loc[is_one_hot_encoded, 'Field Type'] = 'category_one_not_encoded'
 
