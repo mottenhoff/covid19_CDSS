@@ -40,6 +40,7 @@ import numpy as np
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import RobustScaler
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.pipeline import Pipeline
 from sklearn.feature_selection import SelectFpr
@@ -58,11 +59,7 @@ from sklearn.impute import SimpleImputer
 
 import warnings
 from sklearn.exceptions import ConvergenceWarning
-<<<<<<< HEAD
-from sklearn.experimental import enable_iterative_imputer
-=======
 from sklearn.experimental import enable_iterative_imputer  # Required to enable experimental iterative imputer
->>>>>>> ccb54a4d8b67530ac2c8da0ce65847fba6211a87
 from sklearn.impute import IterativeImputer
 from missingpy import MissForest
 # warnings.filterwarnings(action='ignore', category=ConvergenceWarning)
@@ -81,21 +78,18 @@ class LogReg:
         self.data_struct = None
         self.model_args = {
             'imputer': 'simple',     # Simple, iterative, forest
-
             'add_missing_indicator': False,
-
             'apply_polynomials': False,
-
             'apply_feature_selection': False,
             'n_features': 10,
-
             'apply_pca': False,
             'pca_n_components': 3,
-
-            'grid_search': True
+            'grid_search': False
         }
 
         self.grid = {
+            'scaler__with_centering': [False, True],
+            'scaler__with_scaling': [False, True],
             'PCA__n_components': list(range(1, 11)),
             'LR__l1_ratio': [i / 10 for i in range(0, 11, 1)]
         }
@@ -122,15 +116,10 @@ class LogReg:
         self.fig_dpi = 600
 
         self.random_state = 0
-<<<<<<< HEAD
         self.save_prediction = True
         self.hospital = pd.Series()
+        self.days_until_outcome = pd.Series()
         
-=======
-        self.save_prediction = False
-        self.hospital = None
-
->>>>>>> ccb54a4d8b67530ac2c8da0ce65847fba6211a87
     def train(self, datasets):
         ''' Initialize, train and predict a classifier.
         This includes: Feature engineering (i.e. PCA) and
@@ -260,7 +249,7 @@ class LogReg:
 
         return score
 
-    def evaluate(self, clf, datasets, scores):
+    def evaluate(self, clf, datasets, scores, hospitals=None):
         ''' Evaluate the results of the modelling process,
         such as, feature importances.
         NOTE: No need to show plots here, plt.show is called right
@@ -280,16 +269,14 @@ class LogReg:
                                  self.data_struct['Field Label']))
         cms = [score['conf_mats'] for score in scores]
         thresholds = [score['thr'] for score in scores]
-<<<<<<< HEAD
         
         if self.model_args['apply_feature_selection']:
             # self.save_path += 'k{}'.format(self.model_args['n_features'])
             self.vote_best_featureset()
-=======
->>>>>>> ccb54a4d8b67530ac2c8da0ce65847fba6211a87
 
         self.analyse_fpr(cms, thresholds)
-        fig, ax = self.plot_model_results([score['roc_auc'] for score in scores])
+        fig, ax = self.plot_model_results([score['roc_auc'] for score in scores],
+                                          hospitals=hospitals)
 
         if not self.model_args['apply_feature_selection']:
             fig2, ax2 = self.plot_model_weights(datasets['test_x'].columns, clf,
@@ -299,7 +286,7 @@ class LogReg:
         if self.save_prediction:
             self.save_prediction_to_file(scores)
 
-    def define_imputer(self,impute_type):
+    def define_imputer(self, impute_type):
         '''Initialize the imputer to be used for every iteration.
 
         Input:
@@ -310,23 +297,18 @@ class LogReg:
         '''
         if impute_type=='simple':
             self.imputer = SimpleImputer(missing_values=np.nan, strategy='median',
-                                           add_indicator=self.model_args['add_missing_indicator'])
+                                         add_indicator=self.model_args['add_missing_indicator'])
         elif impute_type=='iterative':
-             self.imputer = IterativeImputer(missing_values=np.nan, initial_strategy='median',
-                                           add_indicator=self.model_args['add_missing_indicator'])
-<<<<<<< HEAD
+            self.imputer = IterativeImputer(missing_values=np.nan, initial_strategy='median',
+                                            add_indicator=self.model_args['add_missing_indicator'])
         elif impute_type=='forest':
-             self.imputer = MissForest(random_state=self.random_state,n_jobs=-2)
-=======
-            else:
-                if impute_type=='forest':
-                    self.imputer = MissForest(random_state=self.random_state,n_jobs=-2)
->>>>>>> ccb54a4d8b67530ac2c8da0ce65847fba6211a87
-
+            self.imputer = MissForest(random_state=self.random_state,n_jobs=-2)
+ 
     def get_pipeline(self):
         self.define_imputer(self.model_args['imputer'])
+
         steps = [('imputer', self.imputer),
-                 ('scaler', MinMaxScaler())]
+                 ('scaler', RobustScaler())]
 
         if self.model_args['apply_polynomials']:
             steps += [('polynomials', PolynomialFeatures(interaction_only=True))]
@@ -367,8 +349,8 @@ class LogReg:
         # data = data.fillna(0).astype(float)
         return data
 
-    def plot_model_results(self,
-                           aucs):  # , classifier='Logistic regression', outcome='ICU admission'):
+    def plot_model_results(self, aucs, hospitals=[]):  
+        # , classifier='Logistic regression', outcome='ICU admission'):
 
         avg = sum(aucs) / max(len(aucs), 1)
         std = sqrt(sum([(auc - avg) ** 2 for auc in aucs]) / len(aucs))
@@ -382,6 +364,9 @@ class LogReg:
         ax.axhline(.5, color='r', linewidth=1)
         ax.set_ylim(0, 1)
         ax.set_xlabel('Iteration')
+        if any(hospitals):
+            ax.set_xticks(list(range(hospitals.size)))
+            ax.set_xticklabels(hospitals)
         ax.set_ylabel('AUC')
         ax.legend(['ROC AUC', 'Average', 'Chance level'], bbox_to_anchor=(1, 0.5))
         fig.tight_layout()
@@ -551,8 +536,12 @@ class LogReg:
         y_hat = pd.concat([pd.Series(score['y_hat']) for score in scores], axis=0)
         y_hat.index = x.index
         y = pd.concat([score['y'] for score in scores], axis=0)
-        df = pd.concat([x, y, y_hat, self.hospital], axis=1)
-        df.columns=list(x.columns)+['y', 'y_hat', 'hospital']
+        self.hospital.index = x.index
+        self.days_until_outcome.index = self.days_until_outcome.index
+        df = pd.concat([x, y, y_hat, 
+                        self.hospital,
+                        self.days_until_outcome], axis=1)
+        df.columns=list(x.columns)+['y', 'y_hat', 'hospital', 'days_until_death']
 
         filename = self.save_path + '_prediction.pkl'
         df.to_pickle(filename)

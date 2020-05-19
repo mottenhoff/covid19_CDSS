@@ -47,8 +47,8 @@ def timeit(method):
             name = kw.get('log_name', 'method.__name__'.upper())
             kw['log_time'][name] = int((te - ts)*1000)
         else:
-            print('{:s}: {:2.2f}ms'.format(method.__name__,
-                                           (te-ts)*1000))
+            print('TIM: {:s}: {:2.2f}ms'.format(method.__name__,
+                                                (te-ts)*1000))
         return result
     return timed
 
@@ -259,7 +259,7 @@ def get_classification_outcomes(data, outcomes):
     #       Alive (=0): Discharged at t <= 21 |
     #                   Alive at t=21
     y = pd.Series(None, index=data.index)
-    y.loc[outcomes.loc[:, 'Dood - totaal']==1] = 1
+    y.loc[outcomes.loc[:, 'Dood - totaal']==1] = 1 # TODO: with days_until_death <=21d
     y.loc[outcomes.loc[:, ['Levend ontslagen en niet heropgenomen - totaal',
                            'Levend dag 21 maar nog in het ziekenhuis - totaal']].any(axis=1)] = 0
     y_dict['mortality_with_outcome'] = y
@@ -779,7 +779,7 @@ def explore_data(x, y):
     # x = add_constant(x)
     vif = pd.Series([variance_inflation_factor(x.values, i)
                     for i in range(x.shape[1])], index=x.columns)\
-            .sort_values(ascending=False)
+            .sort_values(ascending=True)
 
     fig, ax = plt.subplots()
     ax.set_title('Variance inflation factor')
@@ -787,11 +787,11 @@ def explore_data(x, y):
     fig.tight_layout()
 
     # CORRELATION
-    xc = x.corr('spearman') # 'spearmon'
+    # xc = x.corr('spearman') # 'spearmon'
 
-    fig, ax = plt.subplots()
-    ax.set_title('Correlation matrix')
-    ax.matshow(xc)
+    # fig, ax = plt.subplots()
+    # ax.set_title('Correlation matrix')
+    # ax.matshow(xc)
 
     return
 

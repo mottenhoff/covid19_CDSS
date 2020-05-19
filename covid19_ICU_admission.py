@@ -186,8 +186,6 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
     # Select variables to exclude
     x = x.drop(is_in_columns(variables_to_exclude, x), axis=1)
 
-    
-
     # Drop features with too many missing
     threshold = .5
     has_too_many_missing = (x.isna().sum(axis=0)/x.shape[0]) > threshold
@@ -224,12 +222,14 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
            .format(x.columns.size))
 
     explore_data(x, y)
+    
+    days_until_death = outcomes.loc[x.index, 'Days until death'].copy()
 
-    return x, y, data, hospital, records
+    return x, y, data, hospital, records, days_until_death
 
 def train_and_predict(x, y, model, rep, type='loho', 
                       hospitals=None, unique_hospitals=None,
-                      test_size=0.2):
+                      days_until_death=None, test_size=0.2):
     ''' Splits data into train and test set using
     monte carlo subsampling method, i.e., n random
     train/test splits using equal class balance.
@@ -266,6 +266,8 @@ def train_and_predict(x, y, model, rep, type='loho',
         test_x = x.loc[is_test_hosp, :]
         test_y = y.loc[is_test_hosp]
         model.hospital = model.hospital.append(hospitals.loc[is_test_hosp])
+        model.days_until_outcome = model.days_until_outcome\
+                                        .append(days_until_death.loc[is_test_hosp])
     else:
         # Default to random subsampling
         train_x, test_x, train_y, test_y = train_test_split(x, y,
@@ -318,15 +320,17 @@ def run(data, data_struct, goal, variables_to_include, variables_to_exclude,
 
     data, data_struct = preprocess(data, data_struct)
     x, y, data, hospital,\
-        records = prepare_for_learning(data, data_struct,
+        records, days_until_death = prepare_for_learning(data, data_struct,
                                                          variables_to_include,
                                                          variables_to_exclude,
                                                          goal)
 
-    # if goal[0] == 'survival':
-    #     save_class_dist_per_hospital(save_path, y['event_mortality'], hospital[y.index])
-    # else:
-    #     save_class_dist_per_hospital(save_path, y, hospital[y.index])
+    # return
+
+    if goal[0] == 'survival':
+        save_class_dist_per_hospital(save_path, y['event_mortality'], hospital[y.index])
+    else:
+        save_class_dist_per_hospital(save_path, y, hospital[y.index])
 
 
     model = model_class()
@@ -348,7 +352,8 @@ def run(data, data_struct, goal, variables_to_include, variables_to_exclude,
         clf, datasets, test_y_hat = train_and_predict(x, y, model, rep,
                                                       type=train_test_split_method,
                                                       hospitals=hospital,
-                                                      unique_hospitals=unique_hospitals)
+                                                      unique_hospitals=unique_hospitals,
+                                                      days_until_death=days_until_death)
         score = score_prediction(model, clf, datasets,
                                  test_y_hat, rep)
         scores.append(score)
@@ -393,13 +398,13 @@ if __name__ == "__main__":
     # INCLUDE variables from analysis
     #  NOTE: See get_feature_set.py for preset selections
     feature_opts = {
-        'pm':   get_1_premorbid(),
-        'cp':   get_2_clinical_presentation(),
+        # 'pm':   get_1_premorbid(),
+        # 'cp':   get_2_clinical_presentation(),
         'lab':  get_3_laboratory_radiology_findings(),
         'pmcp': get_4_premorbid_clinical_representation(),
         'all':  get_5_premorbid_clin_rep_lab_rad(),
         'k10': ['LDH', 'PH_value_1', 'age_yrs', 'ccd', 'fio2_1', 'hypertension', 'irregular', 'oxygen_saturation', 'rtr', 'uses_n_medicine'],
-        'paper': ['LDH', 'Lymphocyte_1_1', 'crp_1_1']
+        # 'paper': ['LDH', 'Lymphocyte_1_1', 'crp_1_1']
     }
 
     # Options:
