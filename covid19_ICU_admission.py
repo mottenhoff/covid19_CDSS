@@ -133,6 +133,13 @@ def load_data(path_to_creds):
 def preprocess(data, data_struct):
     ''' Processed the data per datatype.'''
 
+    # Drop useless data
+    cols = data_struct.loc[data_struct.loc[:, 'Form Collection Name']\
+                                        .isin(['!!! CARDIO (OLD DON’T USE)!!!',
+                                                'Vascular medicine (OPTIONAL)']), 
+                            'Field Variable Name'].to_list()
+    data = data.drop(is_in_columns(cols, data), axis=1)
+
     # Fix single errors
     data = fix_single_errors(data)
 
@@ -195,7 +202,7 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
                   threshold*100))
 
     # Remove records with too many missing
-    threshold = .2 # %
+    threshold = .8 # %
     has_too_many_missing = ((x.isna().sum(axis=1))/(x.shape[1]))>threshold
     print('LOG: Dropped {} records, due to more than {}% missing'\
           .format(has_too_many_missing.sum(), threshold*100))
@@ -399,10 +406,10 @@ if __name__ == "__main__":
     #  NOTE: See get_feature_set.py for preset selections
     feature_opts = {
         'pm':   get_1_premorbid(),
-        'cp':   get_2_clinical_presentation(),
-        'lab':  get_3_laboratory_radiology_findings(),
-        'pmcp': get_4_premorbid_clinical_representation(),
-        'all':  get_5_premorbid_clin_rep_lab_rad(),
+        # 'cp':   get_2_clinical_presentation(),
+        # 'lab':  get_3_laboratory_radiology_findings(),
+        # 'pmcp': get_4_premorbid_clinical_representation(),
+        # 'all':  get_5_premorbid_clin_rep_lab_rad(),
         # 'k10': ['LDH', 'PH_value_1', 'age_yrs', 'ccd', 'fio2_1', 'hypertension', 'irregular', 'oxygen_saturation', 'rtr', 'uses_n_medicine'],
         # 'paper': ['LDH', 'Lymphocyte_1_1', 'crp_1_1']
     }

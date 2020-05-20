@@ -451,12 +451,12 @@ def transform_categorical_features(data, data_struct):
     vars_to_dummy = ['oxygen_saturation_on', 'dept', 'Outcome']
 
     is_one_hot_encoded = data_struct['Field Type'].isin(['checkbox', 'category']) | \
-                         data_struct['Field Variable Name'].isin(vars_to_dummy)
-    data_struct.loc[is_one_hot_encoded, 'Field Type'] = 'category_one_not_encoded'
+                            data_struct['Field Variable Name'].isin(vars_to_dummy)
+    data_struct.loc[is_one_hot_encoded, 'Field Type'] = 'category_one_hot_encoded'
 
     cat_struct_ohe = data_struct.loc[is_one_hot_encoded,
-                                 ['Field Variable Name', 'Option Name',
-                                  'Option Value']]
+                                    ['Field Variable Name', 'Option Name',
+                                    'Option Value']]
     category_columns_ohe = is_in_columns(cat_struct_ohe['Field Variable Name'], data)
 
     # Exclude some vars
@@ -471,14 +471,15 @@ def transform_categorical_features(data, data_struct):
         # Get all unique categories in the column
         unique_categories = pd.unique([cat for value in data[col].values
                                        for cat in str(value).split(';')])
-        unique_categories = [cat for cat in unique_categories
-                             if cat.lower() not in ['nan', 'none']]
+        # unique_categories = [cat for cat in unique_categories
+        #                      if cat.lower() not in ['nan', 'none']]
+
         if not any(unique_categories):
             continue
 
         # TODO: Make column names to actual name instead of numeric answer
-        dummy_column_names = [get_name(col, v) for v in unique_categories
-                              if v.lower() not in ['nan', 'none']]
+        dummy_column_names = [get_name(col, v) for v in unique_categories]
+                            #   if v.lower() not in ['nan', 'none']]
         # Create new dataframe with the dummies
         dummies = pd.DataFrame(0, index=data.index, columns=dummy_column_names)
 
@@ -493,6 +494,12 @@ def transform_categorical_features(data, data_struct):
             has_cat = data[col].str.contains(regex_str, regex=True)
             if has_cat.sum() > 1:
                 dummies.loc[has_cat, get_name(col, cat)] = 1            
+
+        nan_cols = [c for c in dummies.columns if '_nan' in c or '_None' in c]
+        missing_col = dummies.loc[:, nan_cols].max(axis=1)
+        dummies = dummies.drop(nan_cols, axis=1)
+        dummies = pd.concat([dummies, missing_col], axis=1)
+        dummies.columns = dummies.columns[:-1].to_list() + [col+'_cat_missing']
 
         dummies_list += [dummies]
 
@@ -714,11 +721,12 @@ def select_variables(data, data_struct, variables_to_include_dict):
                                                .to_list()
 
     # Retrieve the corresponding categorical 1-hot encoded column names
-    category_vars = data_struct.loc[data_struct['Field Type'] == 'category',
+    category_vars = data_struct.loc[(data_struct['Field Type'] == 'category') |
+                                    (data_struct['Field Type'] == 'category_one_hot_encoded'),
                                 'Field Variable Name'].to_list()
     variables_to_include += [c for var in variables_to_include
-                                for c in data.columns
-                                if (var in category_vars) and (var in c)]
+                               for c in data.columns
+                               if (var in category_vars) and (var in c)]
 
     variables_to_include += ['Record Id']
     variables_to_include = list(np.unique(is_in_columns(variables_to_include, data)))
