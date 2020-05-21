@@ -159,7 +159,10 @@ def preprocess(data, data_struct):
 def prepare_for_learning(data, data_struct, variables_to_incl,
                          variables_to_exclude, goal,
                          group_by_record=True, use_outcome=None,
-                         additional_fn=None):
+                         additional_fn=None,
+                         remove_records_threshold_above=0.8,
+                         remove_features_threshold_above=0.5,
+                         pcr_corona_confirmed_only=True):
 
     outcomes, used_columns = calculate_outcomes(data, data_struct)
     data = pd.concat([data, outcomes], axis=1)
@@ -181,10 +184,12 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
         x = x.loc[has_y, :]
         y = y.loc[has_y]
 
-    # Include only patients with CONFIRMED covid infection
-    is_confirmed_patient = x['Coronavirus'] == 1
-    x = x.loc[is_confirmed_patient, :]
-    y = y.loc[is_confirmed_patient]
+    # Include only patients with CONFIRMED covid infection (PCR+ or Coronavirus)
+    # This excludes patients based on CORADS > 4
+    if pcr_corona_confirmed_only:
+        is_confirmed_patient = (data[['Coronavirus', 'pcr_pos']] == 1).any(axis=1)
+        x = x.loc[is_confirmed_patient, :]
+        y = y.loc[is_confirmed_patient]
 
     # Select variables to include in prediction
     variables_to_incl['Field Variable Name'] += ['hospital']
@@ -194,17 +199,17 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
     x = x.drop(is_in_columns(variables_to_exclude, x), axis=1)
 
     # Drop features with too many missing
-    threshold = .5
+    threshold = remove_features_threshold_above
     has_too_many_missing = (x.isna().sum(axis=0)/x.shape[0]) > threshold
     x = x.loc[:, ~has_too_many_missing]
-    print('LOG: dropped features: {}, due to more than {}% missing'\
+    print('LOG: dropped features: {}, due to more than {}% missing'
           .format(has_too_many_missing.loc[has_too_many_missing].index.to_list(),
                   threshold*100))
 
     # Remove records with too many missing
-    threshold = .8 # %
-    has_too_many_missing = ((x.isna().sum(axis=1))/(x.shape[1]))>threshold
-    print('LOG: Dropped {} records, due to more than {}% missing'\
+    threshold = remove_records_threshold_above
+    has_too_many_missing = ((x.isna().sum(axis=1))/(x.shape[1])) > threshold
+    print('LOG: Dropped {} records, due to more than {}% missing'
           .format(has_too_many_missing.sum(), threshold*100))
     x = x.loc[~has_too_many_missing, :]
     y = y.loc[~has_too_many_missing]

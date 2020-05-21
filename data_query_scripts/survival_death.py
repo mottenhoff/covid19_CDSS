@@ -284,7 +284,10 @@ if __name__ == '__main__':
     features, outcomes, data, hospital, record_id, days_until_death = prepare_for_learning(data, data_struct,
                                                                           variables_to_include,
                                                                           variables_to_exclude,
-                                                                          goal)
+                                                                          goal,
+                                                                          remove_records_threshold_above=1.0,
+                                                                          remove_features_threshold_above=0.5,
+                                                                          pcr_corona_confirmed_only=False)
     del outcomes  # not relevant in this form. Use features and hospital.
 
     # %% STEP 2: CALCULATE and CORRECT ALL TIMINGS.
