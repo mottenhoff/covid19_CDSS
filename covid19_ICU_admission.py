@@ -136,7 +136,7 @@ def preprocess(data, data_struct):
     # Drop useless data
     cols = data_struct.loc[data_struct.loc[:, 'Form Collection Name']\
                                         .isin(['!!! CARDIO (OLD DON’T USE)!!!',
-                                                'Vascular medicine (OPTIONAL)']), 
+                                                'Vascular medicine (OPTIONAL)']),
                             'Field Variable Name'].to_list()
     data = data.drop(is_in_columns(cols, data), axis=1)
 
@@ -159,7 +159,7 @@ def preprocess(data, data_struct):
 def prepare_for_learning(data, data_struct, variables_to_incl,
                          variables_to_exclude, goal,
                          group_by_record=True, use_outcome=None,
-                         additional_fn=None, use_imputation=True):
+                         additional_fn=None):
 
     outcomes, used_columns = calculate_outcomes(data, data_struct)
     data = pd.concat([data, outcomes], axis=1)
@@ -224,17 +224,17 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
 
     print('LOG: Using <{}:{}> as y.'.format(goal[0], goal[1]))
     print('LOG: Class distribution: 1: {}, 0: {}, total: {}'\
-           .format(y.value_counts()[1], y.value_counts()[0], y.size))
+           .format(y[y.columns[0]].value_counts()[1], y[y.columns[0]].value_counts()[0], y[y.columns[0]].size))
     print('LOG: Selected {} variables for predictive model'
            .format(x.columns.size))
 
     explore_data(x, y)
-    
+
     days_until_death = outcomes.loc[x.index, 'Days until death'].copy()
 
     return x, y, data, hospital, records, days_until_death
 
-def train_and_predict(x, y, model, rep, type='loho', 
+def train_and_predict(x, y, model, rep, type='loho',
                       hospitals=None, unique_hospitals=None,
                       days_until_death=None, test_size=0.2):
     ''' Splits data into train and test set using

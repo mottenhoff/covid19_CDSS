@@ -149,3 +149,5 @@ covid19_variables.xlsx
 .vscode/
 *.zip
 *.gif
+*.tiff
+*.pxm
