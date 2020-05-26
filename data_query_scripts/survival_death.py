@@ -196,7 +196,7 @@ def cox_ph_loho(features, hazard_ratios=False,
             test_set = test_set.drop(columns=['hospital'])
 
             cph, p, imputer, scaler = cox_ph(train_set, hazard_ratios=False,
-                                             imputation_method='median',
+                                             imputation_method=imputation_method,
                                              return_scaler_imputer=True)
 
             test_set = pd.DataFrame(imputer.transform(test_set), columns=test_set.columns)
@@ -281,11 +281,13 @@ if __name__ == '__main__':
     data, data_struct = load_data(path_creds)
     data, data_struct = preprocess(data, data_struct)
     # %%
-    features, outcomes, data, hospital, record_id = prepare_for_learning(data, data_struct,
-                                                              variables_to_include,
-                                                              variables_to_exclude,
-                                                              goal,
-                                                              use_imputation=False)
+    features, outcomes, data, hospital, record_id, days_until_death = prepare_for_learning(data, data_struct,
+                                                                          variables_to_include,
+                                                                          variables_to_exclude,
+                                                                          goal,
+                                                                          remove_records_threshold_above=1.0,
+                                                                          remove_features_threshold_above=0.5,
+                                                                          pcr_corona_confirmed_only=False)
     del outcomes  # not relevant in this form. Use features and hospital.
 
     # %% STEP 2: CALCULATE and CORRECT ALL TIMINGS.
@@ -342,10 +344,6 @@ if __name__ == '__main__':
 
     # translate feature columns
     features.rename(columns=englishvar_to_dutchnames, inplace=True)
-
-    # CORRECT SaO2
-    features['SaO2 (%)'] = features['SaO2 (%)'].astype(float)
-    features['SaO2 (%)'][features['SaO2 (%)'] <= 1.0] = features['SaO2 (%)'][features['SaO2 (%)']<= 1.0] * 100.
 
     # do not model data with > 50% missing data
     drop_vars = features.columns[np.sum(features.isnull())/len(features) > 0.5]

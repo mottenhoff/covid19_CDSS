@@ -377,6 +377,10 @@ def fix_single_errors(data):
 
     sao2_1_zero = data['SaO2_1'].astype(float) == 0.
     data.loc[sao2_1_zero,'SaO2_1'] = np.nan
+<<<<<<< HEAD
+=======
+
+>>>>>>> b6fddbf4c8e6ad7aeeebd36f9e199feeb0677d91
     return data
 
 @timeit
@@ -507,7 +511,7 @@ def transform_categorical_features(data, data_struct):
             regex_str = '(?:;|^){}(?:;|$)'.format(cat)
             has_cat = data[col].str.contains(regex_str, regex=True)
             if has_cat.sum() > 1:
-                dummies.loc[has_cat, get_name(col, cat)] = 1            
+                dummies.loc[has_cat, get_name(col, cat)] = 1
 
         nan_cols = [c for c in dummies.columns if '_nan' in c or '_None' in c]
         missing_col = dummies.loc[:, nan_cols].max(axis=1)
@@ -533,7 +537,6 @@ def transform_numeric_features(data, data_struct):
     # Calculates all variables to the same unit,
     #   according to a handmade mapping in unit_lookup.py
     data = data.copy()
-
     unit_dict, var_numeric = get_unit_lookup_dict()
 
     numeric_columns = is_in_columns(var_numeric.keys(), data)
