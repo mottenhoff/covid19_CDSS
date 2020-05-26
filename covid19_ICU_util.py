@@ -377,10 +377,6 @@ def fix_single_errors(data):
 
     sao2_1_zero = data['SaO2_1'].astype(float) == 0.
     data.loc[sao2_1_zero,'SaO2_1'] = np.nan
-<<<<<<< HEAD
-=======
-
->>>>>>> b6fddbf4c8e6ad7aeeebd36f9e199feeb0677d91
     return data
 
 @timeit

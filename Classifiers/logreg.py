@@ -360,8 +360,8 @@ class LogReg:
         data.loc[:, vars_binary] = data[vars_binary].fillna(0, axis=0)
 
         # Categorical
-        # vars_categorical = get_fields_per_type(data, self.data_struct, 'category')
-        # data.loc[:, vars_categorical] = data[vars_categorical].fillna(missing_class, axis=0)
+        vars_categorical = get_fields_per_type(data, self.data_struct, 'category')
+        data.loc[:, vars_categorical] = data[vars_categorical].fillna(missing_class, axis=0)
 
 
         return data
