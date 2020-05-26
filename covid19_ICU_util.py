@@ -363,6 +363,20 @@ def fix_single_errors(data):
                 data.loc[data['Record Id']==record_id, column] \
                     = data.loc[data['Record Id']==record_id, column] \
                           .replace(pair[0], pair[1])
+
+    # SaO2 and SaO2_1 are incidentally reported as fraction rather than as
+    # a percentage; fix this by multiplication. 0 is impossible -> replace by nan
+    sao2_invalid = data['SaO2'].astype(float) < 1.0
+    data.loc[sao2_invalid,'SaO2'] = (100. * data.loc[sao2_invalid,'SaO2'].astype(float)).astype(str)
+
+    sao2_1_invalid = data['SaO2_1'].astype(float) < 1.0
+    data.loc[sao2_1_invalid,'SaO2_1'] = (100. * data.loc[sao2_1_invalid,'SaO2_1'].astype(float)).astype(str)
+
+    sao2_zero = data['SaO2'].astype(float) == 0.
+    data.loc[sao2_zero,'SaO2'] = np.nan
+
+    sao2_1_zero = data['SaO2_1'].astype(float) == 0.
+    data.loc[sao2_1_zero,'SaO2_1'] = np.nan
     return data
 
 @timeit
@@ -448,9 +462,9 @@ def transform_categorical_features(data, data_struct):
 
     # Extract variables that can contain multiple answers OR need to be
     #   dummified to be used in a later stage
-    vars_to_dummy = ['oxygen_saturation_on', 'dept', 'Outcome']
+    vars_to_dummy = ['dept', 'Outcome'] # 'oxygen_saturation_on'
 
-    is_one_hot_encoded = data_struct['Field Type'].isin(['checkbox', 'category']) | \
+    is_one_hot_encoded = data_struct['Field Type'].isin(['checkbox']) | \
                             data_struct['Field Variable Name'].isin(vars_to_dummy)
     data_struct.loc[is_one_hot_encoded, 'Field Type'] = 'category_one_hot_encoded'
 

@@ -405,11 +405,11 @@ if __name__ == "__main__":
     # INCLUDE variables from analysis
     #  NOTE: See get_feature_set.py for preset selections
     feature_opts = {
-        'pm':   get_1_premorbid(),
+        # 'pm':   get_1_premorbid(),
         # 'cp':   get_2_clinical_presentation(),
         # 'lab':  get_3_laboratory_radiology_findings(),
         # 'pmcp': get_4_premorbid_clinical_representation(),
-        # 'all':  get_5_premorbid_clin_rep_lab_rad(),
+        'all':  get_5_premorbid_clin_rep_lab_rad(),
         # 'k10': ['LDH', 'PH_value_1', 'age_yrs', 'ccd', 'fio2_1', 'hypertension', 'irregular', 'oxygen_saturation', 'rtr', 'uses_n_medicine'],
         # 'paper': ['LDH', 'Lymphocyte_1_1', 'crp_1_1']
     }
