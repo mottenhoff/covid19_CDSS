@@ -51,6 +51,7 @@ from covid19_ICU_util import explore_data
 # classifiers
 from logreg import LogReg
 from XGB import XGB
+from survival import Survival
 
 # data
 from get_feature_set import get_1_premorbid
@@ -199,20 +200,22 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
     x = x.drop(is_in_columns(variables_to_exclude, x), axis=1)
 
     # Drop features with too many missing
-    threshold = remove_features_threshold_above
-    has_too_many_missing = (x.isna().sum(axis=0)/x.shape[0]) > threshold
-    x = x.loc[:, ~has_too_many_missing]
-    print('LOG: dropped features: {}, due to more than {}% missing'
-          .format(has_too_many_missing.loc[has_too_many_missing].index.to_list(),
-                  threshold*100))
+    if remove_features_threshold_above is not None:
+        threshold = remove_features_threshold_above
+        has_too_many_missing = (x.isna().sum(axis=0)/x.shape[0]) > threshold
+        x = x.loc[:, ~has_too_many_missing]
+        print('LOG: dropped features: {}, due to more than {}% missing'
+              .format(has_too_many_missing.loc[has_too_many_missing].index.to_list(),
+                      threshold*100))
 
     # Remove records with too many missing
-    threshold = remove_records_threshold_above
-    has_too_many_missing = ((x.isna().sum(axis=1))/(x.shape[1])) > threshold
-    print('LOG: Dropped {} records, due to more than {}% missing'
-          .format(has_too_many_missing.sum(), threshold*100))
-    x = x.loc[~has_too_many_missing, :]
-    y = y.loc[~has_too_many_missing]
+    if remove_records_threshold_above is not None:
+        threshold = remove_records_threshold_above
+        has_too_many_missing = ((x.isna().sum(axis=1))/(x.shape[1])) > threshold
+        print('LOG: Dropped {} records, due to more than {}% missing'
+              .format(has_too_many_missing.sum(), threshold*100))
+        x = x.loc[~has_too_many_missing, :]
+        y = y.loc[~has_too_many_missing]
 
     # Combine smaller hospitals
     cutoff = 100
@@ -239,7 +242,7 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
 
     return x, y, data, hospital, records, days_until_death
 
-def train_and_predict(x, y, model, rep, type='loho',
+def train_and_predict(x, y, model, rep, splittype='loho',
                       hospitals=None, unique_hospitals=None,
                       days_until_death=None, test_size=0.2):
     ''' Splits data into train and test set using
@@ -269,7 +272,7 @@ def train_and_predict(x, y, model, rep, type='loho',
             clf on test y.
     '''
 
-    if type == 'loho':
+    if splittype == 'loho':
         # Leave-one-hospital-out cross-validation
         test_hosp = unique_hospitals[rep]
         is_test_hosp = hospitals == test_hosp

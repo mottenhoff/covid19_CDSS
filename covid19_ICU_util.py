@@ -293,10 +293,28 @@ def get_survival_analysis_outcomes(data, outcomes):
     #                        TODO: Think about same exclusion at classification[y2]
     outcome_name = 'Patient has died'
 
+    # start with everyone alive at t=0
     event = pd.Series(0, index=data.index)
+
+    # mark all patients with a time to death as death
     duration = outcomes.loc[:, 'Days until death'].copy()
     event.loc[duration.notna()] = 1
+
+    max_duration = np.nanmax(duration)
+
+    # mark patients that died, but do not have a death date as alive until their last followup
     duration.loc[duration.isna()] = data.loc[duration.isna(), 'days_since_admission_current_hosp']
+
+    # # now add the people that are ALIVE DISCHARGED - set as no event until t=max_duration
+    duration.loc[data['Levend ontslagen en niet heropgenomen - totaal']] = max_duration  # or 42 days   #  discharged alive - ALL 3
+    event.loc[data['Levend ontslagen en niet heropgenomen - totaal']] = 0  # censor alive at t=max_duration days
+
+    # # now add the people that are UNKNOWN (= not death and not discharged)
+    duration.loc[data['Onbekend (alle patiënten zonder outcome)']] = data['days_since_admission_current_hosp'][data['Onbekend (alle patiënten zonder outcome)']]  # Onbekend (alle patiënten zonder outcome) == UNKNOWN outcome
+    event.loc[data['Onbekend (alle patiënten zonder outcome)']] = 0  # censor at time of event.
+
+    # remaining data: does not have any outcome or follow-up: we only now these patients are alive at t=0.
+    duration[duration.isna()] = 0.0  # duration unknown because date is not filled in? set to 0.0
 
     y = pd.concat([event, duration], axis=1)
     y.columns = ['event_mortality', 'duration_mortality']
