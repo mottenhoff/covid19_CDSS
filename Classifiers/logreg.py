@@ -77,19 +77,19 @@ class LogReg:
         self.goal = None
         self.data_struct = None
         self.model_args = {
-            'imputer': 'simple',     # Simple, iterative, forest
+            'imputer': 'iterative',     # Simple, iterative, forest
             'add_missing_indicator': False,
             'apply_polynomials': False,
-            'apply_feature_selection': False,
+            'apply_feature_selection': True,
             'n_features': 10,
             'apply_pca': False,
             'pca_n_components': 3,
-            'grid_search': False
+            'grid_search': True
         }
 
         self.grid = {
             'LR__l1_ratio': [i / 10 for i in range(0, 11, 1)],
-            'LR__tol': [10**(-i) for i in range(-2, -6)],
+            'LR__tol': [10**(-i) for i in range(2, 7)],
             'LR__C': np.linspace(0, 2, 5),
             'LR__max_iter': [100, 200, 300, 400, 500]
         }
@@ -154,6 +154,7 @@ class LogReg:
         self.learn_size += [{'tr_x': train_x.shape, 'tr_y': train_y.shape,
                             'te_x': test_x.shape, 'te_y': test_y.shape}]
 
+        # Imputes non numeric
         train_x = self.impute_missing_values(train_x)
         test_x = self.impute_missing_values(test_x)
 
@@ -191,8 +192,22 @@ class LogReg:
         
         idx_train = train_x.index
         idx_test = test_x.index
-        train_x = pd.DataFrame(clf[:-1].transform(train_x), columns=columns)
-        test_x = pd.DataFrame(clf[:-1].transform(test_x), columns=columns)
+        
+        if self.model_args['add_missing_indicator']:
+            missing_cols = columns.to_list()\
+                              + ['{}_nan'.format(c)
+                                 for c in train_x.loc[:, train_x.isna().any()]]
+
+        train_x = pd.DataFrame(clf[:-1].transform(train_x))
+        test_x = pd.DataFrame(clf[:-1].transform(test_x))
+
+        if self.model_args['add_missing_indicator']:
+            train_x.columns = missing_cols
+            test_x.columns = missing_cols
+        else:
+            train_x.columns = columns
+            test_x.columns = columns
+        
         train_x.index = idx_train
         test_x.index = idx_test
         datasets = {"train_x": train_x,
@@ -278,7 +293,8 @@ class LogReg:
         fig, ax = self.plot_model_results([score['roc_auc'] for score in scores],
                                           hospitals=hospitals)
 
-        if not self.model_args['apply_feature_selection']:
+        if not self.model_args['apply_feature_selection']\
+           and not self.model_args['add_missing_indicator']:
             fig2, ax2 = self.plot_model_weights(datasets['test_x'].columns, clf,
                                                 show_n_features=self.evaluation_args['show_n_features'],
                                                 normalize_coefs=self.evaluation_args['normalize_coefs'])
@@ -307,8 +323,10 @@ class LogReg:
     def get_pipeline(self):
         self.define_imputer(self.model_args['imputer'])
 
-        steps = [('imputer', self.imputer),
-                 ('scaler', RobustScaler())]
+        steps = [
+                 ('imputer', self.imputer),   
+                 ('scaler', RobustScaler())
+                ]
 
         if self.model_args['apply_polynomials']:
             steps += [('polynomials', PolynomialFeatures(interaction_only=True))]
@@ -334,19 +352,18 @@ class LogReg:
                                             random_state=self.random_state))]
         return Pipeline(steps)
 
-    def impute_missing_values(self, data, missing_class=-1):
+    def impute_missing_values(self, data, missing_class=0):
+        # Imputes all missing values from non-numeric columns
         data = data.copy()  # Prevents copy warning
+
+        vars_binary = get_fields_per_type(data, self.data_struct, 'radio')
+        data.loc[:, vars_binary] = data[vars_binary].fillna(0, axis=0)
 
         # Categorical
         vars_categorical = get_fields_per_type(data, self.data_struct, 'category')
         data.loc[:, vars_categorical] = data[vars_categorical].fillna(missing_class, axis=0)
 
-        # # Numeric
-        # vars_numeric = get_fields_per_type(data, self.data_struct, 'numeric')
-        # data.loc[:, vars_numeric] = data.loc[:, vars_numeric] \
-        #                                 .fillna(data.loc[:, vars_numeric] \
-        #                                             .median())
-        # data = data.fillna(0).astype(float)
+
         return data
 
     def plot_model_results(self, aucs, hospitals=[]):  
@@ -464,6 +481,9 @@ class LogReg:
         mask_not_nan = ~np.isnan(avg_coefs)  # Remove non-existent weights
         avg_coefs = avg_coefs[mask_not_nan]
 
+        with open(self.savepath + '_coefs.txt', 'w') as f:
+            f.write(coefs)
+
         var_coefs = coefs.var(axis=0)[mask_not_nan] if not normalize_coefs else None
         idx_sorted = avg_coefs.argsort()
         n_bars = np.arange(avg_coefs.shape[0])
@@ -493,19 +513,19 @@ class LogReg:
         steps = clf.named_steps.keys()
         labels = np.array(labels)
 
-        for i, l in enumerate(labels):
-            if l == None:
-                labels[i] = labels[i]
-            elif 'chronic cardiac disease' in l.lower():
-                labels[i] = 'Chronic Cardiac Disease (Not hypertension)'
-            elif 'home medication' in l.lower():
-                labels[i] = 'Home medication'
-
         # NOTE: use loop over steps to be able to switch order
         if self.model_args['add_missing_indicator']:
-            labels = labels.to_list() \
+            labels = list(labels) \
                      + ['m_id_{}'.format(labels[i])\
                        for i in clf.named_steps.imputer.indicator_.features_]
+        else:
+            for i, l in enumerate(labels):
+                if l == None:
+                    labels[i] = labels[i]
+                elif 'chronic cardiac disease' in str(l).lower():
+                    labels[i] = 'Chronic Cardiac Disease (Not hypertension)'
+                elif 'home medication' in str(l).lower():
+                    labels[i] = 'Home medication'
 
         if 'polynomials' in steps:
             # N_features = n_features (n)
@@ -529,6 +549,7 @@ class LogReg:
         # Get list by voting. i.e sorted list with most occurences
         self.n_best_features = [sorted(fset) for fset in self.n_best_features]
         counts = pd.Series(self.n_best_features).value_counts()
+        counts.to_excel(self.save_path + 'feature_selection.xlsx')
         print('votes={} for {}'.format(counts.iloc[0], counts.index[0]))
 
     def save_prediction_to_file(self, scores):
@@ -563,8 +584,8 @@ def get_metrics(lst):
             'sem': sem,
             'ci': ci}
 
-def get_fields_per_type(data, data_struct, type):
-    fields = data_struct.loc[data_struct['Field Type']=='category',
+def get_fields_per_type(data, data_struct, type_):
+    fields = data_struct.loc[data_struct['Field Type']==type_,
                             'Field Variable Name'].to_list()
     return [field for field in fields if field in data.columns]
 
