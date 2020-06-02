@@ -104,7 +104,7 @@ while True:
                                                and x['archived'] == False])
         if count_nw - count >= 5 or first_update:
             count = count_nw
-            message = 'Total # of inclusions  : ' + str(count) + ' records' + \
+            message = '```Total # of inclusions  : ' + str(count) + ' records' + \
                       '\nTotal # of institutions: ' + str(len(institutesUnique)) +\
                       '\n-       > 90% completed: ' + str(completion_rate_90) + '/' + str(count) + \
                       '\n-          0% completed: ' + str(completion_rate_0) + '/' + str(count) + \
@@ -117,7 +117,7 @@ while True:
                 if (count_sub[c]) < 100:
                     n += 1
                 message = message + '\n> ' + c + ': ' + (max([len(x) for x in institutesUnique])-len(c)+n)*' ' + sub_messages[c]
-            message += '\n\nNB: Castor completion rates can be unreliable as these are only updated after records are opened/edited.'
+            message += '\n\nNB: Castor completion rates can be unreliable as these are only updated after records are opened/edited.```'
             send_message_to_slack(message)
             print(message)
 
