@@ -464,7 +464,7 @@ def transform_categorical_features(data, data_struct):
     #   dummified to be used in a later stage
     vars_to_dummy = ['dept', 'Outcome'] # 'oxygen_saturation_on'
 
-    is_one_hot_encoded = data_struct['Field Type'].isin(['checkbox']) | \
+    is_one_hot_encoded = data_struct['Field Type'].isin(['checkbox', 'category']) | \
                             data_struct['Field Variable Name'].isin(vars_to_dummy)
     data_struct.loc[is_one_hot_encoded, 'Field Type'] = 'category_one_hot_encoded'
 
@@ -507,7 +507,7 @@ def transform_categorical_features(data, data_struct):
             regex_str = '(?:;|^){}(?:;|$)'.format(cat)
             has_cat = data[col].str.contains(regex_str, regex=True)
             if has_cat.sum() > 1:
-                dummies.loc[has_cat, get_name(col, cat)] = 1
+                dummies.loc[has_cat, get_name(col, cat)] = 1            
 
         nan_cols = [c for c in dummies.columns if '_nan' in c or '_None' in c]
         missing_col = dummies.loc[:, nan_cols].max(axis=1)
@@ -533,6 +533,7 @@ def transform_numeric_features(data, data_struct):
     # Calculates all variables to the same unit,
     #   according to a handmade mapping in unit_lookup.py
     data = data.copy()
+
     unit_dict, var_numeric = get_unit_lookup_dict()
 
     numeric_columns = is_in_columns(var_numeric.keys(), data)
@@ -567,16 +568,22 @@ def transform_numeric_features(data, data_struct):
             data_struct['Field Variable Name']==('PaO2_sample_type'+p),
             ['Option Name', 'Option Value']].iloc[0, :]
 
-        for name, value in zip(options['Option Name'], options['Option Value']):
+        col_dict = dict(zip(options['Option Value'], options['Option Name']))
+        # Non-Strings are missing values
+        colnames = ['PaO2'+p+'_'+v for v in col_dict.values() if type(v)==str]
+        df = pd.DataFrame(0, columns=colnames, index=data.index)
+
+        for value, name in col_dict.items():
             if str(name) == 'nan':
+                # occurs only once, so better drop it
                 continue
             colname = 'PaO2'+p+'_'+str(name)
-            data[colname] = None
             is_measure_type = data['PaO2_sample_type'+p] == value
-            data.loc[is_measure_type,
-                    'PaO2'+p+'_'+str(name)] = data.loc[is_measure_type, 'PaO2'+p].copy()
-        data = data.drop(columns='PaO2'+p)
+            df.loc[is_measure_type, colname] = data.loc[is_measure_type, 'PaO2'+p]
+        df.loc[data['PaO2'+p].isna(), :] = None
 
+        data = data.drop(columns=['PaO2'+p, 'PaO2_sample_type'+p])
+        data = pd.concat([data, df], axis=1)
     return data, data_struct
 
 @timeit
@@ -722,12 +729,14 @@ def select_data(data, data_struct):
     return data, data_struct
 
 @timeit
-def select_variables(data, data_struct, variables_to_include_dict):
+def select_variables(data, data_struct, variables_to_include_dict,
+                     variables_to_exclude):
     # Get all variables
     variables_to_include = []
     for k, v in variables_to_include_dict.items():
+        v = [i for i in v if i not in variables_to_exclude]
         if k == 'Field Variable Name':
-            variables_to_include += variables_to_include_dict[k]
+            variables_to_include += v
         else:
             variables_to_include += data_struct.loc[data_struct[k].isin(v),
                                                    'Field Variable Name'] \
@@ -739,7 +748,9 @@ def select_variables(data, data_struct, variables_to_include_dict):
                                 'Field Variable Name'].to_list()
     variables_to_include += [c for var in variables_to_include
                                for c in data.columns
-                               if (var in category_vars) and (var in c)]
+                               if ((var in category_vars)\
+                                    and (var not in variables_to_exclude))\
+                                  and (var in c)]
 
     variables_to_include += ['Record Id']
     variables_to_include = list(np.unique(is_in_columns(variables_to_include, data)))

@@ -47,6 +47,8 @@ from sklearn.feature_selection import SelectFpr
 from sklearn.feature_selection import SelectKBest
 from sklearn.model_selection import cross_val_predict
 from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn.model_selection import RandomizedSearchCV
+from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import auc as auc_calc
 from sklearn.metrics import roc_curve
@@ -54,15 +56,17 @@ from sklearn.metrics import roc_auc_score
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import plot_confusion_matrix
 
+
 from sklearn.model_selection import GridSearchCV
-from sklearn.impute import SimpleImputer
 
 import warnings
 from sklearn.exceptions import ConvergenceWarning
+# from sklearn.exceptions import UserWarning
 from sklearn.experimental import enable_iterative_imputer  # Required to enable experimental iterative imputer
 from sklearn.impute import IterativeImputer
 from missingpy import MissForest
-# warnings.filterwarnings(action='ignore', category=ConvergenceWarning)
+warnings.filterwarnings(action='ignore', category=ConvergenceWarning)
+# warnings.filterwarnings(action='ignore', category=UserWarning)
 
 class LogReg:
 
@@ -80,7 +84,7 @@ class LogReg:
             'imputer': 'iterative',     # Simple, iterative, forest
             'add_missing_indicator': False,
             'apply_polynomials': False,
-            'apply_feature_selection': True,
+            'apply_feature_selection': False,
             'n_features': 10,
             'apply_pca': False,
             'pca_n_components': 3,
@@ -88,10 +92,10 @@ class LogReg:
         }
 
         self.grid = {
-            'LR__l1_ratio': [i / 10 for i in range(0, 11, 1)],
-            'LR__tol': [10**(-i) for i in range(2, 7)],
-            'LR__C': np.linspace(0, 2, 5),
-            'LR__max_iter': [100, 200, 300, 400, 500]
+            'LR__l1_ratio': [i / 10 for i in range(0, 11, 2)],
+            'LR__C': np.logspace(-4, 4, 10),
+            'LR__penalty': ['l2','elasticnet'],
+            'LR__max_iter': [100, 300, 500]
         }
 
         self.score_args = {
@@ -165,8 +169,11 @@ class LogReg:
         if self.model_args['grid_search']:
             # print("Train classfier using grid search for best parameters.")
             cv = StratifiedShuffleSplit(n_splits=5, test_size=0.2, random_state=self.random_state)
-            grid = GridSearchCV(self.pipeline, param_grid=self.grid, cv=cv,
-                                scoring='roc_auc', n_jobs=-2)
+            grid = RandomizedSearchCV(self.pipeline, param_distributions=self.grid, cv=cv,
+                                      scoring='roc_auc', n_jobs=-2,
+                                      verbose=1, n_iter=50)
+            # grid = GridSearchCV(self.pipeline, param_grid=self.grid, cv=cv,
+            #                     scoring='roc_auc', n_jobs=-2)
             grid.fit(train_x, train_y)
             clf = grid.best_estimator_
             self.trained_classifiers += [clf]
@@ -182,10 +189,12 @@ class LogReg:
         test_y_hat = clf.predict_proba(test_x)  # Predict
 
         if 'feature_selection' in clf.named_steps:
-            columns = train_x.columns[np.argsort(clf.named_steps\
-                                          .feature_selection\
-                                          .pvalues_)][0:self.model_args['n_features']].to_list()
-            self.n_best_features += [columns]
+            idx_sorted = np.argsort(clf['feature_selection']\
+                                       .pvalues_)
+            f_values = clf['feature_selection'].scores_
+            p_values = clf['feature_selection'].pvalues_
+            columns = train_x.columns[idx_sorted[0:self.model_args['n_features']]].to_list()
+            self.n_best_features += [[columns, f_values, p_values]]
             print(columns)
         else:
             columns = train_x.columns
@@ -296,8 +305,8 @@ class LogReg:
         if not self.model_args['apply_feature_selection']\
            and not self.model_args['add_missing_indicator']:
             fig2, ax2 = self.plot_model_weights(datasets['test_x'].columns, clf,
-                                                show_n_features=self.evaluation_args['show_n_features'],
-                                                normalize_coefs=self.evaluation_args['normalize_coefs'])
+                                    show_n_features=self.evaluation_args['show_n_features'],
+                                    normalize_coefs=self.evaluation_args['normalize_coefs'])
 
         if self.save_prediction:
             self.save_prediction_to_file(scores)
@@ -375,17 +384,19 @@ class LogReg:
 
         fig, ax = plt.subplots(1, 1)
         ax.plot(aucs)
-        ax.set_title('{}\nROC AUC: {:.3f} \u00B1 {:.3f} (95% CI)'
-                     .format('Logistic Regression', avg, sem * 1.96))
+        # ax.set_title('{}\nROC AUC: {:.3f} \u00B1 {:.3f} (95% CI)'
+        #              .format('Logistic Regression', avg, sem * 1.96))
+        ax.set_title('{}\nAUC: {:.2f} ({:.2f} to {:.2f}) (95% CI)'
+                     .format('Logistic Regression', avg, avg-(sem*1.96), avg+(sem*1.96)))
         ax.axhline(sum(aucs) / max(len(aucs), 1), color='g', linewidth=1)
         ax.axhline(.5, color='r', linewidth=1)
         ax.set_ylim(0, 1)
-        ax.set_xlabel('Iteration')
+        ax.set_xlabel('Test Fold')
         if any(hospitals):
             ax.set_xticks(list(range(hospitals.size)))
             ax.set_xticklabels(hospitals)
         ax.set_ylabel('AUC')
-        ax.legend(['ROC AUC', 'Average', 'Chance level'], bbox_to_anchor=(1, 0.5))
+        ax.legend(['AUC', 'Average', 'Chance level'], bbox_to_anchor=(1, 0.5))
         fig.tight_layout()
         fig.savefig(self.save_path + '_Performance_roc_auc_{}_{}.png'.format(avg, sem * 1.96),
                     figsize=self.fig_size, dpi=self.fig_dpi)
@@ -473,37 +484,32 @@ class LogReg:
         if len(coefs.shape) <= 1:
             return
 
+        # Save Coeffs
+        np.save('lr_coefs.npy', coefs)
+
+        with open(self.save_path + '_coefs.txt', 'w') as f:
+            f.write('{}'.format(coefs))
+
         show_n_features = coefs.shape[1] if show_n_features is None else show_n_features
 
-        coefs = (coefs - coefs.mean(axis=0)) / coefs.std(axis=0) if normalize_coefs else coefs
+        odds = np.exp(coefs)
+        odds_avg = odds.mean(axis=0)-1
+        odds_var = odds.var(axis=0)
 
-        avg_coefs = abs(coefs.mean(axis=0))
-        mask_not_nan = ~np.isnan(avg_coefs)  # Remove non-existent weights
-        avg_coefs = avg_coefs[mask_not_nan]
-
-        with open(self.savepath + '_coefs.txt', 'w') as f:
-            f.write(coefs)
-
-        var_coefs = coefs.var(axis=0)[mask_not_nan] if not normalize_coefs else None
-        idx_sorted = avg_coefs.argsort()
-        n_bars = np.arange(avg_coefs.shape[0])
-
-        labels = np.array([self.var_dict.get(c, c) for c in feature_labels])
+        idx_sorted = odds_avg.argsort()
+        n_bars = np.arange(odds_avg.size)
+        labels = np.array([self.var_dict.get(c, c) for c in feature_labels]) 
         fontsize = 5.75 if labels.size < 50 else 5
         bar_width = .5  # bar width
 
-        fig, ax = plt.subplots()
-        if normalize_coefs:
-            ax.barh(n_bars, avg_coefs[idx_sorted], bar_width, label='Weight')
-            ax.set_title('Logistic regression - Average weight value')
-        else:
-            ax.set_title('Logistic regression - Average weight value')
-            ax.barh(n_bars, avg_coefs[idx_sorted], bar_width, xerr=var_coefs[idx_sorted],
+        fig, ax = plt.subplots()       
+        ax.set_title('Logistic regression - Odds ratios')
+        ax.barh(n_bars, odds_avg[idx_sorted], bar_width, xerr=odds_var[idx_sorted],
                     label='Weight')
         ax.set_yticks(n_bars)
         ax.set_yticklabels(labels[idx_sorted], fontdict={ 'fontsize': fontsize })
         ax.set_ylim(n_bars[0] - .5, n_bars[-1] + .5)
-        ax.set_xlabel('Weight{}'.format(' (normalized)' if normalize_coefs else ''))
+        ax.set_xlabel('Odds ratio')
         fig.tight_layout()
         fig.savefig(self.save_path + '_Average_weight_variance.png',
                     figsize=self.fig_size, dpi=self.fig_dpi)
@@ -546,10 +552,17 @@ class LogReg:
         return labels
 
     def vote_best_featureset(self):
+        nansum = lambda x: sum([i for i in x if str(i)!='nan'])
         # Get list by voting. i.e sorted list with most occurences
-        self.n_best_features = [sorted(fset) for fset in self.n_best_features]
-        counts = pd.Series(self.n_best_features).value_counts()
-        counts.to_excel(self.save_path + 'feature_selection.xlsx')
+        columns_list = [sorted(fset[0]) for fset in self.n_best_features]
+        result = pd.DataFrame(self.n_best_features, columns=['columns', 'fvalues', 'pvalues'])
+        result['fsum'] = result['fvalues'].apply(nansum)
+        result['psum'] = result['pvalues'].apply(nansum)
+        result['columns'] = result['columns'].apply(sorted)
+        result.to_excel('_lr_feature_selection_results.xlsx')
+
+        counts = pd.Series(columns_list).value_counts()
+        counts.to_excel(self.save_path + '_lr_feature_selection_votes.xlsx')
         print('votes={} for {}'.format(counts.iloc[0], counts.index[0]))
 
     def save_prediction_to_file(self, scores):

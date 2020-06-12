@@ -31,7 +31,9 @@ def get_column_fix_dict():
     '''
     return {
         'oxygentherapy_1': [[-98, None]],
-        'Smoking': [[-99, None]]
+        'Smoking': [[-99, None]],
+        'whole_admission_yes_no': [['1;1', None], ['1;2', None]], 
+        'whole_admission_yes_no_1':  [['1;1', None], ['1;2', None]]
     }
 
 
