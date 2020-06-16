@@ -1,0 +1,10 @@
+hospital	0	1
+Center 1	145	24
+Center 3	229	98
+Center 0	211	50
+Center 7	322	118
+Center com	105	24
+Center 5	315	86
+Center 4	97	16
+Center 2	106	12
+Center 6	237	88

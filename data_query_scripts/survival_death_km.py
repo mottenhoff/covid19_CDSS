@@ -17,7 +17,8 @@ from get_feature_set import get_1_premorbid, \
                             get_5_premorbid_clin_rep_lab_rad
 
 import matplotlib.pyplot as plt
-from lifelines import *
+from lifelines import KaplanMeierFitter
+from lifelines.statistics import logrank_test, pairwise_logrank_test
 import pandas as pd
 import numpy as np
 from sklearn.experimental import enable_iterative_imputer  # Required to enable experimental iterative imputer
@@ -26,7 +27,6 @@ from sklearn.preprocessing import StandardScaler, RobustScaler
 
 plt.rcParams["font.family"] = "Times New Roman"
 matplotlib.rcParams.update({'font.size': 14})
-
 
 c1 = ( 57/255, 106/255, 177/255)  # blue
 c2 = (218/255, 124/255,  48/255)  # orange
@@ -52,6 +52,26 @@ englishvar_to_dutchnames = {'age_yrs':'Leeftijd (jaren)','gender_male':'Geslacht
                             'PH_value_1':'Zuurgraad (pH)','Lactate_2_1':'Lactaat (mmol/L)','crp_1_1':'CRP (mg/L)','Haemoglobin_value_1':'Hb (mmol/L)','Platelets_value_1':'trombocyten (x10^9/L)','WBC_2_1':'Leukocyten (x10^3/µL)','Lymphocyte_1_1':'Lymfocyten (x10^9/L)','Neutrophil_unit_1':'Neutrofielen (x10^9/L)','INR_1_1':'INR',
                             'pt_spec':'PT (sec)','fibrinogen_admin':'Fibrinogeen (g/L)','pcr_pos':'Corona PCR + (ja)','Adenovirus':'Adenovirus (ja)','RSV_':'RS virus (ja)','Influenza':'Influenza virus (ja)','Bacteria':'Sputumkweek (ja)','days_untreated':'Tijd sinds eerste klachten (dagen)','irregular':'Onregelmatige hartslag (ja)',
                             'DNR_yesno':' (ja)','healthcare_worker':'Zorgmedewerker (ja)','infec_resp_diagnosis':'Andere infectieuze ademhalingsdiagnose','Blood_albumin_value_1':'Albumine (g/L)','culture':'Bloedkweek (positief)','APT_APTR_1_1':'APTT (sec)','uses_n_medicine':'Aantal thuismedicamenten'}
+
+import unicodedata
+import string
+
+valid_filename_chars = "-_.() %s%s" % (string.ascii_letters, string.digits)
+char_limit = 255
+
+def clean_filename(filename, whitelist=valid_filename_chars, replace=' '):
+    # replace spaces
+    for r in replace:
+        filename = filename.replace(r,'_')
+
+    # keep only valid ascii chars
+    cleaned_filename = unicodedata.normalize('NFKD', filename).encode('ASCII', 'ignore').decode()
+
+    # keep only whitelisted chars
+    cleaned_filename = ''.join(c for c in cleaned_filename if c in whitelist)
+    if len(cleaned_filename)>char_limit:
+        print("Warning, filename truncated because it was over {}. Filenames may no longer be unique".format(char_limit))
+    return cleaned_filename[:char_limit]
 
 
 class StandardScaler_min2cols(StandardScaler):
@@ -89,27 +109,11 @@ class RobustScaler_min2cols(RobustScaler):
         return pd.concat([X_not_scaled, X_scaled], axis=1)[init_col_order]
 
 
-def simple_estimates(features):
-    T = features['Time to event']
-    E = features['Event death']
-    fig, axes = plt.subplots(1, 1)
+def KM_age_groups(features, outcomes):
+    T = outcomes['duration_mortality']
+    E = outcomes['event_mortality']
 
-    kmf = KaplanMeierFitter().fit(T, E, label='KaplanMeierFitter')
-    kmf.plot_survival_function()
-    axes.set_xlim(0, 21)
-    axes.set_ylim(0, 1)
-
-    axes.set_xlabel('Tijd in dagen')
-    axes.set_ylabel('Cumulatieve survival')
-    plt.savefig('simple_estimate.png')
-    plt.show()
-
-
-def KM_age_groups(features):
-    T = features['Time to event']
-    E = features['Event death']
-
-    #age_70_plus = features['age_yrs'] >= 70.
+    features['Leeftijd (jaren)'] = features['Leeftijd (jaren)'].astype(float)
     age_70_plus = features['Leeftijd (jaren)'] >= 70.
     print('Alle patiënten: n=', len(age_70_plus))
     print('Leeftijd ≥ 70: n=', sum(age_70_plus))
@@ -127,36 +131,24 @@ def KM_age_groups(features):
     print('ICU no: n=', np.nansum(was_not_on_icu))
 
     icu = False
-    special = False
     fig, axes = plt.subplots(1, 1)
 
-    if special:
-        kmf1 = KaplanMeierFitter().fit(T[features['Leeftijd (jaren)'] <= 47],
-                                       E[features['Leeftijd (jaren)'] <= 47], label='Leeftijd <= 47 jaar (n=260)')
-        kmf2 = KaplanMeierFitter().fit(T[np.logical_and(features['Leeftijd (jaren)'] > 47, features['Leeftijd (jaren)'] <= 61)],
-                                       E[np.logical_and(features['Leeftijd (jaren)'] > 47, features['Leeftijd (jaren)'] <= 61)], label='Leeftijd > 47 jaar, <= 61 (n=260)')
-        kmf3 = KaplanMeierFitter().fit(T[features['Leeftijd (jaren)'] > 61],
-                                       E[features['Leeftijd (jaren)'] > 61], label='Leeftijd > 61 jaar (n=876)')
-        kmf1.plot_survival_function(color=c5)
-        kmf2.plot_survival_function(color=c4)
+    if icu:
+        kmf1 = KaplanMeierFitter().fit(T[was_on_icu], E[was_on_icu], label='Wel op ICU geweest')
+        kmf2 = KaplanMeierFitter().fit(T[was_not_on_icu], E[was_not_on_icu], label='Niet op ICU geweest')
+    else: # age 70
+        kmf1 = KaplanMeierFitter().fit(T[age_70_plus], E[age_70_plus], label='Leeftijd ≥ 70 jaar')
+        kmf2 = KaplanMeierFitter().fit(T[~age_70_plus], E[~age_70_plus], label='Leeftijd < 70 jaar')
+
+    kmf3 = KaplanMeierFitter().fit(T, E, label='Alle patienten')
+    if icu:
+        kmf1.plot_survival_function(color=c4)
+        kmf2.plot_survival_function(color=c5)
         kmf3.plot_survival_function(color=c3)
     else:
-        if icu:
-            kmf1 = KaplanMeierFitter().fit(T[was_on_icu], E[was_on_icu], label='Wel op ICU geweest')
-            kmf2 = KaplanMeierFitter().fit(T[was_not_on_icu], E[was_not_on_icu], label='Niet op ICU geweest')
-        else: # age 70
-            kmf1 = KaplanMeierFitter().fit(T[age_70_plus], E[age_70_plus], label='Leeftijd ≥ 70 jaar')
-            kmf2 = KaplanMeierFitter().fit(T[~age_70_plus], E[~age_70_plus], label='Leeftijd < 70 jaar')
-
-        kmf3 = KaplanMeierFitter().fit(T, E, label='Alle patienten')
-        if icu:
-            kmf1.plot_survival_function(color=c4)
-            kmf2.plot_survival_function(color=c5)
-            kmf3.plot_survival_function(color=c3)
-        else:
-            kmf1.plot_survival_function(color=c1)
-            kmf2.plot_survival_function(color=c2)
-            kmf3.plot_survival_function(color=c3)
+        kmf1.plot_survival_function(color=c1)
+        kmf2.plot_survival_function(color=c2)
+        kmf3.plot_survival_function(color=c3)
 
 
     axes.set_xticks([1, 5, 9, 13, 17, 21])
@@ -181,80 +173,142 @@ def KM_age_groups(features):
     return kmf1, kmf2, kmf3
 
 
-def cox_ph_loho(features, hazard_ratios=False,
-                imputation_method='median',
-                minimal_n=10,
-                pvalue=0.05):
-    cindex = []
-    n = []
-    for test_hospital in features['hospital'].unique():
-        print(test_hospital)
-        train_set = features[features['hospital'] != test_hospital]
-        test_set = features[features['hospital'] == test_hospital]
+def KM_all_vars(features, outcomes):
+    T = outcomes['duration_mortality']
+    E = outcomes['event_mortality']
 
-        if len(test_set) >= minimal_n:
-            test_set = test_set.drop(columns=['hospital'])
+    is_binary = features.columns[['ja' in f for f in features.columns]]
+    is_binary = is_binary.append(features.columns[['positief' in f for f in features.columns]])
+    is_binary = is_binary.append(features.columns[['Andere infectieuze ademhalingsdiagnose' in f for f in features.columns]])
+    is_binary = is_binary.append(features.columns[['oxygen_saturation_on_cat_' in f for f in features.columns]])
+    is_float = ['ALAT (U/L)', 'ASAT (U/L)', 'Ureum (mmol/L)', 'Albumine (g/L)',
+                'Ca (totaal) (mmol/L)', 'Creatinine (µmol/L)', 'glucose (mmol/L)',
+                'Hb (mmol/L)', 'hart frequentie (1/min)', 'LDH (U/L)', 'Lactaat (mmol/L)',
+                'Lymfocyten (x10^9/L)', 'Neutrofielen (x10^9/L)', 'pCO2 (kPa)',
+                'Zuurgraad (pH)', 'PaO2 arteriëel (kPa)', 'trombocyten (x10^9/L)',
+                'Kalium (mmol/L)', 'SaO2 (%)', 'Natrium (mmol/L)', 'Temperatuur (ºC)',
+                'totaal Bilirubine (IE)', 'Leukocyten (x10^3/µL)',  'CK (U/L)',
+                'CRP (mg/L)', 'Tijd sinds eerste klachten (dagen)', 'Diastolische bloeddruk (mmHg)',
+                'ferritine (mg/L)', 'FiO2 (%)', 'Zuurstof saturatie (%)',
+                'Ademhalingsfrequentie (1/min)', 'Systolische bloeddruk (mmHg)',
+                'Aantal thuismedicamenten']
+    is_categorical_corads = ['corads_admission_cat_1', 'corads_admission_cat_2',
+                             'corads_admission_cat_3', 'corads_admission_cat_4',
+                             'corads_admission_cat_5']
+    is_categorical_male_female = ['gender_cat_1', 'gender_cat_2']
+    ngroups = 3
+    statres = []
+    for f in features.columns:
+        print(f)
+        kmfs = None
+        fig, axes = plt.subplots(1, 1)
+        features[f] = features[f].astype(float)
+        if f in is_binary:
+            yes = features[f] == 1
+            if sum(yes) > 0:
+                kmf_yes = KaplanMeierFitter().fit(T[yes], E[yes], label='Ja (n={})'.format(np.nansum(yes)))
 
-            cph, p, imputer, scaler = cox_ph(train_set, hazard_ratios=False,
-                                             imputation_method=imputation_method,
-                                             return_scaler_imputer=True)
+            no = features[f] == 0
+            if sum(no) > 0:
+                kmf_no = KaplanMeierFitter().fit(T[no], E[no], label='Nee (n={})'.format(np.nansum(no)))
 
-            test_set = pd.DataFrame(imputer.transform(test_set), columns=test_set.columns)
-            test_set = scaler.transform(test_set)
+            na = features[f].isna()
+            if sum(na) > 0:
+                kmf_na = KaplanMeierFitter().fit(T[na], E[na], label='Onbekend (n={})'.format(np.nansum(na)))
 
-            hazard_ratios_sum = cph.summary
-            print(hazard_ratios_sum)
-            sel_corr = hazard_ratios_sum[hazard_ratios_sum['p'] <= pvalue]
-            c = cph.score(test_set, scoring_method="concordance_index")
-            print('test hospital:', test_hospital, 'test c-index', c)
-            print(sel_corr)
-            cindex += [c]
-            n += [len(test_set)]
+            kmfs = [kmf_yes, kmf_no, kmf_na]
+            # event_durations (iterable) – a (n,) list-like representing the (possibly partial) durations of all individuals
+            # groups (iterable) – a (n,) list-like of unique group labels for each individual.
+            # event_observed (iterable, optional) – a (n,) list-like of event_observed events: 1 if observed death, 0 if censored. Defaults to all observed.
+            # t_0 (float, optional (default=-1)) – the period under observation, -1 for all time.
+            groups = features[f].astype("category")
+            event_durations = T
+            event_observed = E
+
+        elif f in is_float:
+            ff = pd.qcut(features[f], ngroups, labels=np.arange(ngroups)+1)
+            kmfs = []
+            for q in ff.unique():
+                sel = ff == q
+                if sum(sel) > 0:
+                    kmf_q = KaplanMeierFitter().fit(T[sel], E[sel], label='{} (n={})'.format(q, np.nansum(sel)))
+                    kmfs += [kmf_q]
+            sel = ff.isna()
+            if sum(sel) > 0:
+                q = 'Onbekend'
+                kmf_q = KaplanMeierFitter().fit(T[sel], E[sel], label='{} (n={})'.format(q, np.nansum(sel)))
+                kmfs += [kmf_q]
+            groups = ff
+            event_durations = T
+            event_observed = E
+
+        elif f in is_categorical_corads:
+            kmfs = []
+            for f in is_categorical_corads:
+                sel = features[f]
+                kmf_f = KaplanMeierFitter().fit(T[sel], E[sel], label='{} (n={})'.format(f, np.nansum(sel)))
+                kmfs += [kmf_f]
+            na = features[is_categorical_corads].any(axis=1) == False
+            if sum(na) > 0:
+                kmf_na = KaplanMeierFitter().fit(T[na], E[na], label='Onbekend (n={})'.format(np.nansum(na)))
+            groups = is_categorical_corads#.astype("category")
+            event_durations = T
+            event_observed = E
+
+            statres += [None]  # FIXME
+            continue  # FIXME
+
+        elif f in is_categorical_male_female:
+            kmfs = []
+            for f in is_categorical_male_female:
+                sel = features[f] == 1.0
+                kmf_f = KaplanMeierFitter().fit(T[sel], E[sel], label='{} (n={})'.format(f, np.nansum(sel)))
+                kmfs += [kmf_f]
+            na = features[is_categorical_male_female].any(axis=1) == False
+            if sum(na) > 0:
+                kmf_na = KaplanMeierFitter().fit(T[na], E[na], label='Onbekend (n={})'.format(np.nansum(na)))
+            groups = is_categorical_male_female#.astype("category")
+            event_durations = T
+            event_observed = E
+
+            statres += [None]  # FIXME
+            continue  # FIXME
+
         else:
-            print('test hospital:', test_hospital, ' has <= ',minimal_n,' records. Cannot determine concordance.')
-    return cindex, n
+            # split data in X groups
+            print('{} not implemented'.format(f))
 
-def cox_ph(features, hazard_ratios=False,
-           imputation_method='median', return_scaler_imputer=False,
-           show_progress=True,
-           penalizer=0.,
-           l1_ratio=0.):
-    train_set = features.drop(columns=['hospital']) # NOTE aids_hiv is an outlier for plotting coefs
+        groups = groups.cat.add_categories(-1).fillna(-1) # treat nan as seperate group.
 
-    # impute nan with median; note that time to event and event death cannot contain nan
-    if imputation_method == 'iterative':
-        imputer = IterativeImputer(missing_values=np.nan,
-                                   initial_strategy='median')
-    else:
-        imputer = SimpleImputer(missing_values=np.nan, strategy=imputation_method)
-    train_set = pd.DataFrame(imputer.fit_transform(train_set), columns=train_set.columns)
+        if len(np.unique(groups)) < 5:
+            ss = [pairwise_logrank_test(event_durations, groups, event_observed, t_0=21.)]
+            p = np.min([s.p_value for s in ss])
+            print(p)
+            if p * 289 < 0.05:
+                print('{} < 0.05 (p: , corrected p: {})'.format(f, p, p*289))
+            statres += ss
+        else:
+            print('error in groups: {} - {}'.format(f, groups))
 
-    # scale data using zscore
-    scaler = RobustScaler_min2cols(columns=train_set.columns)
-    train_set = scaler.fit_transform(train_set)
+        if kmfs:
+            [k.plot_survival_function() for k in kmfs]
 
-    cph = CoxPHFitter(penalizer=penalizer, l1_ratio=l1_ratio)
-    cph.fit(train_set, duration_col='Time to event', event_col='Event death', show_progress=show_progress, step_size=0.1)
+            axes.set_xticks([1, 5, 9, 13, 17, 21])
+            axes.set_xticklabels(['1', '5', '9', '13', '17', '21'])
+            axes.set_xlabel('Aantal dagen sinds opnamedag')
+            axes.set_ylabel('Proportie overlevend')
 
-    if True:
-        cph.print_summary()
+            axes.set_xlim(0, 21)
+            axes.set_ylim(0, 1)
+        plt.title('Kaplan-Meier survival - {}'.format(f))
+        plt.tight_layout()
 
-        fig, ax = plt.subplots(figsize=(5, 25))
-        p = cph.plot(hazard_ratios=hazard_ratios)
-    else:
-        p = None
+        filename = clean_filename('KM_{}.png'.format(f))
+        plt.show()
+        fig.savefig(os.path.join('km_curves', filename), format='png', dpi=300, figsize=(20, 20), pad_inches=0, bbox_inches='tight')
 
-    if return_scaler_imputer:
-        return cph, p, imputer, scaler
-    else:
-        return cph, p
+    return statres
 
-def cox_plot_pvalue_only(cph, pvalue, hazard_ratios=False):
-    hazard_ratios_sum = cph.summary
-    hazard_ratios_sum.sort_values('coef', ascending=False, inplace=True)
-    sel_corr = hazard_ratios_sum[hazard_ratios_sum['p'] <= pvalue]
-    cphplt = cph.plot(sel_corr.index.to_list(), hazard_ratios=hazard_ratios)
-    return cphplt
 
 if __name__ == '__main__':
     config = configparser.ConfigParser()
@@ -280,96 +334,17 @@ if __name__ == '__main__':
     variables_to_exclude += ['Coronavirus']  # duplicate of PCR information
     data, data_struct = load_data(path_creds)
     data, data_struct = preprocess(data, data_struct)
-    # %%
+
     features, outcomes, data, hospital, record_id, days_until_death = prepare_for_learning(data, data_struct,
                                                                           variables_to_include,
                                                                           variables_to_exclude,
                                                                           goal,
-                                                                          remove_records_threshold_above=1.0,
-                                                                          remove_features_threshold_above=0.5,
+                                                                          remove_records_threshold_above=None,
+                                                                          remove_features_threshold_above=0.75,
                                                                           pcr_corona_confirmed_only=False)
-    del outcomes  # not relevant in this form. Use features and hospital.
-
-    # %% STEP 2: CALCULATE and CORRECT ALL TIMINGS.
-    times = data['Days until death'].copy()  # TIME THAT PEOPLE DIED
-    events = data['Dood - totaal'].copy()  # patient that died. TRUE FALSE
-
-    # now add the people that are ALIVE DISCHARGED. At 21 days.
-    times.loc[data['Levend ontslagen en niet heropgenomen - totaal']] = 21.  # or 365   #  discharged alive - ALL 3
-    events.loc[data['Levend ontslagen en niet heropgenomen - totaal']] = False  # censor at t=21 days
-
-    times.loc[data['Levend dag 21 maar nog in het ziekenhuis - totaal']] = 21.
-    events.loc[data['Levend dag 21 maar nog in het ziekenhuis - totaal']] = False
-
-    # now add the people that are UNKNOWN at 21 days.
-    times.loc[data['Onbekend (alle patiënten zonder outcome)']] = data['days_since_admission_current_hosp'][data['Onbekend (alle patiënten zonder outcome)']]  # Onbekend (alle patiënten zonder outcome) == UNKNOWN outcome
-    events.loc[data['Onbekend (alle patiënten zonder outcome)']] = False  # censor at time of event.
-
-    # now mark the people that died after 21 days as alive at 21 days.
-    times.loc[data['Days until death'] > 21.] = 21.
-    events.loc[data['Days until death'] > 21.] = False  # censor at time of event.
-
-    # fix remaining issues with events
-    sel = np.logical_and(times.isna(),data['Outcome_cat_4'] == 1) # transfer
-    events[sel] = np.nan
-    sel = np.logical_and(times.isna(),data['Outcome_cat_8'] == 1) # death
-    events[sel] = False  # no information on timing present, hence state as alive at t=0
-    times[sel] = 0.
-    sel = np.logical_and(times.isna(),data['Outcome_cat_10'] == 1) # discharged readmitted
-    events[sel] = np.nan
-
-    # remaining data: does not have any outcome or follow-up: we only now these patients are alive at t=0.
-    times[times.isna()] = 0.0
-    times[events.isna()] = np.nan
-
-    features = pd.concat([features,
-                          pd.Series(name='Time to event',
-                                    data=times),
-                          pd.Series(name='Event death',
-                                    data=events),
-                         pd.Series(name='hospital',
-                                    data=hospital)], axis=1)
-
-
-    # pd.Series(name='Record Id',data=record_id)[[d not in ['VieCuri'] for d in data['hospital']]]
-
-    # drop hospitals without enough data
-    # data.drop(index=features.index[[d in ['VieCuri'] for d in features['hospital']]], inplace=True)
-    # features.drop(index=features.index[[d in ['VieCuri'] for d in features['hospital']]], inplace=True)
-
-    # now drop the people that have no information regarding durations (very new records).
-    # now drop n/a's in time to event; these are incomplete records that cannot be used.
-    data.drop(index=features.index[features['Time to event'].isna()], inplace=True)
-    features.drop(index=features.index[features['Time to event'].isna()], inplace=True)
-
-    # translate feature columns
+    # # translate feature columns
     features.rename(columns=englishvar_to_dutchnames, inplace=True)
 
-    # do not model data with > 50% missing data
-    drop_vars = features.columns[np.sum(features.isnull())/len(features) > 0.5]
-    features = features.drop(columns=drop_vars)
-
-    # %% STEP 3: SHOW KM CURVE
-    # simple_estimates(features)  # events: True = death, False = censor, None = ?
-    kmf =  KM_age_groups(features)
-
-    # %% step 5: valdiate concordance with LOHO
-    imputation_method = 'iterative'
-    hazard_ratios = False
-    cindex, testsetn = cox_ph_loho(features, hazard_ratios=hazard_ratios,
-                         imputation_method=imputation_method,
-                         minimal_n=25)
-    print('concordances (mean: {}) = {}'.format(round(np.mean(cindex),3), [round(c,3) for c in cindex]))
-
-    # %% STEP 4: COX REGRESSION.
-    # USE HERE: features, hospital, times, events
-    cph, plot = cox_ph(features, hazard_ratios=True,
-                       imputation_method=imputation_method)
-    plot.figure.savefig('Cox_coef_all.png', format='png', dpi=300, figsize=(3,23), pad_inches=0, bbox_inches='tight')
-
-    # %%
-    cphplt = cox_plot_pvalue_only(cph, 0.05, hazard_ratios=True)
-
-    # run on command line:
-    cphplt.figure.set_figheight(6)
-    cphplt.figure.savefig('Cox_coef_pvalue_.05.png', format='png', dpi=300, figsize=(7,9), pad_inches=0, bbox_inches='tight')
+    # %% STEP 2: SHOW KM CURVE
+    # kmf = KM_age_groups(features, outcomes)
+    kmf_all = KM_all_vars(features, outcomes)

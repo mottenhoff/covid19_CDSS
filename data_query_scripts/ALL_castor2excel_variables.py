@@ -9,59 +9,117 @@ Goal: easy comparison with other databases.
 @author: wouterpotters
 """
 import os
-import site
 import configparser
 import pandas as pd
-site.addsitedir('./../')  # add directory to path to enable local imports
-from covid19_import import import_study_report_structure  # noqa: E402
+import castorapi as ca
 
-config = configparser.ConfigParser()
-config.read(os.path.join(os.path.dirname(__file__), '../user_settings.ini'))
 
-# the excel file with all variables and answer options is stored here
-target_excel = config['exportresults']['excel_file_variables']
+def import_study_report_structure(c):
+    # STEP 0: collect answer options from optiongroups
+    # get answer option groups
+    optiongroups_struct = c.request_study_export_optiongroups()
 
-# # Get all data from Castor database (without any selection criterium)
-# Note that you need export rights for every individual center.
-study_struct, reports_struct, optiongroups_struct = \
-    import_study_report_structure(
-        config['CastorCredentials']['local_private_path'])
+    # STEP 1: collect data from study
+    # get the main study structure (i.e. questions)
+    structure = c.request_study_export_structure()
 
-# ## Export all variables to excel
-writer = pd.ExcelWriter(target_excel, engine='xlsxwriter')
+    # sort on form collection order and field order
+    # (this matches how data is filled in castor)
+    structure_filtered = structure \
+        .sort_values(['Form Collection Name', 'Form Collection Order',
+                      'Form Order', 'Field Order'])
 
-readme = 'This excel sheet contains an overview of the variables that are ' +\
-    'used in the Castor EDC database for the COVID 19 project. \nThere are' +\
-    ' three tabs; \n(1) Admission variables; to be entered once and ' +\
-    'updated incidentally. \n(2) Daily reports are created once per day.'
-readme = pd.DataFrame([x for x in readme.split('\n')])
+    # filter variables that have no Field Variable name; these field do not
+    # record data
+    structure_filtered[~structure_filtered['Field Variable Name'].isna()]
 
-# Write each dataframe to a different worksheet.
-readme.to_excel(writer, sheet_name='README', index=False)
-optiongroups_struct.to_excel(writer, sheet_name='OptionGroups', index=False)
+    # select only study variables
+    study_structure = structure_filtered[
+        structure_filtered['Form Type'].isin(['Study'])]
 
-# added answeroptions to the excel file
-answeroptions = pd.pivot_table(optiongroups_struct,
-                               index='Option Group Id',
-                               values=['Option Name', 'Option Value'],
-                               aggfunc=lambda x: list(x))
-answeroptions.rename(columns={'Option Name': 'Field Options Names',
-                              'Option Value': 'Field Options Values'})
-study_struct_withoptions = pd.merge(study_struct,
-                                    answeroptions, how='left',
-                                    left_on='Field Option Group',
-                                    right_on='Option Group Id')
-study_struct_withoptions.to_excel(writer, sheet_name='AdmissionVariables',
-                                  index=False)
+    # select only report variables (may contain duplicates)
+    reports_structure = structure_filtered[
+        structure_filtered['Form Type'].isin(['Report'])]
 
-reports_struct_withoptions = pd.merge(reports_struct,
-                                      answeroptions,
-                                      how='left',
-                                      left_on='Field Option Group',
-                                      right_on='Option Group Id')
-reports_struct_withoptions.to_excel(writer,
-                                    sheet_name='DailyUpdateVariables',
-                                    index=False)
+    return study_structure, reports_structure, optiongroups_struct
 
-writer.save()  # save excel file
-print('excel file was saved to : ' + target_excel)
+
+if __name__ == "__main__":
+    config = configparser.ConfigParser()
+    config.read(os.path.join(os.path.dirname(__file__), '../user_settings.ini'))
+
+    path_to_api_creds = config['CastorCredentials']['local_private_path']
+
+    # input: private folder where client & secret files (no extension,
+    #        1 string only per file) from castor are saved by the user
+    # see also:
+    # https://helpdesk.castoredc.com/article/124-application-programming-interface-api
+    c = ca.CastorApi(path_to_api_creds)  # e.g. in user dir outside of GIT repo
+
+    # get study ID for COVID study
+    if False:
+        name = 'COVID-19 NL'
+        excel_postfix = ''
+    else:
+        name = 'Clinical features of COVID-19 positive patients in VieCuri'
+        excel_postfix = '_viecurie.xlsx'
+
+    study_id = c.select_study_by_name(name)
+
+    study_name = c.request_study(study_id=study_id)['name']
+
+    # # Get all data from Castor database (without any selection criterium)
+    # Note that you need export rights for every individual center.
+    study_structure, reports_structure, optiongroups_struct = \
+        import_study_report_structure(c)
+
+    # STEP 2: convert to excel file
+    # the excel file with all variables and answer options is stored here
+    target_excel = config['exportresults']['excel_file_variables'] + excel_postfix
+
+    # ## Export all variables to excel
+    writer = pd.ExcelWriter(target_excel, engine='xlsxwriter')
+
+    readme = 'This excel sheet contains an overview of the variables that are ' +\
+        'used in the Castor EDC database for the study: ' + study_name +\
+        'project. \nThere are multiple tabs; \n(1) Study variables; ' +\
+        'to be entered once (and updated incidentally). ' +\
+        '\n(2, 3 ..., n) Reports tabs could be created more often.'
+    readme = pd.DataFrame([x for x in readme.split('\n')])
+
+    # Write each dataframe to a different worksheet.
+    readme.to_excel(writer, sheet_name='README', index=False)
+    optiongroups_struct.to_excel(writer, sheet_name='OptionGroups', index=False)
+
+    # added answeroptions to the excel file
+    answeroptions = pd.pivot_table(optiongroups_struct,
+                                   index='Option Group Id',
+                                   values=['Option Name', 'Option Value'],
+                                   aggfunc=lambda x: list(x))
+    answeroptions.rename(columns={'Option Name': 'Field Options Names',
+                                  'Option Value': 'Field Options Values'})
+
+    study_struct_withoptions = pd.merge(study_structure,
+                                        answeroptions, how='left',
+                                        left_on='Field Option Group',
+                                        right_on='Option Group Id')
+    study_struct_withoptions.to_excel(writer, sheet_name='Study',
+                                      index=False)
+
+    reports_struct_withoptions = pd.merge(reports_structure,
+                                          answeroptions,
+                                          how='left',
+                                          left_on='Field Option Group',
+                                          right_on='Option Group Id')
+
+    for report_name in reports_structure['Form Collection Name'].unique():
+        selection = reports_struct_withoptions[
+            reports_struct_withoptions['Form Collection Name'] == report_name]
+        report_name = 'Report' + report_name
+        for r in ':*?/[]\\':
+            report_name = report_name.replace(r, '_')
+
+        selection.to_excel(writer, sheet_name=report_name[:31], index=False)
+
+    writer.save()  # save excel file
+    print('\n excel file for study ' + study_name + ' was saved to : ' + target_excel)

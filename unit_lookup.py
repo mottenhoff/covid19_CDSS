@@ -4,14 +4,14 @@ def get_unit_lookup_dict():
                    'units_neutro':               {1: 0.001,  2: -999.0,    3: 1.0  },
                    'Platelets_unit_1':           {1: 1.0,    2: 1.0                },
                    'Total_Bilirubin_1_1':        {1: 1.0,    2: 17.1               },
-                   'Haemoglobin_unit_1':         {1: 1.6114, 2: 16.1140,   3: 1    },
+                   'Haemoglobin_unit_1':         {1: 1.6114, 2: 16.1140,   3: 1.0  },
                    'Glucose_unit_2':             {1: 1.0,    2: 0.0555             },
                    'Blood_Urea_Nitrogen_unit_1': {1: 1.0,    2: 0.3571             },
                    'Lactate_1_1':                {1: 1.0,    2: 0.1110             },
                    'Creatinine_unit_1':          {1: 1.0,    2: 88.4956            },
                    'sodium_units':               {1: 1.0,    2: 1.0                },
                    'pot_units_1':                {1: 1.0,    2: 1.0                },
-                   'd_dimer_units_adm':          {1: 1000.0, 2: 0.18,      3: 1    },
+                   'd_dimer_units_adm':          {1: 5.5556, 2: 0.0055,    3: 1.0  },
                    'WBC_1_1':                    {1: 1.0,    2: 1.0                },
                    'units_lymph':                {1: 0.001,  2: -999.0,    3: 1.0  },
                    'PCO2_unit_1':                {1: 1.0,    2: 0.1333             },
@@ -28,8 +28,8 @@ def get_unit_lookup_dict():
                    'Creatinine_unit':            {1: 1.0,    2: 88.4956            },
                    'sodium_units_1':             {1: 1.0,    2: 1.0                },
                    'pot_units_2':                {1: 1.0,    2: 1.0                },
-                   'Haemoglobin_unit':           {1: 1.6114, 2: 16.1140,   3: 1    },
-                   'units_d_dimer':              {1: 1000.0, 2: 0.18,      3: 1    }, 
+                   'Haemoglobin_unit':           {1: 1.6114, 2: 16.1140,   3: 1.0  },
+                   'units_d_dimer':              {1: 5.5556, 2: 0.0055,    3: 1.0  }, 
                    'WBC_1':                      {1: 1.0,    2: 1.0                }}
 
 

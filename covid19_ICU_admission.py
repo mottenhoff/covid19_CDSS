@@ -11,6 +11,8 @@ import pickle
 import os
 import os.path
 import sys
+import shap
+
 path_to_classifiers = r'./Classifiers/'
 # path_to_settings = r'./' # TODO: add settings
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), path_to_classifiers))
@@ -51,7 +53,7 @@ from covid19_ICU_util import explore_data
 # classifiers
 from logreg import LogReg
 from XGB import XGB
-from gradboost import train_gradient_boosting
+#from survival import Survival
 
 # data
 from get_feature_set import get_1_premorbid
@@ -63,7 +65,6 @@ from get_feature_set import get_6_all
 
 
 is_in_columns = lambda var_list, data: [v for v in var_list if v in data.columns]
-
 
 def load_data_api(path_credentials):
 
@@ -135,6 +136,14 @@ def load_data(path_to_creds):
 def preprocess(data, data_struct):
     ''' Processed the data per datatype.'''
 
+    # Drop useless data
+    cols = data_struct.loc[data_struct.loc[:, 'Form Collection Name']\
+                                        .isin(['!!! CARDIO (OLD DON’T USE)!!!',
+                                                'Vascular medicine (OPTIONAL)',
+                                                'CARDIOLOGY - CAPACITY (OPTIONAL)']),
+                            'Field Variable Name'].to_list()
+    data = data.drop(is_in_columns(cols, data), axis=1)
+
     # Fix single errors
     data = fix_single_errors(data)
 
@@ -154,7 +163,10 @@ def preprocess(data, data_struct):
 def prepare_for_learning(data, data_struct, variables_to_incl,
                          variables_to_exclude, goal,
                          group_by_record=True, use_outcome=None,
-                         additional_fn=None, use_imputation=True):
+                         additional_fn=None,
+                         remove_records_threshold_above=1,
+                         remove_features_threshold_above=0.5,
+                         pcr_corona_confirmed_only=True):
 
     outcomes, used_columns = calculate_outcomes(data, data_struct)
     data = pd.concat([data, outcomes], axis=1)
@@ -170,34 +182,98 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
 
     x, y, all_outcomes = select_x_y(data, outcomes, used_columns, goal)
 
-    # Select variables to include in prediction
-    variables_to_incl['Field Variable Name'] += ['hospital']
-    x = select_variables(x, data_struct, variables_to_incl)
-
-    # Select variables to exclude
-    x = x.drop(is_in_columns(variables_to_exclude, x), axis=1)
-
-    # Remove columns without information
-    hospital = x.loc[:, 'hospital']
-    records = x.loc[:, 'Record Id']
-    x = x.drop(['hospital', 'Record Id'], axis=1)
-    x = x.loc[:, x.nunique() > 1]  # Remove columns without information
-
-    print('LOG: Using <{}:{}> as y.'.format(goal[0], goal[1]))
-    print('LOG: Class distribution: 1: {}, 0: {}, total: {}'\
-            .format(y.value_counts()[1], y.value_counts()[0], y.size))
-    print('LOG: Selected {} variables for predictive model'
-          .format(x.columns.size))
-
     # Remove samples with missing y
     if goal[0] != 'survival':
         has_y = y.notna()
         x = x.loc[has_y, :]
         y = y.loc[has_y]
-    
-    return x, y, data, hospital, records
 
-def train_and_predict(x, y, model, rep, type='subsamp', type_col=None, test_size=0.2):
+    # Include only patients with CONFIRMED covid infection (PCR+ or Coronavirus)
+    # This excludes patients based on CORADS > 4
+    if pcr_corona_confirmed_only:
+        is_confirmed_patient = \
+            (data['Coronavirus']==1) |\
+            (data['pcr_pos']==1) |\
+            (data['corads_admission_cat_4']==1) |\
+            (data['corads_admission_cat_5']==1)
+        x = x.loc[is_confirmed_patient, :]
+        y = y.loc[is_confirmed_patient]
+
+    # Select variables to include in prediction
+    variables_to_incl['Field Variable Name'] += ['hospital']
+    variables_to_exclude += ['Coronavirus', 'pcr_pos']
+    x = select_variables(x, data_struct, 
+                         variables_to_incl,
+                         variables_to_exclude)
+
+    # Select time frame
+    days_until_death = outcomes.loc[x.index, 'Days until death'].copy()
+    days_until_discharge = outcomes.loc[x.index, 'Days until discharge'].copy()
+    has_death_week = (days_until_death>=0) & (days_until_death<=7)
+    has_disch_week = (days_until_discharge>=0) & (days_until_discharge<=7)
+    outcome_in_week = has_death_week | has_disch_week |\
+                      (outcomes['Levend dag 21 maar nog in het ziekenhuis - totaal']==1)
+
+    # tmp = x.drop(['Record Id', 'hospital'], axis=1)
+
+    # x = x.loc[outcome_in_week, :]
+    # y = y.loc[outcome_in_week]
+    days_until_death = days_until_death[outcome_in_week]
+
+
+    # Drop features with too many missing
+    if remove_features_threshold_above is not None:
+        threshold = remove_features_threshold_above
+        has_too_many_missing = (x.isna().sum(axis=0)/x.shape[0]) > threshold
+        x = x.loc[:, ~has_too_many_missing]
+        print('LOG: dropped features: {}, due to more than {}% missing'
+              .format(has_too_many_missing.loc[has_too_many_missing].index.to_list(),
+                      threshold*100))
+
+    # Remove records with too many missing
+    if remove_records_threshold_above is not None:
+        threshold = remove_records_threshold_above
+        has_too_many_missing = ((x.isna().sum(axis=1))/(x.shape[1])) > threshold
+        print('LOG: Dropped {} records, due to more than {}% missing'
+              .format(has_too_many_missing.sum(), threshold*100))
+        x = x.loc[~has_too_many_missing, :]
+        y = y.loc[~has_too_many_missing]
+
+    # Combine and Rename hospitals
+    name_combined = 'Center com'
+    cutoff = 100
+    hospital = x.loc[:, 'hospital'].copy()
+    counts = hospital.value_counts()
+    hospital.loc[hospital.isin(counts[counts<cutoff].index)] = 'zzzzz' # Quick hack for correct sorting
+    print('LOG: Hospitals to be combined: {}'.format(list(counts[counts<cutoff].index)))
+    print('LOG: Combined {} hospitals to a single hospital of size n={}'\
+           .format((counts<cutoff).sum(), counts[counts<cutoff].sum()))
+           
+    unique_hospitals = np.sort(hospital.unique())
+    hosp_change_dict = dict(zip(
+        unique_hospitals, 
+        ['Center '+str(i) for i in range(unique_hospitals.size)]))
+    hosp_change_dict['zzzzz'] = name_combined
+    hospital = hospital.replace(hosp_change_dict)
+
+    # Remove columns without information
+    records = x.loc[:, 'Record Id']
+    x = x.drop(['hospital', 'Record Id'], axis=1)
+    x = x.loc[:, x.nunique() > 1]  # Remove columns without information
+
+    print('LOG: Using <{}:{}> as y.'.format(goal[0], goal[1]))
+    # print('LOG: Class distribution: 1: {}, 0: {}, total: {}'\
+    #        .format(y[y.columns[0]].value_counts()[1], y[y.columns[0]].value_counts()[0], y[y.columns[0]].size))
+    print('LOG: Selected {} variables for predictive model'
+           .format(x.columns.size))
+
+    explore_data(x, y)
+
+    return x, y, data, hospital, records, days_until_death
+
+def train_and_predict(x, y, model, rep, splittype='loho',
+                      hospitals=None, unique_hospitals=None,
+                      days_until_death=None, test_size=0.2):
     ''' Splits data into train and test set using
     monte carlo subsampling method, i.e., n random
     train/test splits using equal class balance.
@@ -225,14 +301,17 @@ def train_and_predict(x, y, model, rep, type='subsamp', type_col=None, test_size
             clf on test y.
     '''
 
-    if type == 'loho':
+    if splittype == 'loho':
         # Leave-one-hospital-out cross-validation
-        test_hosp = type_col.unique()[rep]
-        is_test_hosp = type_col == test_hosp
+        test_hosp = unique_hospitals[rep]
+        is_test_hosp = hospitals == test_hosp
         train_x = x.loc[~is_test_hosp, :]
         train_y = y.loc[~is_test_hosp]
         test_x = x.loc[is_test_hosp, :]
         test_y = y.loc[is_test_hosp]
+        model.hospital = model.hospital.append(hospitals.loc[is_test_hosp])
+        model.days_until_outcome = model.days_until_outcome\
+                                        .append(days_until_death.loc[is_test_hosp])
     else:
         # Default to random subsampling
         train_x, test_x, train_y, test_y = train_test_split(x, y,
@@ -241,8 +320,8 @@ def train_and_predict(x, y, model, rep, type='subsamp', type_col=None, test_size
     datasets = {"train_x": train_x, "test_x": test_x,
                 "train_y": train_y, "test_y": test_y}
 
-    clf, datasets, test_y_hat = model.train(datasets)
-    return clf, datasets, test_y_hat
+    clf, datasets, test_y_hat, shap_values, test_set = model.train(datasets)
+    return clf, datasets, test_y_hat,shap_values, test_set
 
 def score_prediction(model, clf, datasets, test_y_hat, rep):
     ''' Wrapper for scoring individual predictions made
@@ -272,8 +351,10 @@ def score_prediction(model, clf, datasets, test_y_hat, rep):
     score = model.score(clf, datasets, test_y_hat, rep)
     return score
 
-def evaluate_model(model, clf, datasets, scores):
-    model.evaluate(clf, datasets, scores)
+def evaluate_model(model, clf, datasets, scores,
+                   hospitals=None):
+    model.evaluate(clf, datasets, scores,
+                   hospitals=hospitals)
 
 def run(data, data_struct, goal, variables_to_include, variables_to_exclude,
         train_test_split_method, model_class,
@@ -282,10 +363,12 @@ def run(data, data_struct, goal, variables_to_include, variables_to_exclude,
     model.goal = goal
 
     data, data_struct = preprocess(data, data_struct)
-    x, y, data, hospital, records = prepare_for_learning(data, data_struct,
+    x, y, data, hospital,\
+        records, days_until_death = prepare_for_learning(data, data_struct,
                                                          variables_to_include,
                                                          variables_to_exclude,
                                                          goal)
+
     if goal[0] == 'survival':
         save_class_dist_per_hospital(save_path, y['event_mortality'], hospital[y.index])
     else:
@@ -297,31 +380,52 @@ def run(data, data_struct, goal, variables_to_include, variables_to_exclude,
     model.save_path = '{}_n{}_y{}'.format(save_path, y.size, y.sum())
     model.save_prediction = save_prediction
 
-
     if train_test_split_method == 'loho':
         # Leave-one-hospital-out
-        repetitions = hospital.unique().size
+        unique_hospitals = np.sort(hospital.unique())
+        repetitions = unique_hospitals.size
     else:
         # Random Subsampling
         repetitions = 100
 
     scores = []
+    shap_list = list()
+    test_list = list()
     for rep in range(repetitions):
-        clf, datasets, test_y_hat = train_and_predict(x, y, model, rep,
-                                                      type=train_test_split_method,
-                                                      type_col=hospital)
+        clf, datasets, test_y_hat,shap_values,test_set = train_and_predict(x, y, model, rep,
+                                                      splittype=train_test_split_method,
+                                                      hospitals=hospital,
+                                                      unique_hospitals=unique_hospitals,
+                                                      days_until_death=days_until_death)
+        shap_list.append(shap_values)
+        test_list.append(test_set)
+        
         score = score_prediction(model, clf, datasets,
                                  test_y_hat, rep)
         scores.append(score)
 
     model.hospital = hospital[y.index]
-    evaluate_model(model, clf, datasets, scores)
-
+    evaluate_model(model, clf, datasets, scores,
+                   hospitals=unique_hospitals)
+    
+    shap_values = shap_list[0]
+    for val in shap_list:
+        shap_values  = np.concatenate((shap_values,val),axis=0)
+        
+    test_set = test_list[0]
+    for val in shap_list:
+        test_set  = np.concatenate((test_set,val),axis=0)
+    test_set = pd.DataFrame(test_set,columns=x.columns)
+    f = plt.figure()    
+    shap.summary_plot(shap_values, test_set)
+    f.savefig(os.path.join( model.save_path ,"summary_plot1.png"), bbox_inches='tight', dpi=600)
+    f = plt.figure()
+    shap.summary_plot(shap_values, test_set, plot_type="bar")
+    f.savefig(os.path.join( model.save_path ,"summary_plot2.png"), bbox_inches='tight', dpi=600)
     if not save_figures:
         plt.show()
 
     print('\n', flush=True)
-
 
 if __name__ == "__main__":
     ##### START PARAMETERS #####
@@ -355,10 +459,13 @@ if __name__ == "__main__":
     #  NOTE: See get_feature_set.py for preset selections
     feature_opts = {
         'pm':   get_1_premorbid(),
-        'cp':   get_2_clinical_presentation(),
-        'lab':  get_3_laboratory_radiology_findings(),
-        'pmcp': get_4_premorbid_clinical_representation(),
-        'all':  get_5_premorbid_clin_rep_lab_rad()
+        # 'cp':   get_2_clinical_presentation(),
+        # 'lab':  get_3_laboratory_radiology_findings(),
+        # 'pmcp': get_4_premorbid_clinical_representation(),
+        # 'all':  get_5_premorbid_clin_rep_lab_rad(),
+        # 'k10': ['Blood_Urea_Nitrogen_value_1', 'LDH', 'PH_value_1', 'age_yrs', 'ccd', 'fio2_1', 'hypertension', 'irregular', 'rtr', 'uses_n_medicine'] # XGB
+        # 'k10': ['Blood_Urea_Nitrogen_value_1', 'LDH', 'PH_value_1', 'age_yrs', 'ccd', 'fio2_1', 'hypertension', 'irregular', 'rtr', 'uses_n_medicine'] # LOGREG
+        # 'paper': ['LDH', 'Lymphocyte_1_1', 'crp_1_1']
     }
 
     # Options:
@@ -368,11 +475,17 @@ if __name__ == "__main__":
 
     # Add all 'Field Variable Name' from data_struct to
     # EXCLUDE variables from analysis
-    variables_to_exclude = ['microbiology_worker']
+    variables_to_exclude = [
+        # 'Smoking', 
+        # 'alcohol'
+        # 'oxygen_saturation_on',
+        # 'oxygen_saturation'
+    ]
 
     # Options:
     #   see .\Classifiers
-    model = LogReg  # NOTE: do not initialize model here,
+    model = XGB
+    # model = LogReg  # NOTE: do not initialize model here,
                     #       but supply the class (i.e. omit
                     #       the parentheses)
 
@@ -387,6 +500,7 @@ if __name__ == "__main__":
 
     for train_test_split_method in cv_opts:
         for feat_name, features in feature_opts.items():
+            print(feat_name)
             vars_to_include = {
                 'Form Collection Name': [],  # groups
                 'Form Name':            [],  # variable subgroups
@@ -401,3 +515,7 @@ if __name__ == "__main__":
                 save_prediction=save_prediction)
 
     plt.show()
+
+
+
+

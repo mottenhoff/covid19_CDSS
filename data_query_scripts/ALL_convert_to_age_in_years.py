@@ -13,7 +13,7 @@ import configparser
 import datetime
 import castorapi as ca
 
-LIVE = True  # be very carefull. This updates a huge amount of data!!!
+LIVE = False  # be very carefull. This updates a huge amount of data!!!
 
 config = configparser.ConfigParser()
 config.read(os.path.join(os.path.dirname(__file__), '../user_settings.ini'))
