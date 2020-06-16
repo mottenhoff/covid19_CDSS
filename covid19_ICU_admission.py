@@ -418,10 +418,10 @@ def run(data, data_struct, goal, variables_to_include, variables_to_exclude,
     test_set = pd.DataFrame(test_set,columns=x.columns)
     f = plt.figure()    
     shap.summary_plot(shap_values, test_set)
-    f.savefig(os.path.join( model.save_path ,"summary_plot1.png"), bbox_inches='tight', dpi=600)
+    f.savefig((model.save + "_summary_plot1.png"), bbox_inches='tight', dpi=600)
     f = plt.figure()
     shap.summary_plot(shap_values, test_set, plot_type="bar")
-    f.savefig(os.path.join( model.save_path ,"summary_plot2.png"), bbox_inches='tight', dpi=600)
+    f.savefig((model.save_path + "_summary_plot2.png"), bbox_inches='tight', dpi=600)
     if not save_figures:
         plt.show()
 
