@@ -139,6 +139,7 @@ def calculate_outcomes(data, data_struct):
     has_died = data.loc[:, ['Outcome_cat_7','Outcome_cat_8']].any(axis=1)
     days_until_death = pd.Series(None, index=data.index)
     days_until_death.loc[has_died] = data.loc[has_died, 'days_until_outcome_3wk']
+    days_until_death = data.loc[:, 'days_until_outcome_3wk']
 
     is_discharged = data.loc[:, ['Outcome_cat_1', 'Outcome_cat_5', 'Outcome_cat_6']].any(axis=1)
     days_until_discharge = pd.Series(None, index=data.index)
@@ -236,6 +237,7 @@ def select_x_y(data, outcomes, used_columns,
     # TEMP select (Non-ICU patients)
     # ICU pts:
     was_icu = outcomes.iloc[:, [3, 6, 10, 12, 14]].any(axis=1)
+    # x['was_icu'] = was_icu
     # was_icu.to_excel('was_icu.xlsx')
     # y[was_icu] = None # ONLY INCLUDE NON-ICU PATIENTS (Inverted because set to None)
     # y[~was_icu] = None # ONLY INCLUDE ICU PATIENTS
@@ -484,7 +486,7 @@ def transform_categorical_features(data, data_struct):
 
     is_one_hot_encoded = data_struct['Field Type'].isin(['checkbox', 'category']) | \
                             data_struct['Field Variable Name'].isin(vars_to_dummy)
-    data_struct.loc[is_one_hot_encoded, 'Field Type'] = 'category_one_hot_encoded'
+    data_struct.loc[is_one_hot_encoded, 'Field Type'] = 'category'
 
     cat_struct_ohe = data_struct.loc[is_one_hot_encoded,
                                     ['Field Variable Name', 'Option Name',

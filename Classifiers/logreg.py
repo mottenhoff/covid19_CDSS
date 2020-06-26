@@ -32,7 +32,7 @@ Datasets:   dictionary containin all training and test sets:
 '''
 import os
 from math import sqrt
-
+import shap
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
@@ -223,8 +223,12 @@ class LogReg:
                     "test_x": test_x,
                     "train_y": train_y,
                     "test_y": test_y}
+        
+        explainer = shap.LinearExplainer(clf['LR'], test_x)
+        shap_values = explainer.shap_values(test_x)
 
-        return clf, datasets, test_y_hat
+        return clf, datasets, test_y_hat, shap_values, test_x
+
 
     def score(self, clf, datasets, test_y_hat, rep):
         ''' Scores the individual prediction per outcome.
@@ -558,11 +562,28 @@ class LogReg:
         result = pd.DataFrame(self.n_best_features, columns=['columns', 'fvalues', 'pvalues'])
         result['fsum'] = result['fvalues'].apply(nansum)
         result['psum'] = result['pvalues'].apply(nansum)
-        result['columns'] = result['columns'].apply(sorted)
-        result.to_excel('_lr_feature_selection_results.xlsx')
+        result['columns_sorted'] = result['columns'].apply(sorted)
+        result['best_set'] = False
 
         counts = pd.Series(columns_list).value_counts()
-        counts.to_excel(self.save_path + '_lr_feature_selection_votes.xlsx')
+
+        if counts.nlargest(2).iloc[0] == counts.nlargest(2).iloc[1]:
+            fsets = counts.loc[counts==counts.max()].index.to_list()
+            best_set = None
+            best_f = 0
+            for fset in fsets:
+                for i, row in result.iterrows():
+                    if (row['columns_sorted'] == fset) and row['fsum'] > best_f:
+                        best_set = fset
+                        best_f = row['fsum']
+        else:
+            best_set = counts.index.to_list()[0]
+
+        for i, row in result.iterrows():
+            if row['columns_sorted'] == best_set:
+                result.loc[i, 'best_set'] = True
+
+        result.to_excel('_lr_feature_selection_results.xlsx')
         print('votes={} for {}'.format(counts.iloc[0], counts.index[0]))
 
     def save_prediction_to_file(self, scores):
@@ -665,4 +686,3 @@ def get_fields_per_type(data, data_struct, type_):
     #         fig.tight_layout()
 
     #     return importances
-

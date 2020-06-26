@@ -39,7 +39,7 @@ from math import sqrt
 from xgboost import XGBClassifier
 from sklearn.feature_selection import SelectKBest
 from sklearn.preprocessing import PolynomialFeatures
-#import shap
+import shap
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.feature_selection import SelectFromModel
@@ -89,7 +89,7 @@ class XGB:
             'imputer': 'iterative',     # Simple, iterative, forest
             'add_missing_indicator': False,
             'apply_polynomials': False,
-            'apply_feature_selection': False,
+            'apply_feature_selection': True,
             'n_features': 10,
             'apply_pca': False,
             'pca_n_components': 3,
@@ -220,7 +220,8 @@ class XGB:
             # print("Train classfier using grid search for best parameters.")
             cv = StratifiedShuffleSplit(n_splits=5, test_size=0.2, random_state=self.random_state)
             grid = RandomizedSearchCV(self.pipeline, param_distributions=self.grid, cv=cv,
-                                scoring='roc_auc', n_jobs=-2)
+                                scoring='roc_auc', n_jobs=-2, n_iter=50)
+
             grid.fit(train_x, train_y)
             clf = grid.best_estimator_
             self.trained_classifiers += [clf]
@@ -264,14 +265,15 @@ class XGB:
         train_x.index = idx_train
         test_x.index = idx_test
 
-
-
         datasets = {"train_x": train_x,
                     "test_x": test_x,
                     "train_y": train_y,
                     "test_y": test_y}
 
-        return clf, datasets, test_y_hat
+        explainer = shap.TreeExplainer(clf['XGB'])
+        shap_values = explainer.shap_values(test_x)
+
+        return clf, datasets, test_y_hat, shap_values, test_x
 
     def score(self, clf, datasets, test_y_hat, rep):
         ''' Scores the individual prediction per outcome.
@@ -379,7 +381,7 @@ class XGB:
         std = sqrt(sum([(auc - avg) ** 2 for auc in aucs]) / len(aucs))
         sem = std / sqrt(len(aucs))
 
-        fig, ax = plt.subplots(1, 1)
+        fig, ax = plt.subplots(1, 1, figsize=(5, 8))
         ax.plot(aucs)
         # ax.set_title('{}\nROC AUC: {:.3f} \u00B1 {:.3f} (95% CI)'
         #              .format('Logistic Regression', avg, sem * 1.96))
@@ -546,6 +548,20 @@ class XGB:
             return labels
         return labels    
 
+    # def vote_best_featureset(self):
+    #     nansum = lambda x: sum([i for i in x if str(i)!='nan'])
+    #     # Get list by voting. i.e sorted list with most occurences
+    #     columns_list = [sorted(fset[0]) for fset in self.n_best_features]
+    #     result = pd.DataFrame(self.n_best_features, columns=['columns', 'fvalues', 'pvalues'])
+    #     result['fsum'] = result['fvalues'].apply(nansum)
+    #     result['psum'] = result['pvalues'].apply(nansum)
+    #     result['columns'] = result['columns'].apply(sorted)
+    #     result.to_excel('_xgb_feature_selection_results.xlsx')
+
+    #     counts = pd.Series(columns_list).value_counts()
+    #     counts.to_excel(self.save_path + '_xgb_feature_selection_votes.xlsx')
+    #     print('votes={} for {}'.format(counts.iloc[0], counts.index[0]))
+
     def vote_best_featureset(self):
         nansum = lambda x: sum([i for i in x if str(i)!='nan'])
         # Get list by voting. i.e sorted list with most occurences
@@ -553,11 +569,28 @@ class XGB:
         result = pd.DataFrame(self.n_best_features, columns=['columns', 'fvalues', 'pvalues'])
         result['fsum'] = result['fvalues'].apply(nansum)
         result['psum'] = result['pvalues'].apply(nansum)
-        result['columns'] = result['columns'].apply(sorted)
-        result.to_excel('_xgb_feature_selection_results.xlsx')
+        result['columns_sorted'] = result['columns'].apply(sorted)
+        result['best_set'] = False
 
         counts = pd.Series(columns_list).value_counts()
-        counts.to_excel(self.save_path + '_xgb_feature_selection_votes.xlsx')
+
+        if counts.nlargest(2).iloc[0] == counts.nlargest(2).iloc[1]:
+            fsets = counts.loc[counts==counts.max()].index.to_list()
+            best_set = None
+            best_f = 0
+            for fset in fsets:
+                for i, row in result.iterrows():
+                    if (row['columns_sorted'] == fset) and row['fsum'] > best_f:
+                        best_set = fset
+                        best_f = row['fsum']
+        else:
+            best_set = counts.index.to_list()[0]
+
+        for i, row in result.iterrows():
+            if row['columns_sorted'] == best_set:
+                result.loc[i, 'best_set'] = True
+
+        result.to_excel(self.save_path + '_xgb_feature_selection_results.xlsx')
         print('votes={} for {}'.format(counts.iloc[0], counts.index[0]))
 
     def save_prediction_to_file(self, scores):
@@ -596,80 +629,3 @@ def get_fields_per_type(data, data_struct, type):
     fields = data_struct.loc[data_struct['Field Type']=='category',
                             'Field Variable Name'].to_list()
     return [field for field in fields if field in data.columns]
-
-    # def analyse_fpr(self, fprs):
-    #     means = [fpr.mean() for fpr in fprs]
-    #     medians = [np.median(fpr) for fpr in fprs]
-    #     means_mets = get_metrics(means)
-    #     median_mets = get_metrics(medians)
-    #     print('\nRESULT // FALSE POSITIVE RATE:\n\tmean: {:.3f} \u00B1 {:.3f}\n\tmedian: {:.3f} \u00B1 {:.3f}'
-    #             .format(means_mets['mean'], means_mets['ci'], median_mets['mean'], median_mets['ci']))
-    #     n_bars = [0.33, 0.66]
-    #     fig, ax = plt.subplots()
-    #     ax.bar(n_bars, [means_mets['mean'], median_mets['median']],
-    #         .25, yerr=[means_mets['ci'], median_mets['ci']])
-    #     ax.set_xticks(n_bars)
-    #     ax.set_xticklabels(['mean', 'median'])
-    #     ax.set_ylim(0, 1)
-    #     ax.set_xlim(0, 1)
-    #     ax.set_title('FALSE POSITIVE RATE\n Mean mean and median over FPRs at different\nthresholds for all training iterations\nmean: {:.3f} \u00B1 {:.3f}\nmedian: {:.3f} \u00B1 {:.3f}'
-    #             .format(means_mets['mean'], means_mets['ci'], median_mets['mean'], median_mets['ci']))
-    #     fig.savefig('FPR_results.png')
-
-    # def plot_model_weights(self, feature_labels, clf, 
-    #                        show_n_features=10, normalize_coefs=False):
-    #     if self.model_args['add_missing_indicator']:
-    #         # ADD featuere labels for missing feature indicators
-    #         feature_labels = feature_labels.to_list() \
-    #                          + ['m_id_{}'.format(feature_labels[i])\
-    #                             for i in clf.named_steps.imputer.indicator_.features_]
-                             
-    #     coefs = self.coefs
-    #     intercepts = self.intercepts
-    #     coefs = np.array(coefs).squeeze()
-    #     intercepts = np.array(intercepts).squeeze()
-
-    #     if len(coefs.shape) <= 1:
-    #         return
-
-    #     show_n_features = coefs.shape[1] if show_n_features is None else show_n_features
-
-    #     coefs = (coefs - coefs.mean(axis=0)) / coefs.std(axis=0) if normalize_coefs else coefs
-
-    #     avg_coefs = abs(coefs.mean(axis=0))
-    #     mask_not_nan = ~np.isnan(avg_coefs)  # Remove non-existent weights
-    #     avg_coefs = avg_coefs[mask_not_nan]
-
-    #     var_coefs = coefs.var(axis=0)[mask_not_nan] if not normalize_coefs else None
-    #     idx_sorted = avg_coefs.argsort()
-    #     n_bars = np.arange(avg_coefs.shape[0])
-
-    #     labels = [self.var_dict.get(c) for c in feature_labels]
-    #     has_no_label = labels
-    #     for i, l in enumerate(labels):
-    #         if l == None:
-    #             labels[i] = feature_labels[i]
-    #         elif 'chronic cardiac disease' in l.lower():
-    #             labels[i] = 'Chronic Cardiac Disease (Not hypertension)'
-    #         elif 'home medication' in l.lower():
-    #             labels[i] = 'Home medication'
-    #     labels = np.array(labels)
-    #     fontsize = 5.75 if labels.size < 50 else 5
-    #     bar_width = .5  # bar width
-
-    #     fig, ax = plt.subplots()
-    #     if normalize_coefs:
-    #         ax.barh(n_bars, avg_coefs[idx_sorted], bar_width, label='Weight')
-    #         ax.set_title('XGB - Average weight value')
-    #     else:
-    #         ax.set_title('XGB - Average weight value')
-    #         ax.barh(n_bars, avg_coefs[idx_sorted], bar_width, xerr=var_coefs[idx_sorted],
-    #                 label='Weight')
-    #     ax.set_yticks(n_bars)
-    #     ax.set_yticklabels(labels[idx_sorted], fontdict={ 'fontsize': fontsize })
-    #     ax.set_ylim(n_bars[0] - .5, n_bars[-1] + .5)
-    #     ax.set_xlabel('Weight{}'.format(' (normalized)' if normalize_coefs else ''))
-    #     fig.tight_layout()
-    #     fig.savefig(self.save_path + 'XGB_Average_weight_variance.png',
-    #                 figsize=self.fig_size, dpi=self.fig_dpi)
-    #     return fig, ax
