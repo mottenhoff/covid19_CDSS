@@ -89,7 +89,7 @@ class XGB:
             'imputer': 'iterative',     # Simple, iterative, forest
             'add_missing_indicator': False,
             'apply_polynomials': False,
-            'apply_feature_selection': True,
+            'apply_feature_selection': False,
             'n_features': 10,
             'apply_pca': False,
             'pca_n_components': 3,
@@ -236,11 +236,19 @@ class XGB:
         test_y_hat = clf.predict_proba(test_x)  # Predict
 
         if 'feature_selection' in clf.named_steps:
-            columns = train_x.columns[np.argsort(clf.named_steps\
-                                        .feature_selection\
-                                        .pvalues_)][0:self.model_args['n_features']].to_list()
-            self.n_best_features += [columns]
+            # columns = train_x.columns[np.argsort(clf.named_steps\
+            #                             .feature_selection\
+            #                             .pvalues_)][0:self.model_args['n_features']].to_list()
+            # self.n_best_features += [columns]
+            # print(columns)
+
+            idx_sorted = np.argsort(clf['feature_selection'].pvalues_)
+            f_values = clf['feature_selection'].scores_
+            p_values = clf['feature_selection'].pvalues_
+            columns = train_x.columns[idx_sorted[0:self.model_args['n_features']]].to_list()
+            self.n_best_features += [[columns, f_values, p_values]]
             print(columns)
+
         else:
             columns = train_x.columns
 
@@ -304,6 +312,13 @@ class XGB:
         for thr in thresholds:
             y_hat = test_y_hat > thr
             conf_mats.append(confusion_matrix(datasets['test_y'], y_hat).ravel())
+        
+        thr, d, y_hat = get_shortest_distance_to_upper_left_corner(datasets['test_y'], test_y_hat)
+        cm = confusion_matrix(datasets['test_y'], y_hat)
+        sens = cm[1][1] / (cm[1][1] + cm[1][0])
+        spec = cm[0][0] / (cm[0][0] + cm[0][1])
+        ppv = cm[1][1] / (cm[1][1] + cm[0][1]) # Also called precision
+        npv = cm[0][0] / (cm[0][0] + cm[1][0])
 
         if rep < self.score_args['plot_n_rocaucs']:
             disp = plot_confusion_matrix(clf,
@@ -317,7 +332,11 @@ class XGB:
             'roc_auc': roc_auc,
             'x': datasets['test_x'],
             'y': datasets['test_y'],
-            'y_hat': test_y_hat
+            'y_hat': test_y_hat,
+            'sens': sens,
+            'spec': spec,
+            'ppv': ppv,
+            'npv': npv
             }
         
         return score
@@ -338,6 +357,7 @@ class XGB:
                 List of all scores generated per training
                 iteration.
         '''
+        self.get_results(scores)
         self.var_dict = dict(zip(self.data_struct['Field Variable Name'], 
                                  self.data_struct['Field Label']))
         cms = [score['conf_mats'] for score in scores]
@@ -347,6 +367,7 @@ class XGB:
             self.vote_best_featureset()
 
         self.analyse_fpr(cms, thresholds)
+
         fig, ax = self.plot_model_results([score['roc_auc'] for score in scores],
                                           hospitals=hospitals)
         if not self.model_args['apply_feature_selection']\
@@ -548,20 +569,6 @@ class XGB:
             return labels
         return labels    
 
-    # def vote_best_featureset(self):
-    #     nansum = lambda x: sum([i for i in x if str(i)!='nan'])
-    #     # Get list by voting. i.e sorted list with most occurences
-    #     columns_list = [sorted(fset[0]) for fset in self.n_best_features]
-    #     result = pd.DataFrame(self.n_best_features, columns=['columns', 'fvalues', 'pvalues'])
-    #     result['fsum'] = result['fvalues'].apply(nansum)
-    #     result['psum'] = result['pvalues'].apply(nansum)
-    #     result['columns'] = result['columns'].apply(sorted)
-    #     result.to_excel('_xgb_feature_selection_results.xlsx')
-
-    #     counts = pd.Series(columns_list).value_counts()
-    #     counts.to_excel(self.save_path + '_xgb_feature_selection_votes.xlsx')
-    #     print('votes={} for {}'.format(counts.iloc[0], counts.index[0]))
-
     def vote_best_featureset(self):
         nansum = lambda x: sum([i for i in x if str(i)!='nan'])
         # Get list by voting. i.e sorted list with most occurences
@@ -590,21 +597,32 @@ class XGB:
             if row['columns_sorted'] == best_set:
                 result.loc[i, 'best_set'] = True
 
-        result.to_excel(self.save_path + '_xgb_feature_selection_results.xlsx')
+        result.to_excel('xgb_feature_selection_results.xlsx')
         print('votes={} for {}'.format(counts.iloc[0], counts.index[0]))
+
+    def get_results(self, scores):
+        aucs = pd.Series([score['roc_auc'] for score in scores])
+        sens = pd.Series([score['sens'] for score in scores])
+        spec = pd.Series([score['spec'] for score in scores])
+        ppv = pd.Series([score['ppv'] for score in scores])
+        npv = pd.Series([score['npv'] for score in scores])
+        df = pd.concat([aucs, sens, spec, ppv, npv], axis=1)
+
+        df.to_excel(self.save_path + '_loho_results.xlsx')
 
     def save_prediction_to_file(self, scores):
         x = pd.concat([score['x'] for score in scores], axis=0)
         y_hat = pd.concat([pd.Series(score['y_hat']) for score in scores], axis=0)
         y_hat.index = x.index
         y = pd.concat([score['y'] for score in scores], axis=0)
-        self.hospital.index = x.index
-        self.days_until_outcome.index = self.days_until_outcome.index
+        # self.hospital.index = x.sort_index().index
+        # self.days_until_outcome.index = x.sort_index().index
         df = pd.concat([x, y, y_hat, 
-                        self.hospital,
-                        self.days_until_outcome], axis=1)
-        df.columns=list(x.columns)+['y', 'y_hat', 'hospital', 'days_until_death']
-
+                        # self.hospital,
+                        # self.days_until_outcome,
+                        ], axis=1)
+        # df.columns=list(x.columns)+['y', 'y_hat', 'hospital', 'days_until_death']
+        df.columns=list(x.columns)+['y', 'y_hat']#, 'days_until_death']
         filename = self.save_path + '_prediction.pkl'
         df.to_pickle(filename)
       
@@ -629,3 +647,31 @@ def get_fields_per_type(data, data_struct, type):
     fields = data_struct.loc[data_struct['Field Type']=='category',
                             'Field Variable Name'].to_list()
     return [field for field in fields if field in data.columns]
+
+def get_shortest_distance_to_upper_left_corner(y, y_hat):
+    y_hat = y_hat.copy()
+    thresholds = np.linspace(0, 1, 101)
+    distances = [get_distance_to_corner(y_hat>thr, y)
+                 for thr in thresholds]
+    d = min(distances)
+    thr = thresholds[np.argmin(distances)]
+    y_hat = y_hat>thr
+    return thr, d, y_hat
+
+def get_distance_to_corner(y_hat, y):
+    # np.sqrt((1-sensitivity)**2  + (1-specificity)**2)
+    # sensitivity (TPR) = TP / (TP+FN)
+    # specificity (TNR) = TN / (TN+FP)
+    y_hat = get_cm_label(y, y_hat)
+    sens = (y_hat==1).sum() / ((y_hat==1).sum() + (y_hat==4).sum())
+    spec = (y_hat==2).sum() / ((y_hat==2).sum() + (y_hat==3).sum())
+    d = np.sqrt((1-sens)**2 + (1-spec)**2)
+    return d
+
+def get_cm_label(y, y_hat):
+    result = pd.Series(None, index=y.index, dtype='float64') 
+    result.loc[(y==1) & (y_hat==1)] = 1  # TP
+    result.loc[(y==0) & (y_hat==0)] = 2  # TN
+    result.loc[(y==0) & (y_hat==1)] = 3  # FP
+    result.loc[(y==1) & (y_hat==0)] = 4  # FN
+    return result

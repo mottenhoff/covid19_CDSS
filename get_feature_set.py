@@ -6,8 +6,9 @@ def get_1_premorbid():
             'live_disease','mld','cnd','mneoplasm','chd','immune_sup','aids_hiv',
             'diabetes_complications','diabetes_without_complications',
             'rheuma_disorder','autoimm_disorder_1','Smoking','alcohol',
-            'uses_n_medicine'] \
-            + ['ethnic_cat_'+str(i) for i in range(1, 11)]
+            'uses_n_medicine']
+            # , 'ethnic_group'] \
+            # + ['ethnic_cat_'+str(i) for i in range(1, 11)]
 
 def get_2_clinical_presentation():
     return ['days_untreated','Temperature','HtR','irregular','rtr','sys_bp','dias_bp',

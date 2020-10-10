@@ -26,7 +26,7 @@ def get_fpr_thr(y, y_hat, fpr_goal=.1, steps=100):
     best_error = 100
     best_thr = 100
     for thr in np.linspace(0, 1, steps+1):
-        yh = pd.Series(0, index=y.index)
+        yh = pd.Series(0, index=y.index, dtype='float64')
         yh.loc[y_hat>thr] = 1
         yh = get_cm_label(y, yh)
         fpr = yh[yh==3].count() / (yh[yh==3].count() + yh[yh==2].count())
@@ -45,7 +45,7 @@ def get_confusion_matrix(y_hat):
             [(y_hat==4).sum(), (y_hat==1).sum()]]
 
 def get_cm_label(y, y_hat):
-    result = pd.Series(None, index=y.index) 
+    result = pd.Series(None, index=y.index, dtype='float64') 
     result.loc[(y==1) & (y_hat==1)] = 1  # TP
     result.loc[(y==0) & (y_hat==0)] = 2  # TN
     result.loc[(y==0) & (y_hat==1)] = 3  # FP
@@ -75,32 +75,30 @@ def get_avg_ci(arr):
     ci = 1.96*std/np.sqrt(arr.shape[0])
     return np.append(avg, ci)
 
-def get_results(y, y_hat):
+def get_results(y, y_hat, thr=None):
+    y_hat = y_hat.copy()
     auc = roc_auc_score(y, y_hat)
+    if thr != None:
+        y_hat = y_hat > thr
     cm = get_confusion_matrix(get_cm_label(y, y_hat))
-    return [auc, cm[0][0], cm[0][1], cm[1][0], cm[1][1]]
+    sens = cm[1][1] / (cm[1][1] + cm[1][0])
+    spec = cm[0][0] / (cm[0][0] + cm[0][1])
+    ppv = cm[1][1] / (cm[1][1] + cm[0][1]) # Also called precision
+    npv = cm[0][0] / (cm[0][0] + cm[1][0])
+    result = [auc, cm[0][0], cm[0][1], cm[1][0], cm[1][1], sens, spec, ppv, npv]
+    result = [0 if str(r)=='nan' else r for r in result]
+    return result
 
-def get_simple_model_performance(y, y_hat_lr, y_hat_xgb, hospital):
-    age = pd.read_excel('age.xlsx').iloc[:, 1]
+def get_simple_model_performance(y, y_hat_lr, y_hat_xgb, hospital, age):
     y_hat_70 = age > 70
     y_hat_80 = age > 80
-    sz = min(y_hat_lr.size, y_hat_xgb.size, y_hat_70.size, y_hat_80.size, y.size, hospital.size)
-    hospital = hospital[:sz].reset_index(drop=True)
-    y = y.iloc[:sz].reset_index(drop=True)
-    y_hat_lr = y_hat_lr.iloc[:sz].reset_index(drop=True)
-    y_hat_xgb = y_hat_xgb.iloc[:sz].reset_index(drop=True)
-    y_hat_70 = y_hat_70.iloc[:sz].reset_index(drop=True)
-    y_hat_80 = y_hat_80.iloc[:sz].reset_index(drop=True)
-
 
     # TODO: AUC CHANGES BY TURNING BINARY WITH THRESHOLD
     thresholds = np.linspace(0, 1, 101)
-    best_thr = thresholds[np.argmin([get_distance_to_corner(y_hat_xgb>thr, y) 
+    best_thr_xgb = thresholds[np.argmin([get_distance_to_corner(y_hat_xgb>thr, y) 
+                                        for thr in thresholds])]
+    best_thr_lr = thresholds[np.argmin([get_distance_to_corner(y_hat_lr>thr, y) 
                                         for thr in thresholds])]     
-    y_hat_xgb = y_hat_xgb>best_thr
-    best_thr = thresholds[np.argmin([get_distance_to_corner(y_hat_lr>thr, y) 
-                                        for thr in thresholds])]     
-    y_hat_lr = y_hat_lr>best_thr
 
     unique_hospitals = hospital.unique()
     result_70 = []
@@ -109,82 +107,73 @@ def get_simple_model_performance(y, y_hat_lr, y_hat_xgb, hospital):
     result_xgb = []
     for h in unique_hospitals:
         mask = hospital==h
+        if y[mask].sum() == 0:
+            continue
         result_70 += [get_results(y[mask], y_hat_70[mask])]
         result_80 += [get_results(y[mask], y_hat_80[mask])]
-        result_lr += [get_results(y[mask], y_hat_lr[mask])]
-        result_xgb += [get_results(y[mask], y_hat_xgb[mask])]
+        result_lr += [get_results(y[mask], y_hat_lr[mask], best_thr_lr)]
+        result_xgb += [get_results(y[mask], y_hat_xgb[mask], best_thr_xgb)]
 
     result = pd.DataFrame(index=['result_70', 'result_80', 'result_lr', 'result_xgb'],
-                        columns=['auc', 'tn', 'fp', 'fn', 'tp', 
-                                'auc_ci', 'tn_ci', 'fp_ci', 'fn_ci', 'tp_ci'])
-    result_70 = get_avg_ci(np.asarray(result_70))
-    result_80 = get_avg_ci(np.asarray(result_80))
-    result_lr = get_avg_ci(np.asarray(result_lr))
-    result_xgb = get_avg_ci(np.asarray(result_xgb))
+                          columns=['auc', 'tn', 'fp', 'fn', 'tp', 'sens', 'spec', 'ppv', 'npv', 
+                                   'auc_ci', 'tn_ci', 'fp_ci', 'fn_ci', 'tp_ci', 'sens_ci', 'spec_ci', 'ppv_ci', 'npv_ci'])
+    result.loc['result_70', :] = get_avg_ci(np.asarray(result_70))
+    result.loc['result_80', :] = get_avg_ci(np.asarray(result_80))
+    result.loc['result_lr', :] = get_avg_ci(np.asarray(result_lr))
+    result.loc['result_xgb', :] = get_avg_ci(np.asarray(result_xgb))
+    
+    result = result[['auc', 'auc_ci', 'tn', 'tn_ci', 'fp', 'fp_ci', 'fn', 'fn_ci', 'tp', 'tp_ci', 
+                      'sens', 'sens_ci', 'spec', 'spec_ci', 'ppv', 'ppv_ci', 'npv', 'npv_ci']]
+    return result
 
 def plot_conf_mats(y, ys, hospitals, name, savepath):
     fprs = []
     # Overal
-
-    fig, ax = plt.subplots(1, ys.shape[1], sharey=True, figsize=(8, 3))
-    for i, thr in enumerate(ys.columns):
-        y_hat = ys[thr]
+    fig, ax = plt.subplots(1, 1, figsize=(5,5))
+    y_hat = ys.loc[:, 3]
+    tp = (y_hat==1).sum()
+    tn = (y_hat==2).sum()
+    fp = (y_hat==3).sum()
+    fn = (y_hat==4).sum()
+    df_cm = pd.DataFrame([[tn, fp], [fn, tp]],
+                            index=[0, 1], columns=[0, 1])
+    fpr = fp/(fp+tn)
+    fprs += [fpr]
+    sns.heatmap(df_cm, annot=True, fmt="d", 
+                cmap=plt.get_cmap('Blues'), cbar=False,
+                ax=ax)
+    ax.set_title('Overall Confusion matrix\n Feature set: {:s}'.format(name))
+    ax.set_xlabel('Predicted outcome')
+    ax.set_ylabel('True outcome')
+    fig.savefig(savepath + 'confusion_matrix.png', dpi=DPI)
+        # Per hospital
+    hosps = np.unique(hospitals) # Numpy's unique returns sorted array, Pandas does not
+    fig, ax = plt.subplots(3, 3,
+                        sharex=True, sharey=True,
+                        figsize=(9, 9))
+    for i, hosp in enumerate(hosps):
+        y_hat = ys.loc[hospitals==hosp, 3]
         tp = (y_hat==1).sum()
         tn = (y_hat==2).sum()
         fp = (y_hat==3).sum()
         fn = (y_hat==4).sum()
+        
         df_cm = pd.DataFrame([[tn, fp], [fn, tp]],
                                 index=[0, 1], columns=[0, 1])
-        fpr = fp/(fp+tn)
-        fprs += [fpr]
+        fpr = fp/(fp + tn) # == fpr per hospital
+
         sns.heatmap(df_cm, annot=True, fmt="d", 
                     cmap=plt.get_cmap('Blues'), cbar=False,
-                    ax=ax[i])
-        # ax[i].set_xlabel('Threshold: {}'.format(thr.split('_')[2]))
-        ax[i].set_title('FPR: {:.2f}'.format(fpr))
-        ax[i].set_aspect('equal', 'box')
-        if i==0:
-            ax[i].set_ylabel('True label')
-        if i==1:
-            xlabel = ax[i].set_xlabel('Predicted label')
-            xlabel.set_position((1.1, 14.72222222222222)) # Hacky, because fig.text made it bold somehow
+                    ax=ax[i//3, i%3])
 
-        plt.suptitle('Confusion matrix\n{} features'.format(name))
-    fig.savefig(savepath + 'confusionmatrices_total.png', dpi=DPI)
+        ax[i//3, i%3].set_aspect('equal', 'box')
+        numstr = str(i+1) if hosp.lower() != 'center com' else 'combined'
+        ax[i//3, i%3].set_title('Center {:s}'.format(numstr))
 
-
-    # Per hospital
-    hosps = np.unique(hospitals) # Numpy's unique returns sorted array, Pandas does not
-    fig, ax = plt.subplots(hosps.size, ys.shape[1],
-                           sharex=True, sharey=True,
-                           figsize=(6, 9))
-    for i, hosp in enumerate(hosps):
-        # y_h = y.loc[hospitals==hosp]
-        ys_h = ys.loc[hospitals==hosp, :]
-        for j, thr in enumerate(ys.columns):
-            y_hat = ys_h[thr]
-            tp = (y_hat==1).sum()
-            tn = (y_hat==2).sum()
-            fp = (y_hat==3).sum()
-            fn = (y_hat==4).sum()
-            df_cm = pd.DataFrame([[tn, fp], [fn, tp]],
-                                 index=[0, 1], columns=[0, 1])
-            # fpr = fp/(fp + tn) # == fpr per hospital per threshold 
-            sns.heatmap(df_cm, annot=True, fmt="d", 
-                        cmap=plt.get_cmap('Blues'), cbar=False,
-                        ax=ax[i, j])
-            
-            if i == 0:
-                ax[i, j].set_title('Overall FPR: {:.2f}'.format(fprs[j]), fontsize=8)
-            if j == 0:
-                ax[i, j].set_ylabel('{}\nn={}'.format(hosp, y_hat.size), fontsize=6)
-            ax[i, j].set_aspect('equal', 'box')
-
-    plt.suptitle('Confusion matrix per hospital per threshold\nFeatures: {}'.format(name))
-    fig.text(0.5, 0.04, 'Predicted label', ha='center')
-    fig.text(0.02, 0.5, 'True label', va='center', rotation='vertical')
+        plt.suptitle('Confusion matrix per hospital\nFeature set: {}'.format(name))
+        ax[2, 1].set_xlabel('Predicted outcome')
+        ax[1, 0].set_ylabel('True outcome')
     fig.savefig(savepath + 'confusion_matrices_per_hosptal.png', dpi=DPI)
-
 
 def plot_dists(x, y, thresholds, savepath, 
                auc=None, histogram=False, kde=True):
@@ -228,7 +217,7 @@ def plot_correct_per_day(y, y_hat, dto, thresholds, name='', savepath='./'):
         if i < y_hat.columns.size-1:
             continue
         y = pd.Series(0, index=y_hat.index)
-        y[y_hat[col].isin([1, 2])] = 1
+        y[y_hat[col].isin([1, 2])] = 1 # 1= 2=TN
         can_use = dto.notna() & (dto <= 21) & (dto >= 0)
 
         pos = pd.Series(dto[(y==1) & can_use].value_counts().sort_index(), 
@@ -244,15 +233,27 @@ def plot_correct_per_day(y, y_hat, dto, thresholds, name='', savepath='./'):
         ax2 = ax.twinx()
         df.iloc[:, -1].plot.bar(ax=ax2, color='g', alpha=0.2, label='Relative')
 
+
+    # ax2.axhline(0.5, color='g', alpha=0.2, linestyle='dashed', label='Chance level')
     ax.set_xlabel('Day')
-    ax.set_ylabel('Count')
-    ax2.set_ylabel('Relative correct')
+    ax.tick_params(axis='x', which='both', 
+                   labelrotation=0, labelsize=11)
+    ax.set_ylabel('Absolute count', fontsize=11)
+    ax2.set_ylabel('Relative correct', fontsize=11)
     ax2.set_ylim(0, 1)
-    ax.set_title('Prediction per day - {} features'.format(name))
-    
+    ax.set_title('Prediction per day\nXGB {} features'.format(name))
+
+    ax.spines['top'].set_visible(False)
+    ax2.spines['top'].set_visible(False)
+    ax.spines['left'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax2.spines['left'].set_visible(False)
+    ax2.spines['right'].set_visible(False)
+
     bar, labels = ax.get_legend_handles_labels()
     bar2, labels2 = ax2.get_legend_handles_labels()
-    ax2.legend(bar+bar2, labels+labels2)
+    ax2.legend(bar+bar2, labels+labels2, bbox_to_anchor=(1.13, 1.01))
+    # plt.show()
     fig.savefig(savepath+'prediction_per_day_{}'.format(name), dpi=DPI)
 
 def get_shortest_distance_to_upper_left_corner(y, y_hat):
@@ -348,48 +349,203 @@ def plot_cm_simple_baseline(y, y_hat_lr, y_hat_xgb, feat, cutoff, age, name, sav
     fig, axes = plt.subplots(2, 2, sharex=True, sharey=True, figsize=(12, 12))
 
     # LR
+    ls = 12
     sns.heatmap(cm_lr, annot=True, fmt="d",
                 cmap=plt.get_cmap('Blues'), cbar=False,
                 ax=axes[0, 0])
-    axes[0, 0].set_title('LR \n AUC: {:.2f} ({:.2f} to {:.2f})\nFPR: {:.2f} ({:.2f} to {:.2f})'\
-                         .format(auc_lr, auc_lr-auc_ci_lr, auc_lr+auc_ci_lr,
-                                 fpr_lr, fpr_lr-fpr_ci_lr, fpr_lr+fpr_ci_lr))
-    axes[0, 0].set_ylabel('True label')
+    # axes[0, 0].set_title('LR \n AUC: {:.2f} ({:.2f} to {:.2f})\nFPR: {:.2f} ({:.2f} to {:.2f})'\
+    #                      .format(auc_lr, auc_lr-auc_ci_lr, auc_lr+auc_ci_lr,
+    #                              fpr_lr, fpr_lr-fpr_ci_lr, fpr_lr+fpr_ci_lr))
+    axes[0, 0].set_title('LR \n AUC: {:.2f} ({:.2f} to {:.2f})'\
+                         .format(auc_lr, auc_lr-auc_ci_lr, auc_lr+auc_ci_lr))
+    
+    axes[0, 0].set_ylabel('True label', fontsize=ls)
     axes[0, 0].set_aspect('equal', 'box')
 
     # XGB
     sns.heatmap(cm_xgb, annot=True, fmt="d",
                 cmap=plt.get_cmap('Blues'), cbar=False,
                 ax=axes[0, 1])
-    axes[0, 1].set_title('XGB \n AUC: {:.2f} ({:.2f} to {:.2f})\nFPR: {:.2f} ({:.2f} to {:.2f})'\
-                         .format(auc_xgb, auc_xgb-auc_ci_xgb, auc_xgb+auc_ci_xgb,
-                                 fpr_xgb, fpr_xgb-fpr_ci_xgb, fpr_xgb+fpr_ci_xgb))
+    # axes[0, 1].set_title('XGB \n AUC: {:.2f} ({:.2f} to {:.2f})\nFPR: {:.2f} ({:.2f} to {:.2f})'\
+    #                      .format(auc_xgb, auc_xgb-auc_ci_xgb, auc_xgb+auc_ci_xgb,
+    #                              fpr_xgb, fpr_xgb-fpr_ci_xgb, fpr_xgb+fpr_ci_xgb))
+    axes[0, 1].set_title('XGB \n AUC: {:.2f} ({:.2f} to {:.2f})'\
+                         .format(auc_xgb, auc_xgb-auc_ci_xgb, auc_xgb+auc_ci_xgb))
     axes[0, 1].set_aspect('equal', 'box')
 
     # age>70
     sns.heatmap(cm_70, annot=True, fmt="d", 
                 cmap=plt.get_cmap('Blues'), cbar=False,
                 ax=axes[1, 0])
-    axes[1, 0].set_title('Age>70 \n AUC: {:.2f} ({:.2f} to {:.2f})\nFPR: {:.2f} ({:.2f} to {:.2f})'\
-                         .format(auc_70, auc_70-auc_ci_70, auc_70+auc_ci_70,
-                                 fpr_70, fpr_70-fpr_ci_70, fpr_70+fpr_ci_70))
-    axes[1, 0].set_ylabel('True label')
-    axes[1, 0].set_xlabel('Predicted label')
+    # axes[1, 0].set_title('Age>70 \n AUC: {:.2f} ({:.2f} to {:.2f})\nFPR: {:.2f} ({:.2f} to {:.2f})'\
+    #                      .format(auc_70, auc_70-auc_ci_70, auc_70+auc_ci_70,
+    #                              fpr_70, fpr_70-fpr_ci_70, fpr_70+fpr_ci_70))
+    axes[1, 0].set_title('Age > 70 \n AUC: {:.2f} ({:.2f} to {:.2f})'\
+                         .format(auc_70, auc_70-auc_ci_70, auc_70+auc_ci_70))
+    
+    axes[1, 0].set_ylabel('True label', fontsize=ls)
+    axes[1, 0].set_xlabel('Predicted label', fontsize=ls)
     axes[1, 0].set_aspect('equal', 'box')
 
     # age>80
     sns.heatmap(cm_80, annot=True, fmt="d", 
                 cmap=plt.get_cmap('Blues'), cbar=False,
                 ax=axes[1, 1])
-    axes[1, 1].set_title('Age>80\n AUC: {:.2f} ({:.2f} to {:.2f})\nFPR: {:.2f} ({:.2f} to {:.2f}'\
-                         .format(auc_80, auc_80-auc_ci_80, auc_80+auc_ci_80,
-                                 fpr_80, fpr_80-fpr_ci_80, fpr_80+fpr_ci_80))
-    axes[1, 1].set_xlabel('Predicted label')
+    # axes[1, 1].set_title('Age>80\n AUC: {:.2f} ({:.2f} to {:.2f})\nFPR: {:.2f} ({:.2f} to {:.2f})'\
+    #                      .format(auc_80, auc_80-auc_ci_80, auc_80+auc_ci_80,
+    #                              fpr_80, fpr_80-fpr_ci_80, fpr_80+fpr_ci_80))
+    axes[1, 1].set_title('Age > 80\n AUC: {:.2f} ({:.2f} to {:.2f})'\
+                         .format(auc_80, auc_80-auc_ci_80, auc_80+auc_ci_80))
+    axes[1, 1].set_xlabel('Predicted label', fontsize=ls)
     axes[1, 1].set_aspect('equal', 'box')
 
-    plt.suptitle('Featureset: {}'.format(name))
+    plt.suptitle('Performance compared with age-based decision rule\nFeatureset: {}'.format(name), fontsize=15)
     fig.savefig(savepath+'compared_with_simple_baseline_{}'.format(name), dpi=DPI)
 
+def create_results_table(savepath, results):
+    fsets = ['Premorbid', 'Clinical Presentation', 'Laboratory and Radiology', 
+                'Premorbid + Clinical Presentation', 'All', '10 best'] # Ensures required order
+    clfs = ['LR', 'XGB'] # Can add 70, 80 but 5x same results for each featureset ofcourse
+    mindex = pd.MultiIndex.from_product([clfs, fsets], names=('Classifiers', 'Featureset'))
+    table = pd.DataFrame(columns=['AUC', 'Sensitivity', 'Specificity', 'PPV', 'NPV'], index=mindex)
+    for clf in clfs:
+        row_index = 'result_{}'.format(clf.lower()) 
+        for k in fsets:
+            v = results[k][0]
+            row = []
+            for metric in ['auc', 'sens', 'spec', 'ppv', 'npv']:
+                row += ['{:.2f} ({:.2f}-{:.2f})'.format(v.loc[row_index, metric], 
+                                                                v.loc[row_index, metric]-v.loc[row_index, '{}_ci'.format(metric)], 
+                                                                v.loc[row_index, metric]+v.loc[row_index, '{}_ci'.format(metric)])]
+            table.loc[(clf, k), :] = row
+    table.to_excel(savepath + 'Result_formatted.xlsx')
+
+def read_results(path):
+
+    with open(path, 'r') as f:
+        lines = f.readlines()
+    
+    scores = []
+    errors = []
+    names = []
+    for l in lines[2:]:
+        l = l.split(' ')
+        scores += [float(l[4])]
+        errors += [float(l[6][:-1])]
+        names += [l[2]]
+
+    return scores, errors, names
+
+def autolabel(ax, rects, error):
+    """Attach a text label above each bar in *rects*, displaying its height."""
+    for i, rect in enumerate(rects):
+        height = rect.get_height()
+        ax.annotate('{:.2f}'.format(height),
+                    xy=(rect.get_x() + rect.get_width() / 2, height + error[i]),
+                    xytext=(0, 2),  # 3 points vertical offset
+                    textcoords="offset points",
+                    ha='center', va='bottom',
+                    fontsize='small')
+
+def get_gridspec(path_results, y, ys, name, savepath):
+    feature_sets = {
+        'pm':   'Premorbid',
+        'cp':   'Clinical Presentation',
+        'lab':  'Laboratory\nand\nRadiology',
+        'pmcp': 'Premorbid\n+\nClinical Presentation',
+        'all':  'All',
+        'k10': '10 best'
+    }
+
+    fig = plt.figure(figsize=(16, 8), dpi=200)
+    gs = fig.add_gridspec(1, 3)
+    fig_axbar = fig.add_subplot(gs[0:-1])
+    ax_bar = barplot(fig_axbar, path_results, feature_sets)
+    
+    fig_axcm = fig.add_subplot(gs[-1:])
+    ax_confmat = plot_single_conf_mat(fig_axcm, y, ys, name)
+
+    plt.subplots_adjust(wspace=.5)
+    # plt.show()
+
+    fig.savefig(savepath + 'bar_and_confusion_matrix.png', dpi=DPI)
+
+def plot_single_conf_mat(ax, y, ys, name):
+    fprs = []
+    # Overal
+    # fig, ax = plt.subplots(1, 1, figsize=(5,5))
+    y_hat = ys.loc[:, 3]
+    tp = (y_hat==1).sum()
+    tn = (y_hat==2).sum()
+    fp = (y_hat==3).sum()
+    fn = (y_hat==4).sum()
+    df_cm = pd.DataFrame([[tn, fp], [fn, tp]],
+                            index=[0, 1], columns=[0, 1])
+    fpr = fp/(fp+tn)
+    fprs += [fpr]
+    sns.heatmap(df_cm, annot=True, fmt="d",  
+                cmap=plt.get_cmap('Blues'), cbar=False,
+                ax=ax)
+    ax.set_title('(B) Overall Confusion matrix\n XGB: {:s}'.format(name))
+    ax.set_xlabel('Predicted outcome')
+    ax.set_ylabel('True outcome')
+    ax.axis('equal')
+
+    return ax
+
+def barplot(ax, path_results, feature_set_dict):
+    # LR
+    path = '{}/LR/results.txt'.format(path_results)
+    scores_lr, errors_lr, names_lr = read_results(path)
+
+    fset_order = ['pm', 'cp', 'lab', 'pmcp', 'all', 'k10']
+    idx = [names_lr.index(i) for i in fset_order]
+    scores_lr = [scores_lr[i] for i in idx]
+    errors_lr = [errors_lr[i] for i in idx]
+    names_lr = [feature_set_dict[names_lr[i]] for i in idx]
+
+    # XGB
+    path = '{}/XGB/results.txt'.format(path_results)
+    scores_xgb, errors_xgb, names_xgb = read_results(path)
+
+    fset_order = ['pm', 'cp', 'lab', 'pmcp', 'all', 'k10']
+    idx = [names_xgb.index(i) for i in fset_order]
+    scores_xgb = [scores_xgb[i] for i in idx]
+    errors_xgb = [errors_xgb[i] for i in idx]
+    names_xgb = [feature_set_dict[names_xgb[i]] for i in idx]    
+
+    n_bars = np.arange(len(scores_lr))
+    bar_width = 0.35
+
+    # fig, ax = plt.subplots(figsize=(9,5))
+    ax_lr = ax.bar(n_bars, scores_lr, bar_width, 
+                   bottom=0, yerr=errors_lr, 
+                   color='tab:blue', label='LR')
+    ax_xgb = ax.bar(n_bars+bar_width, scores_xgb, bar_width, 
+                   bottom=0, yerr=errors_xgb, 
+                   color='tab:red', label='XGB')
+
+    ax.axhline(0.5, color='k', linestyle='dashed', label='chance level')
+
+    autolabel(ax, ax_lr, errors_lr)
+    autolabel(ax, ax_xgb, errors_xgb)
+
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+
+    ax.set_ylim(0, 1)
+    ax.set_xticks(n_bars+bar_width/2)
+    ax.set_xticklabels(names_lr, fontsize=9)
+    ax.set_ylabel('ROC AUC', fontsize=9)
+    ax.set_title('(A) Overall performance\nError = 95% CI')
+    ax.legend(bbox_to_anchor=(1.125, 1), prop={'size': 7})
+
+    
+    # fig.savefig(path_results+'AUC_performance_per_featureset', dpi=DPI)
+    return ax
+
+
+path_major = r'C:\Users\p70066129\Projects\COVID-19 CDSS\results_0909_rss/'
 
 feature_sets = {
     'pm':   'Premorbid',
@@ -400,13 +556,15 @@ feature_sets = {
     'k10': '10 best'
     }
 
-
-path = r'C:\Users\p70066129\Projects\COVID-19 CDSS\FINAL\XGB/'
-path_xgb = r'C:\Users\p70066129\Projects\COVID-19 CDSS\FINAL\LR/'
+# plt.show()
+path = r'.\COVID-19 CDSS\results_0909_rss\LR/'
+path_xgb = r'.\COVID-19 CDSS\results_0909_rss\XGB/'
 files = [file for file in os.listdir(path) if '.pkl' in file]
 folders = [fol for fol in os.listdir(path) if os.path.isdir(path + fol)]
+results = {}
 for file in files:
-    # if 'cp' not in file:
+    # continue
+    # if 'k10' not in file:
     #     continue
     fullpath = path + file
     fullpath_xgb = path_xgb + file
@@ -424,30 +582,46 @@ for file in files:
     df = pd.read_pickle(fullpath)
     df_xgb = pd.read_pickle(fullpath_xgb)
 
-    hospital = df['hospital']
+    hospital = pd.read_excel('hospital.xlsx', index_col=0).iloc[:,0]
+    # hospital = df['hospital']
     # dto = df['days_until_death']
-    dto = pd.read_excel(path + '/dto.xlsx', index_col=0).iloc[:, 0] #comment out and uncomment above line when you run the models again.
+    # dto = pd.read_excel(path + '/dto.xlsx', index_col=0).iloc[:, 0] #comment out and uncomment above line when you run the models again.
     y = df['y']
     y_hat = df['y_hat']
     y_hat_xgb = df_xgb['y_hat']
-    x = df.drop(['hospital', 'days_until_death', 'y', 'y_hat'], axis=1)
+    try:
+        x = df.drop(['hospital', 'days_until_death', 'y', 'y_hat'], axis=1)
+    except Exception:
+        x = df.drop(['y', 'y_hat'], axis=1) # 'days_until_death'
 
     icu = pd.read_excel('icu.xlsx', index_col=0)
-    icu = pd.DataFrame(False, columns=['was_icu'], index=icu.index)
+    icu.columns=['was_icu']
+    icu = ~icu ####
+    icu = pd.DataFrame(True, columns=['was_icu'], index=icu.index) ####
     age = pd.read_excel('age.xlsx', index_col=0).iloc[:, 0]
-    age = age.sort_index().loc[~icu['was_icu']]
-    hospital = hospital.sort_index().loc[~icu['was_icu']]
-    dto = dto.sort_index().loc[~icu['was_icu']]
-    y = y.sort_index().loc[~icu['was_icu']]
-    y_hat = y_hat.sort_index().loc[~icu['was_icu']]
-    y_hat_xgb = y_hat_xgb.sort_index().loc[~icu['was_icu']]
-    x = x.sort_index().loc[~icu['was_icu']]
+    age = age.sort_index().loc[icu['was_icu']]
+    # hospital = hospital.sort_index().loc[~icu['was_icu']] #####
+    hospital.index = y.sort_index().index
+    # dto.index = y.sort_index().index
+    # hospital = hospital.reset_index(drop=True).loc[~icu['was_icu']] #####
+    # dto = dto.sort_index().loc[icu['was_icu']]
+    y = y.sort_index().loc[icu['was_icu']]
+    y_hat = y_hat.sort_index().loc[icu['was_icu']]
+    y_hat_xgb = y_hat_xgb.sort_index().loc[icu['was_icu']]
+    x = x.sort_index().loc[icu['was_icu']]
 
     print('{} - LR: {:.2f}\tXGB: {:.2f}'.format(name, roc_auc_score(y, y_hat), roc_auc_score(y, y_hat_xgb)))
 
-    # get_simple_model_performance(y, y_hat, y_hat_xgb, hospital)
+    result = get_simple_model_performance(y, y_hat, y_hat_xgb, hospital, age)
+    print('LR :{} - {:.2f} ({:.2f}-{:.2f})'.format(name, result.loc['result_lr', 'auc'],
+                                             result.loc['result_lr', 'auc'] - result.loc['result_lr', 'auc_ci'],
+                                             result.loc['result_lr', 'auc'] + result.loc['result_lr', 'auc_ci']))
+    print('XGB:{} - {:.2f} ({:.2f}-{:.2f})'.format(name, result.loc['result_xgb', 'auc'],
+                                             result.loc['result_xgb', 'auc'] - result.loc['result_xgb', 'auc_ci'],
+                                             result.loc['result_xgb', 'auc'] + result.loc['result_xgb', 'auc_ci']))
 
-    # df = df.fillna(-99)
+    results[name] = [result]
+
     auc = roc_auc_score(y, y_hat)
 
     if 'age_yrs' in x.columns:
@@ -456,9 +630,10 @@ for file in files:
     # GET FPRs
     fpr_goals = [0, 0.05, 0.1]
     y_hats, thresholds = get_yhats(y, y_hat, fpr_goals)
-
+    if 'k10' in file:
+        y_hats_xgb, thresholds = get_yhats(y, y_hat_xgb, fpr_goals)
     # PLOT
-    plot_correct_per_day(y, y_hats, dto, thresholds, name=name, savepath=savepath)
+    # plot_correct_per_day(y, y_hats, dto, thresholds, name=name, savepath=savepath)
     # plot_conf_mats(y, y_hats, hospital, name, savepath=savepath)
     # plot_dists(x, y, thresholds, savepath, 
             #    auc=auc, histogram=True, kde=False)
@@ -467,39 +642,11 @@ for file in files:
     #### Decision boundaries
     # plot_dbs(x, df.y, df.y_hat, ys)
 
+# get_gridspec(path_major, y, y_hats_xgb, '10 best', path_major)
+
 
     # plt.show()
 
 ### GENERAL PLOTS
-
-with open(path+'results.txt', 'r') as f:
-    lines = f.readlines()
-
-scores = []
-errors = []
-names = []
-for l in lines[2:]:
-    l = l.split(' ')
-    scores += [float(l[4])]
-    errors += [float(l[6][:-1])]
-    names += [l[2]]
-print('done')
-
-fset_order = ['pm', 'cp', 'lab', 'pmcp', 'all']#, 'k10']
-idx = [names.index(i) for i in fset_order]
-scores = [scores[i] for i in idx]
-errors = [errors[i] for i in idx]
-names = [feature_sets[names[i]] for i in idx]
-n_bars = list(range(len(scores)))
-
-fig, ax = plt.subplots(figsize=(9,5))
-ax.bar(n_bars, scores, yerr=errors)
-ax.set_ylim(0, 1)
-ax.set_xticks(n_bars)
-ax.set_xticklabels(names, fontsize=6)
-ax.set_ylabel('ROC AUC')
-ax.set_title('Performance\nError = 95% CI')
-fig.savefig(path+'AUC_performance_per_featureset', dpi=DPI)
-
-plt.show()
-
+path_major = r'.\COVID-19 CDSS\results_0909_rss/'
+create_results_table(path_major, results)

@@ -14,10 +14,10 @@ import sys
 import shap
 
 path_to_classifiers = r'./Classifiers/'
-# path_to_settings = r'./' # TODO: add settings
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), path_to_classifiers))
 
 # 3th party libs
+from matplotlib import rcParams
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -65,11 +65,9 @@ from get_feature_set import get_4_premorbid_clinical_representation
 from get_feature_set import get_5_premorbid_clin_rep_lab_rad
 from get_feature_set import get_6_all
 
-
 is_in_columns = lambda var_list, data: [v for v in var_list if v in data.columns]
 
 def load_data_api(path_credentials):
-
     # Try loading objects from disk file; delete saveddata.pkl to force reload
     try:
         path_save = os.path.join(path_credentials, 'saveddata.pkl')
@@ -168,7 +166,8 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
                          additional_fn=None,
                          remove_records_threshold_above=1,
                          remove_features_threshold_above=0.5,
-                         pcr_corona_confirmed_only=True):
+                         pcr_corona_confirmed_only=True,
+                         savepath=None):
 
     outcomes, used_columns = calculate_outcomes(data, data_struct)
     data = pd.concat([data, outcomes], axis=1)
@@ -208,20 +207,10 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
                          variables_to_incl,
                          variables_to_exclude)
 
+
     # Select time frame
+    # Extract days until outcome here
     days_until_death = outcomes.loc[x.index, 'Days until death'].copy()
-    # days_until_discharge = outcomes.loc[x.index, 'Days until discharge'].copy()
-    # has_death_week = (days_until_death>=0) & (days_until_death<=7)
-    # has_disch_week = (days_until_discharge>=0) & (days_until_discharge<=7)
-    # outcome_in_week = has_death_week | has_disch_week |\
-    #                   (outcomes['Levend dag 21 maar nog in het ziekenhuis - totaal']==1)
-
-    # tmp = x.drop(['Record Id', 'hospital'], axis=1)
-
-    # x = x.loc[outcome_in_week, :]
-    # y = y.loc[outcome_in_week]
-    # days_until_death = days_until_death[outcome_in_week]
-
 
     # Drop features with too many missing
     if remove_features_threshold_above is not None:
@@ -243,7 +232,7 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
 
     # Combine and Rename hospitals
     name_combined = 'Center com'
-    cutoff = 100
+    cutoff = 100 # n records
     hospital = x.loc[:, 'hospital'].copy()
     counts = hospital.value_counts()
     hospital.loc[hospital.isin(counts[counts<cutoff].index)] = 'zzzzz' # Quick hack for correct sorting
@@ -269,22 +258,12 @@ def prepare_for_learning(data, data_struct, variables_to_incl,
     x = x.loc[:, x.nunique() > 1]  # Remove columns without information
 
     print('LOG: Using <{}:{}> as y.'.format(goal[0], goal[1]))
-    # print('LOG: Class distribution: 1: {}, 0: {}, total: {}'\
-    #        .format(y[y.columns[0]].value_counts()[1], y[y.columns[0]].value_counts()[0], y[y.columns[0]].size))
     print('LOG: Selected {} variables for predictive model'
            .format(x.columns.size))
 
-    explore_data(x, y)
-
-    # is_vc = hospital==hosp_change_dict['VieCuri']   
-    # x = x.loc[~is_vc, :]
-    # y = y.loc[~is_vc]
-    # hospital = hospital.loc[~is_vc]
-    # records = records.loc[~is_vc]
-    # days_until_death = days_until_death.loc[~is_vc]
+    # x = explore_data(x, y)
 
     return x, y, data, hospital, records, days_until_death
-
 
 def train_and_predict(x, y, model, rep, splittype='loho',
                       hospitals=None, unique_hospitals=None,
@@ -330,8 +309,8 @@ def train_and_predict(x, y, model, rep, splittype='loho',
     else:
         # Default to random subsampling
         train_x, test_x, train_y, test_y = train_test_split(x, y,
-                                                            test_size=test_size,
-                                                            stratify=y)
+                                                            test_size=test_size)#,
+                                                            # stratify=y)
     datasets = {"train_x": train_x, "test_x": test_x,
                 "train_y": train_y, "test_y": test_y}
 
@@ -371,6 +350,55 @@ def evaluate_model(model, clf, datasets, scores,
     model.evaluate(clf, datasets, scores,
                    hospitals=hospitals)
 
+def get_SHAP(model, model_class, shap_list, test_list, x, data_struct):
+    ### Shap Values
+    shap_values = shap_list[0]
+    for val in shap_list:
+        shap_values  = np.concatenate((shap_values,val),axis=0)
+        
+    test_set = test_list[0]
+    for val in shap_list:
+        test_set  = np.concatenate((test_set,val), axis=0)
+
+    # Feature labels
+    label_dict = dict(zip(data_struct['Field Variable Name'],
+                        data_struct['Field Label']))
+    label_dict = rename_dict()
+    labels = [label_dict.get(c, c) for c in x.columns.to_list()]
+    model_name = 'LR' if model_class.__name__ == 'LogReg' else 'XGB'
+    test_set = pd.DataFrame(test_set, columns=labels)
+
+    shap_values = np.where(np.abs(shap_values)>5, 0, shap_values)
+
+    # Create grid
+    fig = plt.figure()
+    gs = fig.add_gridspec(1, 3)
+    gs.update(wspace=0.1)
+
+    # Create ax for barplot shap values
+    fig_axbar = fig.add_subplot(gs[0])
+    shap.summary_plot(shap_values, test_set, plot_type='bar', show=False)
+    ax = plt.gca()
+
+    ax.set_title('(A) Mean absolute feature importance')
+    ax.set_xlabel('SHAP value')
+    ax.tick_params(labelsize=12)
+
+    # Create ax for overall shap values
+    fig_axpoints = fig.add_subplot(gs[1:])
+
+    shap.summary_plot(shap_values, test_set, show=False)
+    ax = plt.gca()
+    ax.get_yaxis().set_visible(False)
+
+    ax.set_title('(B) feature importance')
+    ax.set_xlabel('SHAP value')
+
+    plt.suptitle('Variable impact on model output')
+    plt.gcf().subplots_adjust(left=.25)
+    fig.set_size_inches(18,9)
+    fig.savefig((model.save_path + "_shap_values.png"), dpi=300) # bbox_inches='tight',
+
 def run(data, data_struct, goal, variables_to_include, variables_to_exclude,
         train_test_split_method, model_class,
         save_figures=False, save_path='', save_prediction=False):
@@ -382,7 +410,8 @@ def run(data, data_struct, goal, variables_to_include, variables_to_exclude,
         records, days_until_death = prepare_for_learning(data, data_struct,
                                                          variables_to_include,
                                                          variables_to_exclude,
-                                                         goal)
+                                                         goal,
+                                                         savepath=save_path)
 
     if goal[0] == 'survival':
         save_class_dist_per_hospital(save_path, y['event_mortality'], hospital[y.index])
@@ -401,17 +430,18 @@ def run(data, data_struct, goal, variables_to_include, variables_to_exclude,
         repetitions = unique_hospitals.size
     else:
         # Random Subsampling
-        repetitions = 100
+        repetitions = 10
+        unique_hospitals = None
 
     scores = []
     shap_list = []
     test_list = []
     for rep in range(repetitions):
         clf, datasets, test_y_hat,shap_values,test_set = train_and_predict(x, y, model, rep,
-                                                      splittype=train_test_split_method,
-                                                      hospitals=hospital,
-                                                      unique_hospitals=unique_hospitals,
-                                                      days_until_death=days_until_death)
+                                                            splittype=train_test_split_method,
+                                                            hospitals=hospital,
+                                                            unique_hospitals=unique_hospitals,
+                                                            days_until_death=days_until_death)
         shap_list.append(shap_values)
         test_list.append(test_set)
         
@@ -423,78 +453,13 @@ def run(data, data_struct, goal, variables_to_include, variables_to_exclude,
     evaluate_model(model, clf, datasets, scores,
                    hospitals=unique_hospitals)
     
-    ### Shap Values
-    shap_values = shap_list[0]
-    for val in shap_list:
-        shap_values  = np.concatenate((shap_values,val),axis=0)
-        
-    test_set = test_list[0]
-    for val in shap_list:
-        test_set  = np.concatenate((test_set,val), axis=0)
-    test_set = pd.DataFrame(test_set, columns=x.columns)
-
-    # Feature labels
-    label_dict = dict(zip(data_struct['Field Variable Name'],
-                        data_struct['Field Label']))
-    label_dict = rename_dict()
-    labels = [label_dict.get(c, c) for c in x.columns.to_list()]
-    model_name = 'LR' if model_class.__name__ == 'LogReg' else 'XGB'
-
-    ### HACK for outliers
-    shap_values = np.where(np.abs(shap_values)>5, 0, shap_values)
-
-    fig = plt.figure() #constrained_layout=True   
-    shap.summary_plot(shap_values, test_set, show=False)
-    ax = plt.gca()
-    fig.axes.append(ax)
-    fig.set_size_inches(16, 9)
-    # fig.tight_layout()
-    ax.set_title('{} - Impact on model output'.format(model_name))
-    ax.set_xlabel('SHAP value')
-    ax.set_ylabel('Feature')
-    ax.set_yticklabels(labels)
-    fig.savefig((model.save_path + "_shap.png"), dpi=600) #bbox_inches='tight',
-
-    fig = plt.figure() #constrained_layout=True   
-    shap.summary_plot(shap_values, test_set, plot_type="bar", show=False)
-    ax = plt.gca()
-    fig.axes.append(ax)
-    fig.set_size_inches(16, 9)
-    # fig.tight_layout()
-    ax.set_title('{} - Absolute impact on model output'.format(model_name))
-    ax.set_xlabel('Mean absolute SHAP value')
-    ax.set_ylabel('Feature')
-    ax.set_yticklabels(labels)
-
-    fig.savefig((model.save_path + "_shap_mean_importance.png"), dpi=600) # bbox_inches='tight',
-
-    if not save_figures:
-        plt.show()
+    get_SHAP(model, model_class, shap_list, test_list, x, data_struct)
 
     print('\n', flush=True)
 
 if __name__ == "__main__":
     ##### START PARAMETERS #####
 
-    # Choose the goal the model should predict
-    #
-    # This a list with two items:
-    #   goal = [type of model, prediction goal]
-    # Options:
-    #   model_types:
-    #       classification
-    #           mortality_all
-    #           mortality_with_outcome
-    #       survival
-    #           icu_admission
-    #           mortality_all
-    #           icu_discharge
-    #           all_outcomes
-    #
-    # example:
-    #   goal = ['survival', 'icu_discharge']
-    #
-    # For more info: please check covid19_ICU_util.py:select_x_y()
     goal = ['classification', 'mortality_with_outcome']
 
     save_figures = True
@@ -504,34 +469,29 @@ if __name__ == "__main__":
     # INCLUDE variables from analysis
     #  NOTE: See get_feature_set.py for preset selections
     feature_opts = {
-        # 'pm':   get_1_premorbid(),
+        'pm':   get_1_premorbid(),
         'cp':   get_2_clinical_presentation(),
-        # 'lab':  get_3_laboratory_radiology_findings(),
-        # 'pmcp': get_4_premorbid_clinical_representation(),
-        # 'all':  get_5_premorbid_clin_rep_lab_rad(),
-        # 'k10': ['age_yrs', 'uses_n_medicine', 'Blood_Urea_Nitrogen_value_1', 'oxygen_saturation', 'ccd', 'oxygen_saturation_on_cat_1', 'LDH', 'oxygen_saturation_on_cat_2', 'Blood_albumin_value_1', 'PH_value_1'] # XGB
-        # 'k10': ['Blood_Urea_Nitrogen_value_1', 'LDH', 'PH_value_1', 'age_yrs', 'ccd', 'fio2_1', 'hypertension', 'irregular', 'rtr', 'uses_n_medicine'] # LOGREG
-        # 'paper': ['LDH', 'Lymphocyte_1_1', 'crp_1_1']
+        'lab':  get_3_laboratory_radiology_findings(),
+        'pmcp': get_4_premorbid_clinical_representation(),
+        'all':  get_5_premorbid_clin_rep_lab_rad(),
     }
 
     # Options:
     #   loho: Leave-one-hospital-out
     #   rss: random subsampling
-    cv_opts = ['loho']
+    cv_opts = ['loho'] 
 
     # Add all 'Field Variable Name' from data_struct to
     # EXCLUDE variables from analysis
     variables_to_exclude = [
         'Smoking', 
         'alcohol'
-        # 'oxygen_saturation_on',
-        # 'oxygen_saturation'
     ]
 
     # Options:
     #   see .\Classifiers
-    # model = XGB
-    model = LogReg  # NOTE: do not initialize model here,
+    model = XGB
+    # model = LogReg  # NOTE: do not initialize model here,
                     #       but supply the class (i.e. omit
                     #       the parentheses)
 
@@ -552,7 +512,6 @@ if __name__ == "__main__":
                 'Form Name':            [],  # variable subgroups
                 'Field Variable Name': []  # single variables
             }
-            # single variables #FIXME: this is terrible
             vars_to_include['Field Variable Name'] += features
             save_path = './results/{}_{}'.format(train_test_split_method, feat_name)
             run(data, data_struct, goal, vars_to_include, variables_to_exclude,

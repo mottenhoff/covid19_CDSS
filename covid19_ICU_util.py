@@ -238,7 +238,7 @@ def select_x_y(data, outcomes, used_columns,
     # ICU pts:
     was_icu = outcomes.iloc[:, [3, 6, 10, 12, 14]].any(axis=1)
     # x['was_icu'] = was_icu
-    # was_icu.to_excel('was_icu.xlsx')
+    was_icu.to_excel('was_icu.xlsx')
     # y[was_icu] = None # ONLY INCLUDE NON-ICU PATIENTS (Inverted because set to None)
     # y[~was_icu] = None # ONLY INCLUDE ICU PATIENTS
     # x['was_icu'] = was_icu
@@ -477,6 +477,7 @@ def transform_categorical_features(data, data_struct):
     '''
     # # Get all information about category variables
     # NOTE: only transform categorical variables with multi answers -> Checkbox
+
     is_category = data_struct.loc[:, 'Field Type'].isin(['category', 'dropdown'])
     data_struct.loc[is_category, 'Field Type'] = 'category'
 
@@ -495,6 +496,8 @@ def transform_categorical_features(data, data_struct):
 
     # Exclude some vars
     category_columns_ohe = [c for c in category_columns_ohe if 'PaO2_sample_type' not in c]
+    category_columns_ohe = [c for c in category_columns_ohe if c != 'gender']
+    
 
     get_name = lambda c, v: '{:s}_cat_{:s}'.format(col, str(v))
 
@@ -834,23 +837,65 @@ def explore_data(x, y):
     from statsmodels.stats.outliers_influence import variance_inflation_factor
     from statsmodels.tools.tools import add_constant
 
+
     x = x.fillna(0).astype(float)
-    # x = add_constant(x)
-    vif = pd.Series([variance_inflation_factor(x.values, i)
-                    for i in range(x.shape[1])], index=x.columns)\
-            .sort_values(ascending=True)
+        
+    # # vif = pd.Series(np.inf)
+    # # while vif.max() > 5.0:
+    # #     vif = pd.Series([variance_inflation_factor(x.values, i)
+    # #                     for i in range(x.shape[1])], index=x.columns)\
+    # #             .sort_values(ascending=True)
+    # #     x = x.drop(vif.index[-1], axis=1)
+    # #     print('Dropped {}. New max VIF: {:.2f}'.format(vif.index[-1],
+    # #                                                vif.max()))
+    # #     print(x.shape, len(vif))
+    # #         # x = add_constant(x)
+    # vif = pd.Series([variance_inflation_factor(x.values, i)
+    #                 for i in range(x.shape[1])], index=x.columns)\
+    #         .sort_values(ascending=True)
 
-    fig, ax = plt.subplots()
-    ax.set_title('Variance inflation factor')
-    vif.nlargest(25).plot(kind='barh')
-    fig.tight_layout()
 
-    # CORRELATION
-    # xc = x.corr('spearman') # 'spearmon'
+    # x = x.loc[:, vif[vif<5.0].index]
+    # print('Features dropped due to VIF>5.0'.format(vif[vif<5.0].index))
 
     # fig, ax = plt.subplots()
-    # ax.set_title('Correlation matrix')
-    # ax.matshow(xc)
+    # ax.set_title('Variance inflation factor')
+    # vif.nlargest(25).plot(kind='barh')
+    # fig.tight_layout()
+    # plt.show()
 
-    return
+    # CORRELATI
+    import seaborn as sns
+    from rename import rename_dict
+
+    name_dict = rename_dict()
+    columns = [name_dict.get(c, c) for c in x.columns.to_list()]
+
+    x.columns = columns
+
+    sns.set(font_scale=.6)
+    sns.set_style('white')
+    xc = x.corr('spearman')
+    mask = np.triu(np.ones_like(xc, dtype=bool))
+    f, ax = plt.subplots(figsize=(11, 9))
+    cmap = sns.diverging_palette(230, 20)#, as_map=True)
+    sns.heatmap(xc, mask=mask, cmap=cmap, 
+                vmin=-1, vmax=1,
+                center=0, square=True, linewidths=.5,
+                cbar_kws={"shrink": .5},
+                xticklabels=1, yticklabels=1)
+    f.suptitle('Correlation matrix', fontsize=16)
+    plt.tight_layout()
+    plt.show()
+
+
+    xc = x.corr('spearman') # 'spearmon'
+
+
+
+    fig, ax = plt.subplots()
+    ax.set_title('Correlation matrix')
+    ax.matshow(xc)
+
+    return x
 

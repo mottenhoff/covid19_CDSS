@@ -68,6 +68,8 @@ from missingpy import MissForest
 warnings.filterwarnings(action='ignore', category=ConvergenceWarning)
 # warnings.filterwarnings(action='ignore', category=UserWarning)
 
+from copy import copy
+
 class LogReg:
 
     def __init__(self):
@@ -81,7 +83,7 @@ class LogReg:
         self.goal = None
         self.data_struct = None
         self.model_args = {
-            'imputer': 'iterative',     # Simple, iterative, forest
+            'imputer': 'iterative', #'iterative',     # Simple, iterative, forest
             'add_missing_indicator': False,
             'apply_polynomials': False,
             'apply_feature_selection': False,
@@ -260,6 +262,14 @@ class LogReg:
             y_hat = test_y_hat > thr
             conf_mats.append(confusion_matrix(datasets['test_y'], y_hat).ravel())
 
+        thr, d, y_hat = get_shortest_distance_to_upper_left_corner(datasets['test_y'], test_y_hat)
+        cm = confusion_matrix(datasets['test_y'], y_hat)
+        sens = cm[1][1] / (cm[1][1] + cm[1][0])
+        spec = cm[0][0] / (cm[0][0] + cm[0][1])
+        ppv = cm[1][1] / (cm[1][1] + cm[0][1]) # Also called precision
+        npv = cm[0][0] / (cm[0][0] + cm[1][0])
+        
+
         if rep < self.score_args['plot_n_rocaucs']:
             disp = plot_confusion_matrix(clf,
                                          datasets['test_x'], datasets['test_y'],
@@ -272,7 +282,11 @@ class LogReg:
             'roc_auc': roc_auc,
             'x': datasets['test_x'],
             'y': datasets['test_y'],
-            'y_hat': test_y_hat
+            'y_hat': test_y_hat,
+            'sens': sens,
+            'spec': spec,
+            'ppv': ppv,
+            'npv': npv
             }
 
         return score
@@ -293,6 +307,8 @@ class LogReg:
                 List of all scores generated per training
                 iteration.
         '''
+    
+        self.get_results(scores)
         self.var_dict = dict(zip(self.data_struct['Field Variable Name'],
                                  self.data_struct['Field Label']))
         cms = [score['conf_mats'] for score in scores]
@@ -396,9 +412,9 @@ class LogReg:
         ax.axhline(.5, color='r', linewidth=1)
         ax.set_ylim(0, 1)
         ax.set_xlabel('Test Fold')
-        if any(hospitals):
-            ax.set_xticks(list(range(hospitals.size)))
-            ax.set_xticklabels(hospitals)
+        # if any(hospitals):
+        #     ax.set_xticks(list(range(hospitals.size)))
+        #     ax.set_xticklabels(hospitals)
         ax.set_ylabel('AUC')
         ax.legend(['AUC', 'Average', 'Chance level'], bbox_to_anchor=(1, 0.5))
         fig.tight_layout()
@@ -583,20 +599,32 @@ class LogReg:
             if row['columns_sorted'] == best_set:
                 result.loc[i, 'best_set'] = True
 
-        result.to_excel('_lr_feature_selection_results.xlsx')
+        result.to_excel('lr_feature_selection_results.xlsx')
         print('votes={} for {}'.format(counts.iloc[0], counts.index[0]))
+
+    def get_results(self, scores):
+        aucs = pd.Series([score['roc_auc'] for score in scores])
+        sens = pd.Series([score['sens'] for score in scores])
+        spec = pd.Series([score['spec'] for score in scores])
+        ppv = pd.Series([score['ppv'] for score in scores])
+        npv = pd.Series([score['npv'] for score in scores])
+        df = pd.concat([aucs, sens, spec, ppv, npv], axis=1)
+        df.to_excel(self.save_path + '_rss_results.xlsx')
+        
 
     def save_prediction_to_file(self, scores):
         x = pd.concat([score['x'] for score in scores], axis=0)
         y_hat = pd.concat([pd.Series(score['y_hat']) for score in scores], axis=0)
         y_hat.index = x.index
         y = pd.concat([score['y'] for score in scores], axis=0)
-        self.hospital.index = x.index
-        self.days_until_outcome.index = self.days_until_outcome.index
+        # self.hospital.index = x.sort_index().index
+        # self.days_until_outcome.index = x.sort_index().index
         df = pd.concat([x, y, y_hat, 
-                        self.hospital,
-                        self.days_until_outcome], axis=1)
-        df.columns=list(x.columns)+['y', 'y_hat', 'hospital', 'days_until_death']
+                        # self.hospital,
+                        # self.days_until_outcome,
+                        ], axis=1)
+        # df.columns=list(x.columns)+['y', 'y_hat', 'hospital', 'days_until_death']
+        df.columns=list(x.columns)+['y', 'y_hat']#, 'days_until_death']
 
         filename = self.save_path + '_prediction.pkl'
         df.to_pickle(filename)
@@ -623,66 +651,31 @@ def get_fields_per_type(data, data_struct, type_):
                             'Field Variable Name'].to_list()
     return [field for field in fields if field in data.columns]
 
+def get_shortest_distance_to_upper_left_corner(y, y_hat):
+    y_hat = y_hat.copy()
+    thresholds = np.linspace(0, 1, 101)
+    distances = [get_distance_to_corner(y_hat>thr, y)
+                 for thr in thresholds]
+    d = min(distances)
+    thr = thresholds[np.argmin(distances)]
+    y_hat = y_hat>thr
+    return thr, d, y_hat
 
-            # Model and feature selection
-        # TODO ideally also the feature selection would take place within a CV pipeline
-        # if self.model_args['select_features']:
-        #     if not any(self.n_best_features):
-        #         self.importances = self.feature_contribution(pipeline, train_x, train_y,
-        #                                                      plot_graph=plot_feature_graph)
-        #         self.n_best_features = np.argsort(self.importances)[-n_best_features:]
-        #         print('Select {} best features:\n{}'
-        #                 .format(self.model_args['n_best_features'],
-        #                         list(train_x.columns[self.n_best_features])))
-        #     train_x = train_x.iloc[:, self.n_best_features]
-        #     test_x = test_x.iloc[:, self.n_best_features]
+def get_distance_to_corner(y_hat, y):
+    # np.sqrt((1-sensitivity)**2  + (1-specificity)**2)
+    # sensitivity (TPR) = TP / (TP+FN)
+    # specificity (TNR) = TN / (TN+FP)
+    y_hat = get_cm_label(y, y_hat)
+    sens = (y_hat==1).sum() / ((y_hat==1).sum() + (y_hat==4).sum())
+    spec = (y_hat==2).sum() / ((y_hat==2).sum() + (y_hat==3).sum())
+    d = np.sqrt((1-sens)**2 + (1-spec)**2)
+    return d
 
+def get_cm_label(y, y_hat):
+    result = pd.Series(None, index=y.index, dtype='float64') 
+    result.loc[(y==1) & (y_hat==1)] = 1  # TP
+    result.loc[(y==0) & (y_hat==0)] = 2  # TN
+    result.loc[(y==0) & (y_hat==1)] = 3  # FP
+    result.loc[(y==1) & (y_hat==0)] = 4  # FN
+    return result
 
-    # def analyse_fpr(self, fprs):
-    #     means = [fpr.mean() for fpr in fprs]
-    #     medians = [np.median(fpr) for fpr in fprs]
-    #     means_mets = get_metrics(means)
-    #     median_mets = get_metrics(medians)
-    #     print('\nRESULT // FALSE POSITIVE RATE:\n\tmean: {:.3f} \u00B1 {:.3f}\n\tmedian: {:.3f} \u00B1 {:.3f}'
-    #             .format(means_mets['mean'], means_mets['ci'], median_mets['mean'], median_mets['ci']))
-    #     n_bars = [0.33, 0.66]
-    #     fig, ax = plt.subplots()
-    #     ax.bar(n_bars, [means_mets['mean'], median_mets['median']],
-    #         .25, yerr=[means_mets['ci'], median_mets['ci']])
-    #     ax.set_xticks(n_bars)
-    #     ax.set_xticklabels(['mean', 'median'])
-    #     ax.set_ylim(0, 1)
-    #     ax.set_xlim(0, 1)
-    #     ax.set_title('FALSE POSITIVE RATE\n Mean mean and median over FPRs at different\nthresholds for all training iterations\nmean: {:.3f} \u00B1 {:.3f}\nmedian: {:.3f} \u00B1 {:.3f}'
-    #             .format(means_mets['mean'], means_mets['ci'], median_mets['mean'], median_mets['ci']))
-    #     fig.savefig('FPR_results.png')
-
-
-    # def feature_contribution(self, clf, x, y, plot_graph=False, plot_n_features=None,
-    #                             n_cv=2, method='predict_proba'):
-
-    #     plot_n_features = x.shape[1] if not plot_n_features else plot_n_features
-    #     y_hat = cross_val_predict(clf, x, y, cv=n_cv, method=method)
-    #     baseline_score = roc_auc_score(y, y_hat[:, 1])
-
-    #     importances = np.array([])
-
-    #     for col in x.columns:
-    #         x_tmp = x.drop(col, axis=1)
-    #         y_hat = cross_val_predict(clf, x_tmp, y, cv=n_cv, method=method)
-    #         score = roc_auc_score(y, y_hat[:, 1])
-    #         importances = np.append(importances, baseline_score-score)
-
-    #     if plot_graph:
-    #         idc = np.argsort(importances)
-    #         columns = x.columns[idc]
-    #         fig, ax = plt.subplots(1, 1)
-    #         ax.plot(importances[idc[-plot_n_features:]])
-    #         ax.axhline(0, color='k', linewidth=.5)
-    #         ax.set_xticks(np.arange(x.shape[1]))
-    #         ax.set_xticklabels(columns[-plot_n_features:], rotation=90, fontdict={'fontsize': 6})
-    #         ax.set_xlabel('Features')
-    #         ax.set_ylabel('Difference with baseline')
-    #         fig.tight_layout()
-
-    #     return importances
