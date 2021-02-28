@@ -41,10 +41,10 @@ canvas.pack()
 entries = [('Age', 'years'), 
            ('Number of medications', 'count'),
            ('History of Chronic Cardiac disease (not hypertension)', 'No=0 | Yes=1'),
-           ('Blood pH', ''),
-           ('Blood Albumin', ''),
-           ('Urea Nitrogen', ''),
-           ('Lactate Dehydrogenase', ''),
+           ('Blood pH', 'pH'),
+           ('Blood Albumin', 'g/L'),
+           ('Urea Nitrogen', 'mmol/L'),
+           ('Lactate Dehydrogenase', 'mmol/L'),
            ('Oxygen saturation', '%'),
            ('Oxygen saturation measured on', 'Room air=0 | Oxygen therapy=1')]
 
