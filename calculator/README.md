@@ -1,3 +1,6 @@
+## DISCLAIMER
+This calculator is NOT validated in practice and should therefore ONLY be used for scientific research!
+
 ## Requirements
 - Python 3.7.9 (other versions might work, but tested for this version)
 
